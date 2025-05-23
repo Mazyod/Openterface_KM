@@ -4,8 +4,8 @@
 		{
 			"type": "mrs-debugger",
 			"request": "launch",
-			"name": "CompositeKM",
-			"cwd": "c:\\Users\\Administrator\\Downloads\\CH32V20xEVT1\\EVT\\EXAM\\USB\\USBFS\\DEVICE\\CompositeKM",
+			"name": "BLE_USB",
+			"cwd": "c:\\Users\\Administrator\\Downloads\\CH32V20xEVT1\\EVT\\EXAM\\BLE\\BLE_USB",
 			"openOCDCfg": {
 				"useLocalOpenOCD": true,
 				"executable": "e:/MounRiver/MounRiver_Studio2/resources/app/resources/win32/components/WCH/OpenOCD/OpenOCD/bin/openocd.exe",
@@ -39,8 +39,8 @@
 					"additionalCommands": []
 				},
 				"loadedFiles": {
-					"executableFile": "c:\\Users\\Administrator\\Downloads\\CH32V20xEVT1\\EVT\\EXAM\\USB\\USBFS\\DEVICE\\CompositeKM\\obj\\CompositeKM.elf",
-					"symbolFile": "c:\\Users\\Administrator\\Downloads\\CH32V20xEVT1\\EVT\\EXAM\\USB\\USBFS\\DEVICE\\CompositeKM\\obj\\CompositeKM.elf",
+					"executableFile": "c:\\Users\\Administrator\\Downloads\\CH32V20xEVT1\\EVT\\EXAM\\BLE\\BLE_USB\\obj\\BLE_USB.elf",
+					"symbolFile": "c:\\Users\\Administrator\\Downloads\\CH32V20xEVT1\\EVT\\EXAM\\BLE\\BLE_USB\\obj\\BLE_USB.elf",
 					"executableFileOffset": 0,
 					"symbolFileOffset": 0
 				},
@@ -54,7 +54,7 @@
 				},
 				"debugInRAM": false
 			},
-			"svdpath": "e:\\MounRiver\\MounRiver_Studio2\\resources\\app\\resources\\win32\\components\\WCH\\SDK\\default/RISC-V/CH32V203/NoneOS/CH32V203xx.svd",
+			"svdpath": "",
 			"output": {
 				"showDebugGDBTrace": true,
 				"saveDebugOutputToFile": false,

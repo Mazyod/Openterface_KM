@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8" standalone="no"?>
 <projectDescription>
-  <name>CompositeKM</name>
+  <name>BLE_USB</name>
   <comment/>
   <projects/>
   <buildSpec>
@@ -22,29 +22,19 @@
   </natures>
   <linkedResources>
     <link>
-      <name>Core</name>
+      <name>HAL</name>
       <type>2</type>
-      <locationURI>PARENT-4-PROJECT_LOC/SRC/Core</locationURI>
+      <locationURI>PARENT-1-PROJECT_LOC/HAL</locationURI>
     </link>
     <link>
-      <name>Debug</name>
+      <name>LIB</name>
       <type>2</type>
-      <locationURI>PARENT-4-PROJECT_LOC/SRC/Debug</locationURI>
+      <locationURI>PARENT-1-PROJECT_LOC/LIB</locationURI>
     </link>
     <link>
-      <name>Ld</name>
+      <name>SRC</name>
       <type>2</type>
-      <locationURI>PARENT-4-PROJECT_LOC/SRC/Ld</locationURI>
-    </link>
-    <link>
-      <name>Peripheral</name>
-      <type>2</type>
-      <locationURI>PARENT-4-PROJECT_LOC/SRC/Peripheral</locationURI>
-    </link>
-    <link>
-      <name>Startup</name>
-      <type>2</type>
-      <locationURI>PARENT-4-PROJECT_LOC/SRC/Startup</locationURI>
+      <locationURI>PARENT-2-PROJECT_LOC/SRC</locationURI>
     </link>
   </linkedResources>
   <filteredResources>
