@@ -12,20 +12,7 @@
 			"link": "WCH-Link",
 			"peripheral_version": "1.0"
 		},
-		"linkedFolders": [
-			{
-				"name": "HAL",
-				"location": "../HAL"
-			},
-			{
-				"name": "LIB",
-				"location": "../LIB"
-			},
-			{
-				"name": "SRC",
-				"location": "../../SRC"
-			}
-		],
+		"linkedFolders": [],
 		"removedResources": [
 			{
 				"parentLogicPath": "",
