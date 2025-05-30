@@ -21,8 +21,7 @@ volatile uint16_t MS_Scan_Result = 0x00F0;                                      
 /* Keyboard */
 volatile uint8_t  KB_Scan_Done = 0x00;                                          // Keyboard Keys Scan Done
 volatile uint16_t KB_Scan_Result = 0xF000;                                      // Keyboard Keys Current Scan Result
-volatile uint16_t KB_Scan_Last_Result = 0xF000;                                 // Keyboard Keys Last Scan Result
-uint8_t  KB_Data_Pack[ 8 ] = { 0x00 };                                          // Keyboard IN Data Packet
+volatile uint16_t KB_Scan_Last_Result = 0xF000;                                 // Keyboard Keys Last Scan Resul                                       // Keyboard IN Data Packet
 volatile uint8_t  KB_LED_Last_Status = 0x00;                                    // Keyboard LED Last Result
 volatile uint8_t  KB_LED_Cur_Status = 0x00;                                     // Keyboard LED Current Result
 
@@ -74,13 +73,18 @@ void MCU_Sleep_Wakeup_Operate( void )
     }
     __enable_irq( );
 }
+#include <string.h>
+#include <stdint.h>
+
 // -------------------- 协议定义区 --------------------
 #define CH9329_FRAME_HEAD1      0x57
 #define CH9329_FRAME_HEAD2      0xAB
 
 #define CMD_SEND_KB_GENERAL_DATA 0x02
-#define CMD_SEND_MS_REL_DATA    0x05
+#define CMD_SEND_MS_REL_DATA     0x05
+#define CMD_SEND_MS_ABS_DATA     0x04  // 绝对鼠标数据命令码
 
+// 修饰键位定义
 #define MOD_LCTRL   0x01
 #define MOD_LSHIFT  0x02
 #define MOD_LALT    0x04
@@ -89,17 +93,6 @@ void MCU_Sleep_Wakeup_Operate( void )
 #define MOD_RSHIFT  0x20
 #define MOD_RALT    0x40
 #define MOD_RGUI    0x80
-
-#define KEY_PIPE      0x64
-#define KEY_TAB       0x2B
-#define KEY_LSHIFT    0xE1
-#define KEY_RSHIFT    0xE5
-#define KEY_LCTRL     0xE0
-#define KEY_RCTRL     0xE4
-#define KEY_LALT      0xE2
-#define KEY_RALT      0xE6
-#define KEY_LWIN      0xE3
-#define KEY_RWIN      0xE7
 
 // -------------------- 数据缓冲区 --------------------
 uint8_t KB_Data_Pack[8];
@@ -117,87 +110,99 @@ void CH9329_SendAck(uint8_t addr, uint8_t cmd_code, uint8_t status) {
     USBD_ENDPx_DataUp(ENDP3, ack_packet, sizeof(ack_packet));
 }
 
-// -------------------- 数据解析器 --------------------
-void CH9329_DataParser(uint8_t* buf, uint8_t len) {
-    uint8_t index = 0;
+// -------------------- 数据解析处理 --------------------
+void CH9329_DataParser(uint8_t* buf, uint16_t len) {
+    uint16_t index = 0;
 
-    while (index + 6 <= len) {  // 至少要有帧头 + addr + cmd + len + sum
-        if (buf[index] == CH9329_FRAME_HEAD1 && buf[index + 1] == CH9329_FRAME_HEAD2) {
-            uint8_t frame_start = index;
-            index += 2;
-
-            uint8_t addr = buf[index++];
-            uint8_t cmd_code = buf[index++];
-            uint8_t data_len = buf[index++];
-
-            // 检查剩余长度是否足够
-            if ((index + data_len + 1) > len) {
-                break;  // 不完整帧，等待下次接收
-            }
-
-            uint8_t checksum = CH9329_FRAME_HEAD1 + CH9329_FRAME_HEAD2 + addr + cmd_code + data_len;
-            uint8_t data[8] = {0};
-            for (uint8_t i = 0; i < data_len && i < sizeof(data); i++) {
-                data[i] = buf[index++];
-                checksum += data[i];
-            }
-
-            uint8_t recv_sum = buf[index++];
-
-            if (checksum != recv_sum) {
-                // 校验失败，跳过当前帧
-                continue;
-            }
-
-            if (cmd_code == CMD_SEND_KB_GENERAL_DATA && data_len == 8) {
-                mod_keys = data[0];
-                memcpy(normal_keys, &data[2], 6);
-
-                memset(KB_Data_Pack, 0x00, sizeof(KB_Data_Pack));
-                KB_Data_Pack[0] = mod_keys;
-                memcpy(&KB_Data_Pack[2], normal_keys, 6);
-
-                USBFS_Endp_DataUp(DEF_UEP1, KB_Data_Pack, sizeof(KB_Data_Pack), DEF_UEP_CPY_LOAD);
-                CH9329_SendAck(addr, cmd_code, 0x00);
-
-            } else if (cmd_code == CMD_SEND_MS_REL_DATA && data_len >= 5) {
-                memset(MS_Data_Pack, 0x00, sizeof(MS_Data_Pack));
-                MS_Data_Pack[0] = data[1];  // 鼠标按钮
-                MS_Data_Pack[1] = (data[2] & 0x80) ? (int8_t)(data[2] - 256) : data[2];  // X
-                MS_Data_Pack[2] = (data[3] & 0x80) ? (int8_t)(data[3] - 256) : data[3];  // Y
-                MS_Data_Pack[3] = (data[4] & 0x80) ? (int8_t)(data[4] - 256) : data[4];  // 滚轮
-
-                USBFS_Endp_DataUp(DEF_UEP2, MS_Data_Pack, sizeof(MS_Data_Pack), DEF_UEP_CPY_LOAD);
-                CH9329_SendAck(addr, cmd_code, 0x00);
-            }
-
-        } else {
-            index++;  // 寻找下一个帧头
+    while (index + 6 <= len) {
+        // 查找帧头
+        if (buf[index] != CH9329_FRAME_HEAD1 || buf[index + 1] != CH9329_FRAME_HEAD2) {
+            index++;
+            continue;
         }
+
+        uint8_t addr = buf[index + 2];
+        uint8_t cmd_code = buf[index + 3];
+        uint8_t data_len = buf[index + 4];
+
+        if ((index + 5 + data_len + 1) > len) break;  // 数据不足则退出
+
+        uint8_t checksum = 0;
+        for (uint8_t i = 0; i < 5 + data_len; i++) {
+            checksum += buf[index + i];
+        }
+
+        if (checksum != buf[index + 5 + data_len]) {
+            index++;  // 校验失败跳过此帧
+            continue;
+        }
+
+        uint8_t* data = &buf[index + 5];
+
+        // ---------- 键盘数据 ----------
+        if (cmd_code == CMD_SEND_KB_GENERAL_DATA && data_len == 8) {
+            mod_keys = data[0];
+            memcpy(normal_keys, &data[2], 6);
+
+            memset(KB_Data_Pack, 0x00, sizeof(KB_Data_Pack));
+            KB_Data_Pack[0] = mod_keys;
+            memcpy(&KB_Data_Pack[2], normal_keys, 6);
+
+            USBFS_Endp_DataUp(DEF_UEP1, KB_Data_Pack, sizeof(KB_Data_Pack), DEF_UEP_CPY_LOAD);
+            CH9329_SendAck(addr, cmd_code, 0x00);
+
+        // ---------- 绝对鼠标数据 ----------
+        } else if (cmd_code == CMD_SEND_MS_ABS_DATA && data_len == 7 && data[0] == 0x02) {
+            uint8_t buttons = data[1];
+            uint16_t x = data[2] | (data[3] << 8);
+            uint16_t y = data[4] | (data[5] << 8);
+            int8_t wheel = (int8_t)data[6];
+
+            // 构建绝对坐标鼠标包
+            uint8_t abs_mouse[5] = {
+                buttons,
+                (uint8_t)(x & 0xFF),
+                (uint8_t)((x >> 8) & 0xFF),
+                (uint8_t)(y & 0xFF),
+                (uint8_t)((y >> 8) & 0xFF),
+            };
+
+            USBFS_Endp_DataUp(DEF_UEP2, abs_mouse, sizeof(abs_mouse), DEF_UEP_CPY_LOAD);
+
+            // 滚轮单独发送
+            if (wheel != 0) {
+                uint8_t wheel_packet[4] = {0x00, 0x00, 0x00, (uint8_t)wheel};
+                USBFS_Endp_DataUp(DEF_UEP2, wheel_packet, sizeof(wheel_packet), DEF_UEP_CPY_LOAD);
+            }
+
+            CH9329_SendAck(addr, cmd_code, 0x00);
+        }
+
+        index += 5 + data_len + 1;  // 跳到下一帧
     }
 }
 
 // -------------------- 主接收处理函数 --------------------
 void USB_DataRx_To_KMHandle(void) {
-    // Step 1: 从 RingMemBLE 接收并解析
+    // ----------- 来自 RingMemBLE ----------
     while (RingMemBLE.CurrentLen > 0) {
-        uint8_t resv[64];
-        uint8_t len = (RingMemBLE.CurrentLen > sizeof(resv)) ? sizeof(resv) : RingMemBLE.CurrentLen;
-        if (RingMemRead(&RingMemBLE, resv, len) == SUCCESS) {
-            CH9329_DataParser(resv, len);
+        uint8_t buf[64];
+        uint8_t read_len = (RingMemBLE.CurrentLen > sizeof(buf)) ? sizeof(buf) : RingMemBLE.CurrentLen;
+        if (RingMemRead(&RingMemBLE, buf, read_len) == SUCCESS) {
+            CH9329_DataParser(buf, read_len);
         } else {
             break;
         }
     }
 
-    // Step 2: 从 UART2_Tx_Buf 接收并解析
+    // ----------- 来自 UART2_Tx_Buf ----------
     while (Uart.Tx_RemainNum) {
-        if (Uart.Tx_CurPackLen == 0x00) {
+        if (Uart.Tx_CurPackLen == 0) {
             Uart.Tx_CurPackLen = Uart.Tx_PackLen[Uart.Tx_DealNum];
             Uart.Tx_CurPackPtr = Uart.Tx_DealNum * DEF_USB_FS_PACK_LEN;
         }
 
-        uint8_t uart_buf[32];
+        uint8_t uart_buf[64];
         uint8_t copy_len = (Uart.Tx_CurPackLen > sizeof(uart_buf)) ? sizeof(uart_buf) : Uart.Tx_CurPackLen;
 
         for (uint8_t i = 0; i < copy_len; i++) {

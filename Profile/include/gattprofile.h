@@ -33,14 +33,14 @@ extern "C" {
 #define SIMPLEPROFILE_CHAR5         4           // RW uint8_t - Profile Characteristic 4 value
 
 // Simple Profile Service UUID
-#define SIMPLEPROFILE_SERV_UUID     0xFFE0
+#define SIMPLEPROFILE_SERV_UUID     0xFFF0
 
 // Key Pressed UUID
-#define SIMPLEPROFILE_CHAR1_UUID    0xFFE1
-#define SIMPLEPROFILE_CHAR2_UUID    0xFFE2
-#define SIMPLEPROFILE_CHAR3_UUID    0xFFE3
-#define SIMPLEPROFILE_CHAR4_UUID    0xFFE4
-#define SIMPLEPROFILE_CHAR5_UUID    0xFFE5
+#define SIMPLEPROFILE_CHAR1_UUID    0xFFF1
+#define SIMPLEPROFILE_CHAR2_UUID    0xFFF2
+// #define SIMPLEPROFILE_CHAR3_UUID    0xFFE3
+// #define SIMPLEPROFILE_CHAR4_UUID    0xFFE4
+// #define SIMPLEPROFILE_CHAR5_UUID    0xFFE5
 
 // Simple Keys Profile Services bit fields
 #define SIMPLEPROFILE_SERVICE       0x00000001
@@ -48,9 +48,9 @@ extern "C" {
 // Length of characteristic in bytes ( Default MTU is 23 )
 #define SIMPLEPROFILE_CHAR1_LEN     1
 #define SIMPLEPROFILE_CHAR2_LEN     1
-#define SIMPLEPROFILE_CHAR3_LEN     1
-#define SIMPLEPROFILE_CHAR4_LEN     1
-#define SIMPLEPROFILE_CHAR5_LEN     5
+// #define SIMPLEPROFILE_CHAR3_LEN     1
+// #define SIMPLEPROFILE_CHAR4_LEN     1
+// #define SIMPLEPROFILE_CHAR5_LEN     5
 
 /*********************************************************************
  * TYPEDEFS
