@@ -49,49 +49,49 @@ endif
 
 # Add inputs and outputs from these tool invocations to the build variables 
 SECONDARY_FLASH += \
-BLE_USB.hex \
+KeyMod.hex \
 
 SECONDARY_LIST += \
-BLE_USB.lst \
+KeyMod.lst \
 
 SECONDARY_SIZE += \
-BLE_USB.siz \
+KeyMod.siz \
 
 
 # All Target
 all: 
 	$(MAKE) --no-print-directory main-build 
 
-main-build: BLE_USB.elf secondary-outputs
+main-build: KeyMod.elf secondary-outputs
 
 CFLAGS += -include stdint.h -include stddef.h
 
 # Tool invocations
-BLE_USB.elf: $(OBJS) $(USER_OBJS)
+KeyMod.elf: $(OBJS) $(USER_OBJS)
 	@echo 'Building target: $@'
 	@echo 'Invoking: GNU RISC-V Cross C Linker'
-	riscv-none-embed-gcc -march=rv32imacxw -mabi=ilp32 -mcmodel=medany -msmall-data-limit=8 -mno-save-restore -fmax-errors=20 -Os -fmessage-length=0 -fsigned-char -ffunction-sections -fdata-sections -fno-common -g $(CFLAGS) -T "../HAL/Link.ld" -nostartfiles -Xlinker --gc-sections -L"../" -L"../LIB" -Xlinker --print-memory-usage -Wl,-Map,"BLE_USB.map" --specs=nano.specs --specs=nosys.specs -o "BLE_USB.elf" $(OBJS) $(USER_OBJS) $(LIBS)
+	riscv-none-embed-gcc -march=rv32imacxw -mabi=ilp32 -mcmodel=medany -msmall-data-limit=8 -mno-save-restore -fmax-errors=20 -Os -fmessage-length=0 -fsigned-char -ffunction-sections -fdata-sections -fno-common -g $(CFLAGS) -T "../HAL/Link.ld" -nostartfiles -Xlinker --gc-sections -L"../" -L"../LIB" -Xlinker --print-memory-usage -Wl,-Map,"KeyMod.map" --specs=nano.specs --specs=nosys.specs -o "KeyMod.elf" $(OBJS) $(USER_OBJS) $(LIBS)
 	@echo 'Finished building target: $@'
 	@
-BLE_USB.hex: BLE_USB.elf
+KeyMod.hex: KeyMod.elf
 	@echo 'Invoking: GNU RISC-V Cross Create Flash Image'
-	@	riscv-none-embed-objcopy -O ihex "BLE_USB.elf" "BLE_USB.hex"
+	@	riscv-none-embed-objcopy -O ihex "KeyMod.elf" "KeyMod.hex"
 	@echo 'Finished building $@'
 	@
-BLE_USB.lst: BLE_USB.elf
+KeyMod.lst: KeyMod.elf
 	@echo 'Invoking: GNU RISC-V Cross Create Listing'
-	@	riscv-none-embed-objdump --source --all-headers --demangle -M xw --line-numbers --wide "BLE_USB.elf" > "BLE_USB.lst"
+	@	riscv-none-embed-objdump --source --all-headers --demangle -M xw --line-numbers --wide "KeyMod.elf" > "KeyMod.lst"
 	@echo 'Finished building $@'
 	@
-BLE_USB.siz: BLE_USB.elf
+KeyMod.siz: KeyMod.elf
 	@echo 'Invoking: GNU RISC-V Cross Print Size'
-	riscv-none-embed-size --format=berkeley "BLE_USB.elf"
+	riscv-none-embed-size --format=berkeley "KeyMod.elf"
 	@echo 'Finished building $@'
 	@
 
 # Other Targets
 clean:
-	-$(RM) $(OBJS)$(SECONDARY_FLASH)$(SECONDARY_LIST)$(SECONDARY_SIZE)$(S_DEPS)$(S_UPPER_DEPS)$(ASM_DEPS)$(ASM_UPPER_DEPS)$(C_DEPS) BLE_USB.elf
+	-$(RM) $(OBJS)$(SECONDARY_FLASH)$(SECONDARY_LIST)$(SECONDARY_SIZE)$(S_DEPS)$(S_UPPER_DEPS)$(ASM_DEPS)$(ASM_UPPER_DEPS)$(C_DEPS) KeyMod.elf
 
 secondary-outputs: $(SECONDARY_FLASH) $(SECONDARY_LIST) $(SECONDARY_SIZE)
 

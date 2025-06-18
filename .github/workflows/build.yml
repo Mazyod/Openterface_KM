@@ -1,4 +1,4 @@
-name: Build CH32 Project
+name: Build Openterface KeyMod Project
 
 on:
   push:
@@ -33,8 +33,6 @@ jobs:
         echo "C:\\tools\\risc-none-embed-gcc\\bin" >> $GITHUB_PATH
         echo "RISC_COMPILER_PATH=C:\\tools\\risc-none-embed-gcc" >> $GITHUB_ENV
 
-
-
     - name: Build the project
       run: |
         echo "Starting build process..."
@@ -46,8 +44,8 @@ jobs:
     - name: Save build artifacts
       uses: actions/upload-artifact@v4
       with:
-        name: keymod
-        path: |
-          ${{ env.BUILD_DIR }}\keymod.hex
-          ${{ env.BUILD_DIR }}\keymod.elf
+        name: openterface-keymod-build
         if-no-files-found: error
+        path: |
+          ${{ env.BUILD_DIR }}\KeyMod.hex
+          ${{ env.BUILD_DIR }}\KeyMod.elf
