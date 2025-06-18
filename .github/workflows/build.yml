@@ -5,29 +5,49 @@ on:
     branches:
       - main
 
+env:
+  SOURCE_DIR: ${{ github.workspace }}
+  BUILD_DIR: ${{ github.workspace }}\build
+  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+  RISC_COMPILER_VERSION: 8.2.0-3.1.1
+
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: windows-latest
 
     steps:
     - name: Checkout code
       uses: actions/checkout@v2
 
-    - name: Install RISC-V Toolchain
+    - name: Install build dependencies
       run: |
-        sudo apt-get update
-        sudo apt-get install -y gcc-riscv64-unknown-elf binutils-riscv64-unknown-elf
+        choco install -y make wget unzip
+        echo "PATH=C:\\ProgramData\\chocolatey\\bin;${{ env.PATH }}" >> $GITHUB_PATH
 
-    - name: Build Project
+    - name: Clone risc-none-embed-gcc and configure environment
       run: |
-        make  # Adjust based on your project's build system
+        wget https://github.com/openwch/risc-none-embed-gcc/archive/refs/tags/8.2.0.zip 
+        unzip 8.2.0.zip
+        move risc-none-embed-gcc-8.2.0 c:\\tools\\risc-none-embed-gcc
+        echo "RISC_COMPILER_PATH=C:\\tools\\risc-none-embed-gcc\\risc-none-embed-gcc-${{ env.RISC_COMPILER_VERSION }}" >> $GITHUB_ENV
+        echo "C:\\tools\\risc-none-embed-gcc\\bin" >> $GITHUB_PATH
+        echo "RISC_COMPILER_PATH=C:\\tools\\risc-none-embed-gcc" >> $GITHUB_ENV
 
-    - name: Generate Hex File
+
+
+    - name: Build the project
       run: |
-        riscv64-unknown-elf-objcopy -O ihex your_project.elf your_project.hex
+        echo "Starting build process..."
+        cd build
+        $env:PATH = "C:\tools\risc-none-embed-gcc\bin;" + $env:PATH
+        $env:RISC_COMPILER_PATH = "C:\tools\risc-none-embed-gcc"
+        make -j4 all || echo "Build failed. Check logs for details."
 
-    - name: Upload Hex File as Artifact
-      uses: actions/upload-artifact@v2
+    - name: Save build artifacts
+      uses: actions/upload-artifact@v4
       with:
-        name: your_project.hex
-        path: your_project.hex
+        name: keymod
+        path: |
+          ${{ env.BUILD_DIR }}\keymod.hex
+          ${{ env.BUILD_DIR }}\keymod.elf
+        if-no-files-found: error
