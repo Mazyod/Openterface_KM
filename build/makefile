@@ -2,6 +2,11 @@
 # MRS Version: 2.1.0
 # Automatically-generated file. Do not edit!
 ################################################################################
+
+# Define the source directory
+SRC_DIR := $(abspath $(dir $(CURDIR)))
+
+# Include other makefiles
 -include ../makefile.init
 
 RM := rm -rf
@@ -59,11 +64,13 @@ all:
 
 main-build: BLE_USB.elf secondary-outputs
 
+CFLAGS += -include stdint.h -include stddef.h
+
 # Tool invocations
 BLE_USB.elf: $(OBJS) $(USER_OBJS)
 	@echo 'Building target: $@'
 	@echo 'Invoking: GNU RISC-V Cross C Linker'
-	riscv-none-embed-gcc -march=rv32imacxw -mabi=ilp32 -mcmodel=medany -msmall-data-limit=8 -mno-save-restore -fmax-errors=20 -Os -fmessage-length=0 -fsigned-char -ffunction-sections -fdata-sections -fno-common -g -T "c:/Users/admin/projects/Openterface_KM/HAL/Link.ld" -nostartfiles -Xlinker --gc-sections -L"c:\Users\admin\projects\Openterface_KM" -L"c:/Users/admin/projects/Openterface_KM/LIB" -Xlinker --print-memory-usage -Wl,-Map,"BLE_USB.map" --specs=nano.specs --specs=nosys.specs -o "BLE_USB.elf" $(OBJS) $(USER_OBJS) $(LIBS)
+	riscv-none-embed-gcc -march=rv32imacxw -mabi=ilp32 -mcmodel=medany -msmall-data-limit=8 -mno-save-restore -fmax-errors=20 -Os -fmessage-length=0 -fsigned-char -ffunction-sections -fdata-sections -fno-common -g $(CFLAGS) -T "../HAL/Link.ld" -nostartfiles -Xlinker --gc-sections -L"../" -L"../LIB" -Xlinker --print-memory-usage -Wl,-Map,"BLE_USB.map" --specs=nano.specs --specs=nosys.specs -o "BLE_USB.elf" $(OBJS) $(USER_OBJS) $(LIBS)
 	@echo 'Finished building target: $@'
 	@
 BLE_USB.hex: BLE_USB.elf

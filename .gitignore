@@ -1,1 +1,7 @@
 obj/
+*.elf
+*.hex
+*.lst
+*.map
+*.o
+*.d
