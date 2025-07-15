@@ -76,15 +76,13 @@ void MCU_Sleep_Wakeup_Operate( void )
 #include <string.h>
 #include <stdint.h>
 
-// -------------------- 协议定义区 --------------------
+// -------------------- Protocol Definitions --------------------
 #define CH9329_FRAME_HEAD1      0x57
 #define CH9329_FRAME_HEAD2      0xAB
 
 #define CMD_SEND_KB_GENERAL_DATA 0x02
-#define CMD_SEND_MS_REL_DATA     0x05
-#define CMD_SEND_MS_ABS_DATA     0x04  // 绝对鼠标数据命令码
+#define CMD_SEND_MS_REL_DATA    0x05
 
-// 修饰键位定义
 #define MOD_LCTRL   0x01
 #define MOD_LSHIFT  0x02
 #define MOD_LALT    0x04
@@ -94,14 +92,25 @@ void MCU_Sleep_Wakeup_Operate( void )
 #define MOD_RALT    0x40
 #define MOD_RGUI    0x80
 
-// -------------------- 数据缓冲区 --------------------
+#define KEY_PIPE      0x64
+#define KEY_TAB       0x2B
+#define KEY_LSHIFT    0xE1
+#define KEY_RSHIFT    0xE5
+#define KEY_LCTRL     0xE0
+#define KEY_RCTRL     0xE4
+#define KEY_LALT      0xE2
+#define KEY_RALT      0xE6
+#define KEY_LWIN      0xE3
+#define KEY_RWIN      0xE7
+
+// -------------------- Data Buffers --------------------
 uint8_t KB_Data_Pack[8];
 uint8_t MS_Data_Pack[4];
 
 uint8_t mod_keys = 0;
 uint8_t normal_keys[6] = {0};
 
-// -------------------- 应答函数 --------------------
+// -------------------- ACK Packet Sender --------------------
 void CH9329_SendAck(uint8_t addr, uint8_t cmd_code, uint8_t status) {
     uint8_t ack_packet[7] = {CH9329_FRAME_HEAD1, CH9329_FRAME_HEAD2, addr, cmd_code, 0x01, status, 0};
     for (int i = 0; i < 6; i++) {
@@ -110,99 +119,180 @@ void CH9329_SendAck(uint8_t addr, uint8_t cmd_code, uint8_t status) {
     USBD_ENDPx_DataUp(ENDP3, ack_packet, sizeof(ack_packet));
 }
 
-// -------------------- 数据解析处理 --------------------
-void CH9329_DataParser(uint8_t* buf, uint16_t len) {
-    uint16_t index = 0;
+// -------------------- CH9329 Data Parser --------------------
+void CH9329_DataParser(uint8_t* buf, uint8_t len) {
+    static uint8_t kb_last_data[8] = {0};
+    static uint8_t kb_repeat_count = 0;
+    static bool kb_long_press = 0;
+
+    static uint8_t ms_last_data[4] = {0};
+    static uint8_t ms_repeat_count = 0;
+    static bool ms_long_press = 0;
+
+    uint8_t index = 0;
 
     while (index + 6 <= len) {
-        // 查找帧头
-        if (buf[index] != CH9329_FRAME_HEAD1 || buf[index + 1] != CH9329_FRAME_HEAD2) {
-            index++;
-            continue;
-        }
+        if (buf[index] == CH9329_FRAME_HEAD1 && buf[index + 1] == CH9329_FRAME_HEAD2) {
+            uint8_t frame_start = index;
+            index += 2;
 
-        uint8_t addr = buf[index + 2];
-        uint8_t cmd_code = buf[index + 3];
-        uint8_t data_len = buf[index + 4];
+            uint8_t addr = buf[index++];
+            uint8_t cmd_code = buf[index++];
+            uint8_t data_len = buf[index++];
 
-        if ((index + 5 + data_len + 1) > len) break;  // 数据不足则退出
-
-        uint8_t checksum = 0;
-        for (uint8_t i = 0; i < 5 + data_len; i++) {
-            checksum += buf[index + i];
-        }
-
-        if (checksum != buf[index + 5 + data_len]) {
-            index++;  // 校验失败跳过此帧
-            continue;
-        }
-
-        uint8_t* data = &buf[index + 5];
-
-        // ---------- 键盘数据 ----------
-        if (cmd_code == CMD_SEND_KB_GENERAL_DATA && data_len == 8) {
-            mod_keys = data[0];
-            memcpy(normal_keys, &data[2], 6);
-
-            memset(KB_Data_Pack, 0x00, sizeof(KB_Data_Pack));
-            KB_Data_Pack[0] = mod_keys;
-            memcpy(&KB_Data_Pack[2], normal_keys, 6);
-
-            USBFS_Endp_DataUp(DEF_UEP1, KB_Data_Pack, sizeof(KB_Data_Pack), DEF_UEP_CPY_LOAD);
-            CH9329_SendAck(addr, cmd_code, 0x00);
-
-        // ---------- 绝对鼠标数据 ----------
-        } else if (cmd_code == CMD_SEND_MS_ABS_DATA && data_len == 7 && data[0] == 0x02) {
-            uint8_t buttons = data[1];
-            uint16_t x = data[2] | (data[3] << 8);
-            uint16_t y = data[4] | (data[5] << 8);
-            int8_t wheel = (int8_t)data[6];
-
-            // 构建绝对坐标鼠标包
-            uint8_t abs_mouse[5] = {
-                buttons,
-                (uint8_t)(x & 0xFF),
-                (uint8_t)((x >> 8) & 0xFF),
-                (uint8_t)(y & 0xFF),
-                (uint8_t)((y >> 8) & 0xFF),
-            };
-
-            USBFS_Endp_DataUp(DEF_UEP2, abs_mouse, sizeof(abs_mouse), DEF_UEP_CPY_LOAD);
-
-            // 滚轮单独发送
-            if (wheel != 0) {
-                uint8_t wheel_packet[4] = {0x00, 0x00, 0x00, (uint8_t)wheel};
-                USBFS_Endp_DataUp(DEF_UEP2, wheel_packet, sizeof(wheel_packet), DEF_UEP_CPY_LOAD);
+            if ((index + data_len + 1) > len) {
+                break;  // Incomplete frame
             }
 
-            CH9329_SendAck(addr, cmd_code, 0x00);
-        }
+            uint8_t checksum = CH9329_FRAME_HEAD1 + CH9329_FRAME_HEAD2 + addr + cmd_code + data_len;
+            uint8_t data[8] = {0};
+            for (uint8_t i = 0; i < data_len && i < sizeof(data); i++) {
+                data[i] = buf[index++];
+                checksum += data[i];
+            }
 
-        index += 5 + data_len + 1;  // 跳到下一帧
+            uint8_t recv_sum = buf[index++];
+
+            if (checksum != recv_sum) {
+                continue;  // Checksum error
+            }
+
+            // ---------- Reset long press state if non-keyboard/mouse command ----------
+            if (cmd_code != CMD_SEND_KB_GENERAL_DATA) {
+                kb_repeat_count = 0;
+                kb_long_press = 0;
+                memset(kb_last_data, 0, sizeof(kb_last_data));
+            }
+
+            if (cmd_code != CMD_SEND_MS_REL_DATA) {
+                ms_repeat_count = 0;
+                ms_long_press = 0;
+                memset(ms_last_data, 0, sizeof(ms_last_data));
+            }
+
+            // ---------- Handle Keyboard Data ----------
+            if (cmd_code == CMD_SEND_KB_GENERAL_DATA && data_len == 8) {
+                bool kb_same_as_last = (memcmp(data, kb_last_data, 8) == 0);
+
+                if (kb_same_as_last) {
+                    kb_repeat_count++;
+                } else {
+                    kb_repeat_count = 1;
+                    memcpy(kb_last_data, data, 8);
+                    kb_long_press = 0;
+                }
+
+                mod_keys = data[0];
+                memcpy(normal_keys, &data[2], 6);
+
+                memset(KB_Data_Pack, 0x00, sizeof(KB_Data_Pack));
+                KB_Data_Pack[0] = mod_keys;
+                memcpy(&KB_Data_Pack[2], normal_keys, 6);
+
+                USBFS_Endp_DataUp(DEF_UEP1, KB_Data_Pack, sizeof(KB_Data_Pack), DEF_UEP_CPY_LOAD);
+                CH9329_SendAck(addr, cmd_code, 0x00);
+
+                bool has_non_modifier = 0;
+                for (int i = 0; i < 6; i++) {
+                    uint8_t key = normal_keys[i];
+                    if (key != 0 && key != KEY_TAB &&
+                        key != KEY_LSHIFT && key != KEY_RSHIFT &&
+                        key != KEY_LCTRL  && key != KEY_RCTRL &&
+                        key != KEY_LALT   && key != KEY_RALT &&
+                        key != KEY_LWIN   && key != KEY_RWIN) {
+                        has_non_modifier = 1;
+                        break;
+                    }
+                }
+
+                bool is_kb_release = (mod_keys == 0 && memcmp(normal_keys, "\0\0\0\0\0\0", 6) == 0);
+
+                if (has_non_modifier && !kb_long_press) {
+                    if (kb_repeat_count >= 3) {
+                        kb_long_press = 1;
+                    } else {
+                        Delay_Ms(10);
+                        uint8_t release_pack[8] = {0};
+                        release_pack[0] = mod_keys;  // Keep modifier keys
+                        USBFS_Endp_DataUp(DEF_UEP1, release_pack, sizeof(release_pack), DEF_UEP_CPY_LOAD);
+                    }
+                }
+
+                if (is_kb_release) {
+                    kb_long_press = 0;
+                    kb_repeat_count = 0;
+                    memset(kb_last_data, 0, sizeof(kb_last_data));
+                }
+
+            }
+            // ---------- Handle Mouse Data ----------
+            else if (cmd_code == CMD_SEND_MS_REL_DATA && data_len >= 5) {
+                bool ms_same_as_last = (memcmp(&data[1], ms_last_data, 4) == 0);
+
+                if (ms_same_as_last) {
+                    ms_repeat_count++;
+                } else {
+                    ms_repeat_count = 1;
+                    memcpy(ms_last_data, &data[1], 4);
+                    ms_long_press = 0;
+                }
+
+                memset(MS_Data_Pack, 0x00, sizeof(MS_Data_Pack));
+                MS_Data_Pack[0] = data[1];  // Mouse buttons
+                MS_Data_Pack[1] = (data[2] & 0x80) ? (int8_t)(data[2] - 256) : data[2];  // X movement
+                MS_Data_Pack[2] = (data[3] & 0x80) ? (int8_t)(data[3] - 256) : data[3];  // Y movement
+                MS_Data_Pack[3] = (data[4] & 0x80) ? (int8_t)(data[4] - 256) : data[4];  // Wheel
+
+                USBFS_Endp_DataUp(DEF_UEP2, MS_Data_Pack, sizeof(MS_Data_Pack), DEF_UEP_CPY_LOAD);
+                CH9329_SendAck(addr, cmd_code, 0x00);
+
+                bool ms_need_release = (MS_Data_Pack[0] != 0 || MS_Data_Pack[1] != 0 || MS_Data_Pack[2] != 0 || MS_Data_Pack[3] != 0);
+                bool is_ms_release = (memcmp(MS_Data_Pack, "\0\0\0\0", 4) == 0);
+
+                if (ms_need_release && !ms_long_press) {
+                    if (ms_repeat_count >= 3) {
+                        ms_long_press = 1;
+                    } else {
+                        Delay_Ms(10);
+                        uint8_t release_ms_pack[4] = {0};
+                        USBFS_Endp_DataUp(DEF_UEP2, release_ms_pack, sizeof(release_ms_pack), DEF_UEP_CPY_LOAD);
+                    }
+                }
+
+                if (is_ms_release) {
+                    ms_long_press = 0;
+                    ms_repeat_count = 0;
+                    memset(ms_last_data, 0, sizeof(ms_last_data));
+                }
+            }
+
+        } else {
+            index++;  // Search for next frame header
+        }
     }
 }
 
-// -------------------- 主接收处理函数 --------------------
+// -------------------- Main Data Receive Handler --------------------
 void USB_DataRx_To_KMHandle(void) {
-    // ----------- 来自 RingMemBLE ----------
+    // Step 1: Read and parse from BLE ring buffer
     while (RingMemBLE.CurrentLen > 0) {
-        uint8_t buf[64];
-        uint8_t read_len = (RingMemBLE.CurrentLen > sizeof(buf)) ? sizeof(buf) : RingMemBLE.CurrentLen;
-        if (RingMemRead(&RingMemBLE, buf, read_len) == SUCCESS) {
-            CH9329_DataParser(buf, read_len);
+        uint8_t resv[64];
+        uint8_t len = (RingMemBLE.CurrentLen > sizeof(resv)) ? sizeof(resv) : RingMemBLE.CurrentLen;
+        if (RingMemRead(&RingMemBLE, resv, len) == SUCCESS) {
+            CH9329_DataParser(resv, len);
         } else {
             break;
         }
     }
 
-    // ----------- 来自 UART2_Tx_Buf ----------
+    // Step 2: Read and parse from UART2 transmission buffer
     while (Uart.Tx_RemainNum) {
-        if (Uart.Tx_CurPackLen == 0) {
+        if (Uart.Tx_CurPackLen == 0x00) {
             Uart.Tx_CurPackLen = Uart.Tx_PackLen[Uart.Tx_DealNum];
             Uart.Tx_CurPackPtr = Uart.Tx_DealNum * DEF_USB_FS_PACK_LEN;
         }
 
-        uint8_t uart_buf[64];
+        uint8_t uart_buf[32];
         uint8_t copy_len = (Uart.Tx_CurPackLen > sizeof(uart_buf)) ? sizeof(uart_buf) : Uart.Tx_CurPackLen;
 
         for (uint8_t i = 0; i < copy_len; i++) {

@@ -5,7 +5,7 @@
 			"type": "mrs-debugger",
 			"request": "launch",
 			"name": "BLE_USB",
-			"cwd": "e:\\openterface\\Openterface_KM",
+			"cwd": "e:\\openterface\\Openterface_KM(相对鼠标\\Openterface_KM",
 			"openOCDCfg": {
 				"useLocalOpenOCD": true,
 				"executable": "e:/MounRiver/MounRiver_Studio2/resources/app/resources/win32/components/WCH/OpenOCD/OpenOCD/bin/openocd.exe",
@@ -39,8 +39,8 @@
 					"additionalCommands": []
 				},
 				"loadedFiles": {
-					"executableFile": "e:\\openterface\\Openterface_KM\\obj\\BLE_USB.elf",
-					"symbolFile": "e:\\openterface\\Openterface_KM\\obj\\BLE_USB.elf",
+					"executableFile": "e:\\openterface\\Openterface_KM(相对鼠标\\Openterface_KM\\obj\\BLE_USB.elf",
+					"symbolFile": "e:\\openterface\\Openterface_KM(相对鼠标\\Openterface_KM\\obj\\BLE_USB.elf",
 					"executableFileOffset": 0,
 					"symbolFileOffset": 0
 				},
