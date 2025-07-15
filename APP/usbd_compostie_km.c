@@ -81,6 +81,7 @@ void MCU_Sleep_Wakeup_Operate( void )
 #define CH9329_FRAME_HEAD2      0xAB
 
 #define CMD_SEND_KB_GENERAL_DATA 0x02
+#define CMD_SEND_KB_GAME_DATA    0x12
 #define CMD_SEND_MS_REL_DATA    0x05
 
 #define MOD_LCTRL   0x01
@@ -162,7 +163,7 @@ void CH9329_HandleKeyboard(uint8_t addr, uint8_t cmd_code, uint8_t* data, uint8_
 
     bool is_kb_release = (mod_keys == 0 && memcmp(normal_keys, "\0\0\0\0\0\0", 6) == 0);
 
-    if (has_non_modifier && !kb_long_press) {
+    if (has_non_modifier && !kb_long_press && cmd_code != CMD_SEND_KB_GAME_DATA) {
         if (kb_repeat_count >= 3) {
             kb_long_press = 1;
         } else {
@@ -182,21 +183,7 @@ void CH9329_HandleKeyboard(uint8_t addr, uint8_t cmd_code, uint8_t* data, uint8_
 
 // -------------------- Mouse Handler --------------------
 void CH9329_HandleMouse(uint8_t addr, uint8_t cmd_code, uint8_t* data, uint8_t data_len) {
-    static uint8_t ms_last_data[4] = {0};
-    static uint8_t ms_repeat_count = 0;
-    static bool ms_long_press = 0;
-
     if (data_len < 5) return;
-
-    bool ms_same_as_last = (memcmp(&data[1], ms_last_data, 4) == 0);
-
-    if (ms_same_as_last) {
-        ms_repeat_count++;
-    } else {
-        ms_repeat_count = 1;
-        memcpy(ms_last_data, &data[1], 4);
-        ms_long_press = 0;
-    }
 
     memset(MS_Data_Pack, 0x00, sizeof(MS_Data_Pack));
     MS_Data_Pack[0] = data[1];  // Mouse buttons
@@ -206,25 +193,6 @@ void CH9329_HandleMouse(uint8_t addr, uint8_t cmd_code, uint8_t* data, uint8_t d
 
     USBFS_Endp_DataUp(DEF_UEP2, MS_Data_Pack, sizeof(MS_Data_Pack), DEF_UEP_CPY_LOAD);
     CH9329_SendAck(addr, cmd_code, 0x00);
-
-    bool ms_need_release = (MS_Data_Pack[0] != 0 || MS_Data_Pack[1] != 0 || MS_Data_Pack[2] != 0 || MS_Data_Pack[3] != 0);
-    bool is_ms_release = (memcmp(MS_Data_Pack, "\0\0\0\0", 4) == 0);
-
-    if (ms_need_release && !ms_long_press) {
-        if (ms_repeat_count >= 3) {
-            ms_long_press = 1;
-        } else {
-            Delay_Ms(10);
-            uint8_t release_ms_pack[4] = {0};
-            USBFS_Endp_DataUp(DEF_UEP2, release_ms_pack, sizeof(release_ms_pack), DEF_UEP_CPY_LOAD);
-        }
-    }
-
-    if (is_ms_release) {
-        ms_long_press = 0;
-        ms_repeat_count = 0;
-        memset(ms_last_data, 0, sizeof(ms_last_data));
-    }
 }
 
 
@@ -259,7 +227,7 @@ void CH9329_DataParser(uint8_t* buf, uint8_t len) {
             }
 
             // Handle Keyboard Data
-            if (cmd_code == CMD_SEND_KB_GENERAL_DATA) {
+            if (cmd_code == CMD_SEND_KB_GENERAL_DATA || cmd_code == CMD_SEND_KB_GAME_DATA) {
                 CH9329_HandleKeyboard(addr, cmd_code, data, data_len);
             }
             // Handle Mouse Data
