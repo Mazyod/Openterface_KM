@@ -119,16 +119,117 @@ void CH9329_SendAck(uint8_t addr, uint8_t cmd_code, uint8_t status) {
     USBD_ENDPx_DataUp(ENDP3, ack_packet, sizeof(ack_packet));
 }
 
-// -------------------- CH9329 Data Parser --------------------
-void CH9329_DataParser(uint8_t* buf, uint8_t len) {
+// -------------------- Keyboard Handler --------------------
+void CH9329_HandleKeyboard(uint8_t addr, uint8_t cmd_code, uint8_t* data, uint8_t data_len) {
     static uint8_t kb_last_data[8] = {0};
     static uint8_t kb_repeat_count = 0;
     static bool kb_long_press = 0;
 
+    if (data_len != 8) return;
+
+    bool kb_same_as_last = (memcmp(data, kb_last_data, 8) == 0);
+
+    if (kb_same_as_last) {
+        kb_repeat_count++;
+    } else {
+        kb_repeat_count = 1;
+        memcpy(kb_last_data, data, 8);
+        kb_long_press = 0;
+    }
+
+    mod_keys = data[0];
+    memcpy(normal_keys, &data[2], 6);
+
+    memset(KB_Data_Pack, 0x00, sizeof(KB_Data_Pack));
+    KB_Data_Pack[0] = mod_keys;
+    memcpy(&KB_Data_Pack[2], normal_keys, 6);
+
+    USBFS_Endp_DataUp(DEF_UEP1, KB_Data_Pack, sizeof(KB_Data_Pack), DEF_UEP_CPY_LOAD);
+    CH9329_SendAck(addr, cmd_code, 0x00);
+
+    bool has_non_modifier = 0;
+    for (int i = 0; i < 6; i++) {
+        uint8_t key = normal_keys[i];
+        if (key != 0 && key != KEY_TAB &&
+            key != KEY_LSHIFT && key != KEY_RSHIFT &&
+            key != KEY_LCTRL  && key != KEY_RCTRL &&
+            key != KEY_LALT   && key != KEY_RALT &&
+            key != KEY_LWIN   && key != KEY_RWIN) {
+            has_non_modifier = 1;
+            break;
+        }
+    }
+
+    bool is_kb_release = (mod_keys == 0 && memcmp(normal_keys, "\0\0\0\0\0\0", 6) == 0);
+
+    if (has_non_modifier && !kb_long_press) {
+        if (kb_repeat_count >= 3) {
+            kb_long_press = 1;
+        } else {
+            Delay_Ms(10);
+            uint8_t release_pack[8] = {0};
+            release_pack[0] = mod_keys;  // Keep modifier keys
+            USBFS_Endp_DataUp(DEF_UEP1, release_pack, sizeof(release_pack), DEF_UEP_CPY_LOAD);
+        }
+    }
+
+    if (is_kb_release) {
+        kb_long_press = 0;
+        kb_repeat_count = 0;
+        memset(kb_last_data, 0, sizeof(kb_last_data));
+    }
+}
+
+// -------------------- Mouse Handler --------------------
+void CH9329_HandleMouse(uint8_t addr, uint8_t cmd_code, uint8_t* data, uint8_t data_len) {
     static uint8_t ms_last_data[4] = {0};
     static uint8_t ms_repeat_count = 0;
     static bool ms_long_press = 0;
 
+    if (data_len < 5) return;
+
+    bool ms_same_as_last = (memcmp(&data[1], ms_last_data, 4) == 0);
+
+    if (ms_same_as_last) {
+        ms_repeat_count++;
+    } else {
+        ms_repeat_count = 1;
+        memcpy(ms_last_data, &data[1], 4);
+        ms_long_press = 0;
+    }
+
+    memset(MS_Data_Pack, 0x00, sizeof(MS_Data_Pack));
+    MS_Data_Pack[0] = data[1];  // Mouse buttons
+    MS_Data_Pack[1] = (data[2] & 0x80) ? (int8_t)(data[2] - 256) : data[2];  // X movement
+    MS_Data_Pack[2] = (data[3] & 0x80) ? (int8_t)(data[3] - 256) : data[3];  // Y movement
+    MS_Data_Pack[3] = (data[4] & 0x80) ? (int8_t)(data[4] - 256) : data[4];  // Wheel
+
+    USBFS_Endp_DataUp(DEF_UEP2, MS_Data_Pack, sizeof(MS_Data_Pack), DEF_UEP_CPY_LOAD);
+    CH9329_SendAck(addr, cmd_code, 0x00);
+
+    bool ms_need_release = (MS_Data_Pack[0] != 0 || MS_Data_Pack[1] != 0 || MS_Data_Pack[2] != 0 || MS_Data_Pack[3] != 0);
+    bool is_ms_release = (memcmp(MS_Data_Pack, "\0\0\0\0", 4) == 0);
+
+    if (ms_need_release && !ms_long_press) {
+        if (ms_repeat_count >= 3) {
+            ms_long_press = 1;
+        } else {
+            Delay_Ms(10);
+            uint8_t release_ms_pack[4] = {0};
+            USBFS_Endp_DataUp(DEF_UEP2, release_ms_pack, sizeof(release_ms_pack), DEF_UEP_CPY_LOAD);
+        }
+    }
+
+    if (is_ms_release) {
+        ms_long_press = 0;
+        ms_repeat_count = 0;
+        memset(ms_last_data, 0, sizeof(ms_last_data));
+    }
+}
+
+
+// -------------------- CH9329 Data Parser --------------------
+void CH9329_DataParser(uint8_t* buf, uint8_t len) {
     uint8_t index = 0;
 
     while (index + 6 <= len) {
@@ -157,113 +258,13 @@ void CH9329_DataParser(uint8_t* buf, uint8_t len) {
                 continue;  // Checksum error
             }
 
-            // ---------- Reset long press state if non-keyboard/mouse command ----------
-            if (cmd_code != CMD_SEND_KB_GENERAL_DATA) {
-                kb_repeat_count = 0;
-                kb_long_press = 0;
-                memset(kb_last_data, 0, sizeof(kb_last_data));
+            // Handle Keyboard Data
+            if (cmd_code == CMD_SEND_KB_GENERAL_DATA) {
+                CH9329_HandleKeyboard(addr, cmd_code, data, data_len);
             }
-
-            if (cmd_code != CMD_SEND_MS_REL_DATA) {
-                ms_repeat_count = 0;
-                ms_long_press = 0;
-                memset(ms_last_data, 0, sizeof(ms_last_data));
-            }
-
-            // ---------- Handle Keyboard Data ----------
-            if (cmd_code == CMD_SEND_KB_GENERAL_DATA && data_len == 8) {
-                bool kb_same_as_last = (memcmp(data, kb_last_data, 8) == 0);
-
-                if (kb_same_as_last) {
-                    kb_repeat_count++;
-                } else {
-                    kb_repeat_count = 1;
-                    memcpy(kb_last_data, data, 8);
-                    kb_long_press = 0;
-                }
-
-                mod_keys = data[0];
-                memcpy(normal_keys, &data[2], 6);
-
-                memset(KB_Data_Pack, 0x00, sizeof(KB_Data_Pack));
-                KB_Data_Pack[0] = mod_keys;
-                memcpy(&KB_Data_Pack[2], normal_keys, 6);
-
-                USBFS_Endp_DataUp(DEF_UEP1, KB_Data_Pack, sizeof(KB_Data_Pack), DEF_UEP_CPY_LOAD);
-                CH9329_SendAck(addr, cmd_code, 0x00);
-
-                bool has_non_modifier = 0;
-                for (int i = 0; i < 6; i++) {
-                    uint8_t key = normal_keys[i];
-                    if (key != 0 && key != KEY_TAB &&
-                        key != KEY_LSHIFT && key != KEY_RSHIFT &&
-                        key != KEY_LCTRL  && key != KEY_RCTRL &&
-                        key != KEY_LALT   && key != KEY_RALT &&
-                        key != KEY_LWIN   && key != KEY_RWIN) {
-                        has_non_modifier = 1;
-                        break;
-                    }
-                }
-
-                bool is_kb_release = (mod_keys == 0 && memcmp(normal_keys, "\0\0\0\0\0\0", 6) == 0);
-
-                if (has_non_modifier && !kb_long_press) {
-                    if (kb_repeat_count >= 3) {
-                        kb_long_press = 1;
-                    } else {
-                        Delay_Ms(10);
-                        uint8_t release_pack[8] = {0};
-                        release_pack[0] = mod_keys;  // Keep modifier keys
-                        USBFS_Endp_DataUp(DEF_UEP1, release_pack, sizeof(release_pack), DEF_UEP_CPY_LOAD);
-                    }
-                }
-
-                if (is_kb_release) {
-                    kb_long_press = 0;
-                    kb_repeat_count = 0;
-                    memset(kb_last_data, 0, sizeof(kb_last_data));
-                }
-
-            }
-            // ---------- Handle Mouse Data ----------
-            else if (cmd_code == CMD_SEND_MS_REL_DATA && data_len >= 5) {
-                bool ms_same_as_last = (memcmp(&data[1], ms_last_data, 4) == 0);
-
-                if (ms_same_as_last) {
-                    ms_repeat_count++;
-                } else {
-                    ms_repeat_count = 1;
-                    memcpy(ms_last_data, &data[1], 4);
-                    ms_long_press = 0;
-                }
-
-                memset(MS_Data_Pack, 0x00, sizeof(MS_Data_Pack));
-                MS_Data_Pack[0] = data[1];  // Mouse buttons
-                MS_Data_Pack[1] = (data[2] & 0x80) ? (int8_t)(data[2] - 256) : data[2];  // X movement
-                MS_Data_Pack[2] = (data[3] & 0x80) ? (int8_t)(data[3] - 256) : data[3];  // Y movement
-                MS_Data_Pack[3] = (data[4] & 0x80) ? (int8_t)(data[4] - 256) : data[4];  // Wheel
-
-                USBFS_Endp_DataUp(DEF_UEP2, MS_Data_Pack, sizeof(MS_Data_Pack), DEF_UEP_CPY_LOAD);
-                CH9329_SendAck(addr, cmd_code, 0x00);
-
-                bool ms_need_release = (MS_Data_Pack[0] != 0 || MS_Data_Pack[1] != 0 || MS_Data_Pack[2] != 0 || MS_Data_Pack[3] != 0);
-                bool is_ms_release = (memcmp(MS_Data_Pack, "\0\0\0\0", 4) == 0);
-
-                if (ms_need_release && !ms_long_press) {
-                    if (ms_repeat_count >= 3) {
-                        ms_long_press = 1;
-                    } else {
-                        Delay_Ms(10);
-                        uint8_t release_ms_pack[4] = {0};
-                        USBFS_Endp_DataUp(DEF_UEP2, release_ms_pack, sizeof(release_ms_pack), DEF_UEP_CPY_LOAD);
-                    }
-                }
-
-                if (is_ms_release) {
-                    ms_long_press = 0;
-                    ms_repeat_count = 0;
-                    memset(ms_last_data, 0, sizeof(ms_last_data));
-                }
+            // Handle Mouse Data
+            else if (cmd_code == CMD_SEND_MS_REL_DATA) {
+                CH9329_HandleMouse(addr, cmd_code, data, data_len);
             }
 
         } else {
