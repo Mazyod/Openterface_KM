@@ -19,19 +19,48 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v2
 
+    - name: Cache chocolatey packages
+      uses: actions/cache@v3
+      with:
+        path: C:\ProgramData\chocolatey\lib
+        key: ${{ runner.os }}-choco-${{ hashFiles('**/build.yml') }}
+        restore-keys: |
+          ${{ runner.os }}-choco-
+
     - name: Install build dependencies
       run: |
         choco install -y make wget unzip
-        echo "PATH=C:\\ProgramData\\chocolatey\\bin;${{ env.PATH }}" >> $GITHUB_PATH
+        echo "C:\\ProgramData\\chocolatey\\bin" >> $GITHUB_PATH
+
+    - name: Cache RISC-V compiler
+      uses: actions/cache@v3
+      id: cache-risc-compiler
+      with:
+        path: C:\tools\risc-none-embed-gcc
+        key: ${{ runner.os }}-risc-compiler-${{ env.RISC_COMPILER_VERSION }}
 
     - name: Clone risc-none-embed-gcc and configure environment
+      if: steps.cache-risc-compiler.outputs.cache-hit != 'true'
       run: |
         wget https://github.com/openwch/risc-none-embed-gcc/archive/refs/tags/8.2.0.zip 
         unzip 8.2.0.zip
         move risc-none-embed-gcc-8.2.0 c:\\tools\\risc-none-embed-gcc
+
+    - name: Configure compiler environment
+      run: |
         echo "RISC_COMPILER_PATH=C:\\tools\\risc-none-embed-gcc\\risc-none-embed-gcc-${{ env.RISC_COMPILER_VERSION }}" >> $GITHUB_ENV
         echo "C:\\tools\\risc-none-embed-gcc\\bin" >> $GITHUB_PATH
         echo "RISC_COMPILER_PATH=C:\\tools\\risc-none-embed-gcc" >> $GITHUB_ENV
+
+    - name: Cache build dependencies
+      uses: actions/cache@v3
+      with:
+        path: |
+          build/**/*.o
+          build/**/*.d
+        key: ${{ runner.os }}-build-${{ hashFiles('APP/**', 'HAL/**', 'Profile/**', 'SRC/**', 'LIB/**') }}
+        restore-keys: |
+          ${{ runner.os }}-build-
 
     - name: Build the project
       run: |
