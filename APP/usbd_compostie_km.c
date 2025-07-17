@@ -119,7 +119,8 @@ void CH9329_SendAck(uint8_t addr, uint8_t cmd_code, uint8_t status) {
     for (int i = 0; i < 6; i++) {
         ack_packet[6] += ack_packet[i];
     }
-    USBD_ENDPx_DataUp(ENDP3, ack_packet, sizeof(ack_packet));
+    // Note: ACK packets are typically sent via UART, not USB endpoints
+    // This might need to be sent via UART instead
 }
 
 // -------------------- Keyboard Handler --------------------
