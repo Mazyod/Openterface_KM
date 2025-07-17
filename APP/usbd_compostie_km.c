@@ -204,12 +204,19 @@ void CH9329_HandleAbsoluteMouse(uint8_t addr, uint8_t cmd_code, uint8_t* data, u
 
     memset(ABS_MS_Data_Pack, 0x00, sizeof(ABS_MS_Data_Pack));
     ABS_MS_Data_Pack[0] = data[1];  // Mouse buttons
-    // X coordinate (16-bit absolute)
-    ABS_MS_Data_Pack[1] = data[2];  // X low byte
-    ABS_MS_Data_Pack[2] = data[3];  // X high byte
-    // Y coordinate (16-bit absolute)
-    ABS_MS_Data_Pack[3] = data[4];  // Y low byte
-    ABS_MS_Data_Pack[4] = data[5];  // Y high byte
+    
+    // Map X coordinate from CH9329 4096 range to HID 32768 range (scale by 16)
+    uint16_t x_ch9329 = (data[3] << 8) | data[2];  // Combine high and low bytes
+    uint16_t x_hid = x_ch9329 * 8;  // Scale from 4096 to 32768 range
+    ABS_MS_Data_Pack[1] = x_hid & 0xFF;        // X low byte
+    ABS_MS_Data_Pack[2] = (x_hid >> 8) & 0xFF; // X high byte
+    
+    // Map Y coordinate from CH9329 4096 range to HID 32768 range (scale by 16)
+    uint16_t y_ch9329 = (data[5] << 8) | data[4];  // Combine high and low bytes
+    uint16_t y_hid = y_ch9329 * 8;  // Scale from 4096 to 32768 range
+    ABS_MS_Data_Pack[3] = y_hid & 0xFF;        // Y low byte
+    ABS_MS_Data_Pack[4] = (y_hid >> 8) & 0xFF; // Y high byte
+    
     // Wheel (8-bit relative)
     ABS_MS_Data_Pack[5] = (data[6] & 0x80) ? (int8_t)(data[6] - 256) : data[6];  // Wheel
 
@@ -269,15 +276,15 @@ void CH9329_DataParser(uint8_t* buf, uint8_t len) {
 // -------------------- Main Data Receive Handler --------------------
 void USB_DataRx_To_KMHandle(void) {
     // Step 1: Read and parse from BLE ring buffer
-    while (RingMemBLE.CurrentLen > 0) {
-        uint8_t resv[64];
-        uint8_t len = (RingMemBLE.CurrentLen > sizeof(resv)) ? sizeof(resv) : RingMemBLE.CurrentLen;
-        if (RingMemRead(&RingMemBLE, resv, len) == SUCCESS) {
-            CH9329_DataParser(resv, len);
-        } else {
-            break;
-        }
-    }
+    // while (RingMemBLE.CurrentLen > 0) {
+    //     uint8_t resv[64];
+    //     uint8_t len = (RingMemBLE.CurrentLen > sizeof(resv)) ? sizeof(resv) : RingMemBLE.CurrentLen;
+    //     if (RingMemRead(&RingMemBLE, resv, len) == SUCCESS) {
+    //         CH9329_DataParser(resv, len);
+    //     } else {
+    //         break;
+    //     }
+    // }
 
     // Step 2: Read and parse from UART2 transmission buffer
     while (Uart.Tx_RemainNum) {
