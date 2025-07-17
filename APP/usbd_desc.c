@@ -41,8 +41,8 @@ const uint8_t MyCfgDescr[ ] =
     /* Configuration Descriptor */
     0x09,                                                   // bLength
     0x02,                                                   // bDescriptorType
-    0x3B, 0x00,                                             // wTotalLength
-    0x02,                                                   // bNumInterfaces
+    0x54, 0x00,                                             // wTotalLength (84 bytes total)
+    0x03,                                                   // bNumInterfaces (changed from 2 to 3)
     0x01,                                                   // bConfigurationValue
     0x00,                                                   // iConfiguration
     0xA0,                                                   // bmAttributes: Bus Powered; Remote Wakeup
@@ -100,6 +100,34 @@ const uint8_t MyCfgDescr[ ] =
     0x07,                                                   // bLength
     0x05,                                                   // bDescriptorType
     0x82,                                                   // bEndpointAddress: IN Endpoint 2
+    0x03,                                                   // bmAttributes
+    0x08, 0x00,                                             // wMaxPacketSize
+    0x01,                                                   // bInterval: 1mS
+
+    /* Interface Descriptor (Absolute Mouse) */
+    0x09,                                                   // bLength
+    0x04,                                                   // bDescriptorType
+    0x02,                                                   // bInterfaceNumber
+    0x00,                                                   // bAlternateSetting
+    0x01,                                                   // bNumEndpoints
+    0x03,                                                   // bInterfaceClass
+    0x00,                                                   // bInterfaceSubClass
+    0x00,                                                   // bInterfaceProtocol: None (custom)
+    0x00,                                                   // iInterface
+
+    /* HID Descriptor (Absolute Mouse) */
+    0x09,                                                   // bLength
+    0x21,                                                   // bDescriptorType
+    0x10, 0x01,                                             // bcdHID
+    0x00,                                                   // bCountryCode
+    0x01,                                                   // bNumDescriptors
+    0x22,                                                   // bDescriptorType
+    0x3F, 0x00,                                             // wDescriptorLength (63 bytes)
+
+    /* Endpoint Descriptor (Absolute Mouse) */
+    0x07,                                                   // bLength
+    0x05,                                                   // bDescriptorType
+    0x83,                                                   // bEndpointAddress: IN Endpoint 3
     0x03,                                                   // bmAttributes
     0x08, 0x00,                                             // wMaxPacketSize
     0x01                                                    // bInterval: 1mS
@@ -168,6 +196,43 @@ const uint8_t MouseRepDesc[ ] =
     0x25, 0x7F,                                             // Logical Maximum (127)
     0x75, 0x08,                                             // Report Size (8)
     0x95, 0x03,                                             // Report Count (3)
+    0x81, 0x06,                                             // Input (Data,Variable,Relative)
+    0xC0,                                                   // End Collection
+    0xC0                                                    // End Collection
+};
+
+/* Absolute Mouse Report Descriptor */
+const uint8_t AbsMouseRepDesc[ ] =
+{
+    0x05, 0x01,                                             // Usage Page (Generic Desktop)
+    0x09, 0x02,                                             // Usage (Mouse)
+    0xA1, 0x01,                                             // Collection (Application)
+    0x09, 0x01,                                             // Usage (Pointer)
+    0xA1, 0x00,                                             // Collection (Physical)
+    0x05, 0x09,                                             // Usage Page (Button)
+    0x19, 0x01,                                             // Usage Minimum (Button 1)
+    0x29, 0x03,                                             // Usage Maximum (Button 3)
+    0x15, 0x00,                                             // Logical Minimum (0)
+    0x25, 0x01,                                             // Logical Maximum (1)
+    0x95, 0x03,                                             // Report Count (3)
+    0x75, 0x01,                                             // Report Size (1)
+    0x81, 0x02,                                             // Input (Data,Variable,Absolute)
+    0x95, 0x01,                                             // Report Count (1)
+    0x75, 0x05,                                             // Report Size (5)
+    0x81, 0x01,                                             // Input (Constant,Array,Absolute)
+    0x05, 0x01,                                             // Usage Page (Generic Desktop)
+    0x09, 0x30,                                             // Usage (X)
+    0x09, 0x31,                                             // Usage (Y)
+    0x15, 0x00,                                             // Logical Minimum (0)
+    0x26, 0xFF, 0x7F,                                       // Logical Maximum (32767)
+    0x75, 0x10,                                             // Report Size (16)
+    0x95, 0x02,                                             // Report Count (2)
+    0x81, 0x02,                                             // Input (Data,Variable,Absolute)
+    0x09, 0x38,                                             // Usage (Wheel)
+    0x15, 0x81,                                             // Logical Minimum (-127)
+    0x25, 0x7F,                                             // Logical Maximum (127)
+    0x75, 0x08,                                             // Report Size (8)
+    0x95, 0x01,                                             // Report Count (1)
     0x81, 0x06,                                             // Input (Data,Variable,Relative)
     0xC0,                                                   // End Collection
     0xC0                                                    // End Collection

@@ -82,6 +82,7 @@ void MCU_Sleep_Wakeup_Operate( void )
 
 #define CMD_SEND_KB_GENERAL_DATA 0x02
 #define CMD_SEND_KB_GAME_DATA    0x12
+#define CMD_SEND_MS_ABS_DATA    0x04
 #define CMD_SEND_MS_REL_DATA    0x05
 
 #define MOD_LCTRL   0x01
@@ -107,6 +108,7 @@ void MCU_Sleep_Wakeup_Operate( void )
 // -------------------- Data Buffers --------------------
 uint8_t KB_Data_Pack[8];
 uint8_t MS_Data_Pack[4];
+uint8_t ABS_MS_Data_Pack[6];
 
 uint8_t mod_keys = 0;
 uint8_t normal_keys[6] = {0};
@@ -181,8 +183,8 @@ void CH9329_HandleKeyboard(uint8_t addr, uint8_t cmd_code, uint8_t* data, uint8_
     }
 }
 
-// -------------------- Mouse Handler --------------------
-void CH9329_HandleMouse(uint8_t addr, uint8_t cmd_code, uint8_t* data, uint8_t data_len) {
+// -------------------- Relative Mouse Handler --------------------
+void CH9329_HandleRelativeMouse(uint8_t addr, uint8_t cmd_code, uint8_t* data, uint8_t data_len) {
     if (data_len < 5) return;
 
     memset(MS_Data_Pack, 0x00, sizeof(MS_Data_Pack));
@@ -192,6 +194,25 @@ void CH9329_HandleMouse(uint8_t addr, uint8_t cmd_code, uint8_t* data, uint8_t d
     MS_Data_Pack[3] = (data[4] & 0x80) ? (int8_t)(data[4] - 256) : data[4];  // Wheel
 
     USBFS_Endp_DataUp(DEF_UEP2, MS_Data_Pack, sizeof(MS_Data_Pack), DEF_UEP_CPY_LOAD);
+    CH9329_SendAck(addr, cmd_code, 0x00);
+}
+
+// -------------------- Absolute Mouse Handler --------------------
+void CH9329_HandleAbsoluteMouse(uint8_t addr, uint8_t cmd_code, uint8_t* data, uint8_t data_len) {
+    if (data_len < 7) return;  // Need at least button + X (2 bytes) + Y (2 bytes) + wheel
+
+    memset(ABS_MS_Data_Pack, 0x00, sizeof(ABS_MS_Data_Pack));
+    ABS_MS_Data_Pack[0] = data[1];  // Mouse buttons
+    // X coordinate (16-bit absolute)
+    ABS_MS_Data_Pack[1] = data[2];  // X low byte
+    ABS_MS_Data_Pack[2] = data[3];  // X high byte
+    // Y coordinate (16-bit absolute)
+    ABS_MS_Data_Pack[3] = data[4];  // Y low byte
+    ABS_MS_Data_Pack[4] = data[5];  // Y high byte
+    // Wheel (8-bit relative)
+    ABS_MS_Data_Pack[5] = (data[6] & 0x80) ? (int8_t)(data[6] - 256) : data[6];  // Wheel
+
+    USBFS_Endp_DataUp(DEF_UEP3, ABS_MS_Data_Pack, sizeof(ABS_MS_Data_Pack), DEF_UEP_CPY_LOAD);
     CH9329_SendAck(addr, cmd_code, 0x00);
 }
 
@@ -230,9 +251,12 @@ void CH9329_DataParser(uint8_t* buf, uint8_t len) {
             if (cmd_code == CMD_SEND_KB_GENERAL_DATA || cmd_code == CMD_SEND_KB_GAME_DATA) {
                 CH9329_HandleKeyboard(addr, cmd_code, data, data_len);
             }
-            // Handle Mouse Data
+            // Handle Relative Mouse Data
             else if (cmd_code == CMD_SEND_MS_REL_DATA) {
-                CH9329_HandleMouse(addr, cmd_code, data, data_len);
+                CH9329_HandleRelativeMouse(addr, cmd_code, data, data_len);
+            } // Handle Absolute Mouse Data
+            else if (cmd_code == CMD_SEND_MS_ABS_DATA) {
+                CH9329_HandleAbsoluteMouse(addr, cmd_code, data, data_len);
             }
 
         } else {
