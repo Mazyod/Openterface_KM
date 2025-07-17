@@ -443,6 +443,13 @@ void USBFS_IRQHandler( void )
                         USBFS_Endp_Busy[ DEF_UEP2 ] = 0;
                         break;
 
+                    /* end-point 3 data in interrupt */
+                    case USBFS_UIS_TOKEN_IN | DEF_UEP3:
+                        USBFSD->UEP3_TX_CTRL = ( USBFSD->UEP3_TX_CTRL & ~USBFS_UEP_T_RES_MASK ) | USBFS_UEP_T_RES_NAK;
+                        USBFSD->UEP3_TX_CTRL ^= USBFS_UEP_T_TOG;
+                        USBFS_Endp_Busy[ DEF_UEP3 ] = 0;
+                        break;
+
                     default :
                         break;
                 }
@@ -769,6 +776,11 @@ void USBFS_IRQHandler( void )
                                             USBFSD->UEP2_TX_CTRL = USBFS_UEP_T_RES_NAK;
                                             break;
 
+                                        case ( DEF_UEP_IN | DEF_UEP3 ):
+                                            /* Set End-point 3 IN NAK */
+                                            USBFSD->UEP3_TX_CTRL = USBFS_UEP_T_RES_NAK;
+                                            break;
+
                                         default:
                                             errflag = 0xFF;
                                             break;
@@ -820,6 +832,10 @@ void USBFS_IRQHandler( void )
 
                                         case ( DEF_UEP_IN | DEF_UEP2 ):
                                             USBFSD->UEP2_TX_CTRL = ( USBFSD->UEP2_TX_CTRL & ~USBFS_UEP_T_RES_MASK ) | USBFS_UEP_T_RES_STALL;
+                                            break;
+
+                                        case ( DEF_UEP_IN | DEF_UEP3 ):
+                                            USBFSD->UEP3_TX_CTRL = ( USBFSD->UEP3_TX_CTRL & ~USBFS_UEP_T_RES_MASK ) | USBFS_UEP_T_RES_STALL;
                                             break;
 
                                         default:

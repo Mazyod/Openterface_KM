@@ -130,7 +130,7 @@ const uint8_t MyCfgDescr[ ] =
     0x83,                                                   // bEndpointAddress: IN Endpoint 3
     0x03,                                                   // bmAttributes
     0x08, 0x00,                                             // wMaxPacketSize
-    0x01                                                    // bInterval: 1mS
+    0x01                                                    // bInterval: 1mS (125µs at HS, 1ms at FS)
 };
 
 /* Keyboard Report Descriptor */

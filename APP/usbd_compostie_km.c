@@ -202,25 +202,31 @@ void CH9329_HandleRelativeMouse(uint8_t addr, uint8_t cmd_code, uint8_t* data, u
 void CH9329_HandleAbsoluteMouse(uint8_t addr, uint8_t cmd_code, uint8_t* data, uint8_t data_len) {
     if (data_len < 7) return;  // Need at least button + X (2 bytes) + Y (2 bytes) + wheel
 
+    // Clear data pack
     memset(ABS_MS_Data_Pack, 0x00, sizeof(ABS_MS_Data_Pack));
     ABS_MS_Data_Pack[0] = data[1];  // Mouse buttons
     
-    // Map X coordinate from CH9329 4096 range to HID 32768 range (scale by 16)
+    // More efficient coordinate mapping using bit shifting
+    // Map X coordinate from CH9329 4096 range to HID 32768 range (scale by 8)
     uint16_t x_ch9329 = (data[3] << 8) | data[2];  // Combine high and low bytes
-    uint16_t x_hid = x_ch9329 * 8;  // Scale from 4096 to 32768 range
+    uint16_t x_hid = x_ch9329 << 3;  // Bit shift is faster than multiplication by 8
     ABS_MS_Data_Pack[1] = x_hid & 0xFF;        // X low byte
     ABS_MS_Data_Pack[2] = (x_hid >> 8) & 0xFF; // X high byte
     
-    // Map Y coordinate from CH9329 4096 range to HID 32768 range (scale by 16)
+    // Map Y coordinate from CH9329 4096 range to HID 32768 range (scale by 8)
     uint16_t y_ch9329 = (data[5] << 8) | data[4];  // Combine high and low bytes
-    uint16_t y_hid = y_ch9329 * 8;  // Scale from 4096 to 32768 range
+    uint16_t y_hid = y_ch9329 << 3;  // Bit shift is faster than multiplication by 8
     ABS_MS_Data_Pack[3] = y_hid & 0xFF;        // Y low byte
     ABS_MS_Data_Pack[4] = (y_hid >> 8) & 0xFF; // Y high byte
     
-    // Wheel (8-bit relative)
-    ABS_MS_Data_Pack[5] = (data[6] & 0x80) ? (int8_t)(data[6] - 256) : data[6];  // Wheel
+    // Wheel (8-bit signed relative)
+    ABS_MS_Data_Pack[5] = (int8_t)data[6];  // Simpler cast for wheel
 
-    USBFS_Endp_DataUp(DEF_UEP3, ABS_MS_Data_Pack, sizeof(ABS_MS_Data_Pack), DEF_UEP_CPY_LOAD);
+    // Send data immediately without additional processing delay
+    // Check if endpoint is not busy before sending
+    if (USBFS_Endp_Busy[DEF_UEP3] == 0) {
+        USBFS_Endp_DataUp(DEF_UEP3, ABS_MS_Data_Pack, sizeof(ABS_MS_Data_Pack), DEF_UEP_CPY_LOAD);
+    }
     CH9329_SendAck(addr, cmd_code, 0x00);
 }
 
