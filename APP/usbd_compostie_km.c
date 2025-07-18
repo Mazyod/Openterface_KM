@@ -85,6 +85,15 @@ void MCU_Sleep_Wakeup_Operate( void )
 #define CMD_SEND_MS_ABS_DATA    0x04
 #define CMD_SEND_MS_REL_DATA    0x05
 
+// ACK Status Codes
+#define DEF_CMD_SUCCESS         0x00    // Command execution successful
+#define DEF_CMD_ERR_TIMEOUT     0xE1    // Serial receiving timeout
+#define DEF_CMD_ERR_HEAD        0xE2    // Serial receiving header error
+#define DEF_CMD_ERR_CMD         0xE3    // Serial receiving command error
+#define DEF_CMD_ERR_SUM         0xE4    // Checksum mismatch
+#define DEF_CMD_ERR_PARA        0xE5    // Parameter error
+#define DEF_CMD_ERR_OPERATE     0xE6    // Operation error/execution failed
+
 #define MOD_LCTRL   0x01
 #define MOD_LSHIFT  0x02
 #define MOD_LALT    0x04
@@ -115,12 +124,19 @@ uint8_t normal_keys[6] = {0};
 
 // -------------------- ACK Packet Sender --------------------
 void CH9329_SendAck(uint8_t addr, uint8_t cmd_code, uint8_t status) {
-    uint8_t ack_packet[7] = {CH9329_FRAME_HEAD1, CH9329_FRAME_HEAD2, addr, cmd_code, 0x01, status, 0};
+    uint8_t ack_cmd = cmd_code | 0x80;  // Set bit 7 to indicate ACK response
+    uint8_t ack_packet[7] = {CH9329_FRAME_HEAD1, CH9329_FRAME_HEAD2, addr, ack_cmd, 0x01, status, 0};
+    
+    // Calculate checksum for first 6 bytes
     for (int i = 0; i < 6; i++) {
         ack_packet[6] += ack_packet[i];
     }
-    // Note: ACK packets are typically sent via UART, not USB endpoints
-    // This might need to be sent via UART instead
+    
+    // Send ACK packet via UART (this should be implemented based on your UART driver)
+    UART2_Tx(ack_packet, sizeof(ack_packet));
+    
+    // For debugging, you might want to log the ACK being sent
+    // printf("ACK sent: CMD=0x%02X, Status=0x%02X\n", ack_cmd, status);
 }
 
 // -------------------- Keyboard Handler --------------------
@@ -129,7 +145,10 @@ void CH9329_HandleKeyboard(uint8_t addr, uint8_t cmd_code, uint8_t* data, uint8_
     static uint8_t kb_repeat_count = 0;
     static bool kb_long_press = 0;
 
-    if (data_len != 8) return;
+    if (data_len != 8) {
+        CH9329_SendAck(addr, cmd_code, DEF_CMD_ERR_PARA);
+        return;
+    }
 
     bool kb_same_as_last = (memcmp(data, kb_last_data, 8) == 0);
 
@@ -149,7 +168,7 @@ void CH9329_HandleKeyboard(uint8_t addr, uint8_t cmd_code, uint8_t* data, uint8_
     memcpy(&KB_Data_Pack[2], normal_keys, 6);
 
     USBFS_Endp_DataUp(DEF_UEP1, KB_Data_Pack, sizeof(KB_Data_Pack), DEF_UEP_CPY_LOAD);
-    CH9329_SendAck(addr, cmd_code, 0x00);
+    CH9329_SendAck(addr, cmd_code, DEF_CMD_SUCCESS);
 
     bool has_non_modifier = 0;
     for (int i = 0; i < 6; i++) {
@@ -186,7 +205,10 @@ void CH9329_HandleKeyboard(uint8_t addr, uint8_t cmd_code, uint8_t* data, uint8_
 
 // -------------------- Relative Mouse Handler --------------------
 void CH9329_HandleRelativeMouse(uint8_t addr, uint8_t cmd_code, uint8_t* data, uint8_t data_len) {
-    if (data_len < 5) return;
+    if (data_len < 5) {
+        CH9329_SendAck(addr, cmd_code, DEF_CMD_ERR_PARA);
+        return;
+    }
 
     memset(MS_Data_Pack, 0x00, sizeof(MS_Data_Pack));
     MS_Data_Pack[0] = data[1];  // Mouse buttons
@@ -195,12 +217,15 @@ void CH9329_HandleRelativeMouse(uint8_t addr, uint8_t cmd_code, uint8_t* data, u
     MS_Data_Pack[3] = (data[4] & 0x80) ? (int8_t)(data[4] - 256) : data[4];  // Wheel
 
     USBFS_Endp_DataUp(DEF_UEP2, MS_Data_Pack, sizeof(MS_Data_Pack), DEF_UEP_CPY_LOAD);
-    CH9329_SendAck(addr, cmd_code, 0x00);
+    CH9329_SendAck(addr, cmd_code, DEF_CMD_SUCCESS);
 }
 
 // -------------------- Absolute Mouse Handler --------------------
 void CH9329_HandleAbsoluteMouse(uint8_t addr, uint8_t cmd_code, uint8_t* data, uint8_t data_len) {
-    if (data_len < 7) return;  // Need at least button + X (2 bytes) + Y (2 bytes) + wheel
+    if (data_len < 7) {
+        CH9329_SendAck(addr, cmd_code, DEF_CMD_ERR_PARA);
+        return;
+    }
 
     // Clear data pack
     memset(ABS_MS_Data_Pack, 0x00, sizeof(ABS_MS_Data_Pack));
@@ -226,8 +251,10 @@ void CH9329_HandleAbsoluteMouse(uint8_t addr, uint8_t cmd_code, uint8_t* data, u
     // Check if endpoint is not busy before sending
     if (USBFS_Endp_Busy[DEF_UEP3] == 0) {
         USBFS_Endp_DataUp(DEF_UEP3, ABS_MS_Data_Pack, sizeof(ABS_MS_Data_Pack), DEF_UEP_CPY_LOAD);
+        CH9329_SendAck(addr, cmd_code, DEF_CMD_SUCCESS);
+    } else {
+        CH9329_SendAck(addr, cmd_code, DEF_CMD_ERR_OPERATE);
     }
-    CH9329_SendAck(addr, cmd_code, 0x00);
 }
 
 
@@ -258,6 +285,7 @@ void CH9329_DataParser(uint8_t* buf, uint8_t len) {
             uint8_t recv_sum = buf[index++];
 
             if (checksum != recv_sum) {
+                CH9329_SendAck(addr, cmd_code, DEF_CMD_ERR_SUM);
                 continue;  // Checksum error
             }
 
