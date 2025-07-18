@@ -8,6 +8,8 @@ C_SRCS += \
 ../APP/RingMem.c \
 ../APP/ch32v20x_it.c \
 ../APP/ch32v20x_usbfs_device.c \
+../APP/keyboard_handler.c \
+../APP/mouse_handler.c \
 ../APP/peripheral.c \
 ../APP/peripheral_main.c \
 ../APP/system_ch32v20x.c \
@@ -18,6 +20,8 @@ C_DEPS += \
 ./APP/RingMem.d \
 ./APP/ch32v20x_it.d \
 ./APP/ch32v20x_usbfs_device.d \
+./APP/keyboard_handler.d \
+./APP/mouse_handler.d \
 ./APP/peripheral.d \
 ./APP/peripheral_main.d \
 ./APP/system_ch32v20x.d \
@@ -28,6 +32,8 @@ OBJS += \
 ./APP/RingMem.o \
 ./APP/ch32v20x_it.o \
 ./APP/ch32v20x_usbfs_device.o \
+./APP/keyboard_handler.o \
+./APP/mouse_handler.o \
 ./APP/peripheral.o \
 ./APP/peripheral_main.o \
 ./APP/system_ch32v20x.o \
