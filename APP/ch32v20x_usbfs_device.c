@@ -17,6 +17,7 @@
 #include "usbd_composite_km.h"
 #include "peripheral.h"
 #include "RingMem.h"
+#include "include/keyboard_handler.h"
 /*******************************************************************************/
 /* Variable Definition */
 
@@ -470,7 +471,7 @@ void USBFS_IRQHandler( void )
                                     switch( USBFS_SetupReqCode )
                                     {
                                         case HID_SET_REPORT:
-                                            KB_LED_Cur_Status = USBFS_EP0_Buf[ 0 ];
+                                            Keyboard_SetLEDStatus(USBFS_EP0_Buf[ 0 ]);
                                             USBFS_SetupReqLen = 0;
                                             break;
                                         default:

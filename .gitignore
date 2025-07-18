@@ -5,3 +5,5 @@ obj/
 *.map
 *.o
 *.d
+.vscode/
+.mrs/

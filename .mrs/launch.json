@@ -5,12 +5,12 @@
 			"type": "mrs-debugger",
 			"request": "launch",
 			"name": "BLE_USB",
-			"cwd": "e:\\openterface\\Openterface_KM(相对鼠标\\Openterface_KM",
+			"cwd": "c:\\Users\\admin\\projects\\Openterface_KM",
 			"openOCDCfg": {
 				"useLocalOpenOCD": true,
-				"executable": "e:/MounRiver/MounRiver_Studio2/resources/app/resources/win32/components/WCH/OpenOCD/OpenOCD/bin/openocd.exe",
+				"executable": "c:/MounRiver/MounRiver_Studio2/resources/app/resources/win32/components/WCH/OpenOCD/OpenOCD/bin/openocd.exe",
 				"configOptions": [
-					"-f \"e:/MounRiver/MounRiver_Studio2/resources/app/resources/win32/components/WCH/OpenOCD/OpenOCD/bin/wch-riscv.cfg\" -c \"chip_id CH32V20x\""
+					"-f \"c:/MounRiver/MounRiver_Studio2/resources/app/resources/win32/components/WCH/OpenOCD/OpenOCD/bin/wch-riscv.cfg\" -c \"chip_id CH32V20x\""
 				],
 				"gdbport": 3333,
 				"telnetport": 4444,
@@ -22,7 +22,7 @@
 				"enableNoZeroWaitingAreaFlash": false
 			},
 			"gdbCfg": {
-				"executable": "e:/MounRiver/MounRiver_Studio2/resources/app/resources/win32/components/WCH/Toolchain/RISC-V Embedded GCC/bin/riscv-none-embed-gdb.exe",
+				"executable": "c:/MounRiver/MounRiver_Studio2/resources/app/resources/win32/components/WCH/Toolchain/RISC-V Embedded GCC/bin/riscv-none-embed-gdb.exe",
 				"commands": [
 					"set mem inaccessible-by-default off",
 					"set architecture riscv:rv32",
@@ -39,8 +39,8 @@
 					"additionalCommands": []
 				},
 				"loadedFiles": {
-					"executableFile": "e:\\openterface\\Openterface_KM(相对鼠标\\Openterface_KM\\obj\\BLE_USB.elf",
-					"symbolFile": "e:\\openterface\\Openterface_KM(相对鼠标\\Openterface_KM\\obj\\BLE_USB.elf",
+					"executableFile": "c:\\Users\\admin\\projects\\Openterface_KM\\obj\\BLE_USB.elf",
+					"symbolFile": "c:\\Users\\admin\\projects\\Openterface_KM\\obj\\BLE_USB.elf",
 					"executableFileOffset": 0,
 					"symbolFileOffset": 0
 				},

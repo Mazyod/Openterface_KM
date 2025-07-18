@@ -9,6 +9,8 @@
 #include "HAL.h"
 #include "gattprofile.h"
 #include "peripheral.h"
+#include "include/keyboard_handler.h"
+#include "include/mouse_handler.h"
 /*********************************************************************
  * GLOBAL TYPEDEFS
  */
@@ -52,6 +54,12 @@ int main(void) {
     Set_USBConfig();
     USB_Init();
     USB_Interrupts_Config();
+    
+    // Initialize keyboard handler
+    Keyboard_Init();
+    
+    // Initialize mouse handler
+    Mouse_Init();
     
     Main_Circulation();
 }
