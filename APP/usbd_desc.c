@@ -41,8 +41,8 @@ const uint8_t MyCfgDescr[ ] =
     /* Configuration Descriptor */
     0x09,                                                   // bLength
     0x02,                                                   // bDescriptorType
-    0x3B, 0x00,                                             // wTotalLength
-    0x02,                                                   // bNumInterfaces
+    0x54, 0x00,                                             // wTotalLength (84 bytes total)
+    0x03,                                                   // bNumInterfaces (changed from 2 to 3)
     0x01,                                                   // bConfigurationValue
     0x00,                                                   // iConfiguration
     0xA0,                                                   // bmAttributes: Bus Powered; Remote Wakeup
@@ -104,7 +104,35 @@ const uint8_t MyCfgDescr[ ] =
     0x82,                                                   // bEndpointAddress: IN Endpoint 2
     0x03,                                                   // bmAttributes
     0x08, 0x00,                                             // wMaxPacketSize
-    0x01                                                    // bInterval: 1mS
+    0x01,                                                   // bInterval: 1mS
+
+    /* Interface Descriptor (Absolute Mouse) */
+    0x09,                                                   // bLength
+    0x04,                                                   // bDescriptorType
+    0x02,                                                   // bInterfaceNumber
+    0x00,                                                   // bAlternateSetting
+    0x01,                                                   // bNumEndpoints
+    0x03,                                                   // bInterfaceClass
+    0x00,                                                   // bInterfaceSubClass
+    0x00,                                                   // bInterfaceProtocol: None (custom)
+    0x00,                                                   // iInterface
+
+    /* HID Descriptor (Absolute Mouse) */
+    0x09,                                                   // bLength
+    0x21,                                                   // bDescriptorType
+    0x10, 0x01,                                             // bcdHID
+    0x00,                                                   // bCountryCode
+    0x01,                                                   // bNumDescriptors
+    0x22,                                                   // bDescriptorType
+    0x3F, 0x00,                                             // wDescriptorLength (63 bytes)
+
+    /* Endpoint Descriptor (Absolute Mouse) */
+    0x07,                                                   // bLength
+    0x05,                                                   // bDescriptorType
+    0x83,                                                   // bEndpointAddress: IN Endpoint 3
+    0x03,                                                   // bmAttributes
+    0x08, 0x00,                                             // wMaxPacketSize
+    0x01                                                    // bInterval: 1mS (125µs at HS, 1ms at FS)
 };
 
 /* Keyboard Report Descriptor */
@@ -178,9 +206,6 @@ const uint8_t TouchRepDesc[] =
 
 
 
-
-
-
 /* Qualifier Descriptor */
 const uint8_t  MyQuaDesc[ ] =
 {
@@ -198,52 +223,41 @@ const uint8_t  MyQuaDesc[ ] =
 /* Language Descriptor */
 const uint8_t MyLangDescr[ ] =
 {
-    0x04,
-    0x03,
-    0x09,
-    0x04
+    0x04,       // Descriptor length (4 bytes)
+    0x03,       // Descriptor type (STRING)
+    0x09, 0x04  // LANGID: English (United States)
 };
 
 /* Manufacturer Descriptor */
 const uint8_t MyManuInfo[ ] =
 {
-    0x0E,
-    0x03,
-    'w',
-    0,
-    'c',
-    0,
-    'h',
-    0,
-    '.',
-    0,
-    'c',
-    0,
-    'n',
-    0
+    0x1A, // Descriptor length (13 chars * 2 + 2)
+    0x03, // Descriptor type (STRING)
+    'T',0, // TechxArtisan
+    'e',0,
+    'c',0,
+    'h',0,
+    'x',0,
+    'A',0,
+    'r',0,
+    't',0,
+    'i',0,
+    's',0,
+    'a',0,
+    'n',0
 };
 
 /* Product Information */
 const uint8_t MyProdInfo[ ]  =
 {
-    0x12,
-    0x03,
-    'C',
-    0,
-    'H',
-    0,
-    '3',
-    0,
-    '2',
-    0,
-    'V',
-    0,
-    '2',
-    0,
-    '0',
-    0,
-    'x',
-    0
+    0x0E, // Descriptor length (6 chars * 2 + 2)
+    0x03, // Descriptor type (STRING)
+    'K', 0,  // KeyMod
+    'e', 0,
+    'y', 0,
+    'M', 0,
+    'o', 0,
+    'd', 0
 };
 
 /* Serial Number Information */
@@ -271,4 +285,4 @@ const uint8_t  MySerNumInfo[ ] =
     0,
     '9',
     0
-}; 
+};

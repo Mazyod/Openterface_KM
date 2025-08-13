@@ -51,7 +51,7 @@
 #define DEFAULT_DISCOVERABLE_MODE            GAP_ADTYPE_FLAGS_GENERAL
 
 // Minimum connection interval (units of 1.25ms, 6=7.5ms)
-#define DEFAULT_DESIRED_MIN_CONN_INTERVAL    6
+#define DEFAULT_DESIRED_MIN_CONN_INTERVAL    10
 
 // Maximum connection interval (units of 1.25ms, 100=125ms)
 #define DEFAULT_DESIRED_MAX_CONN_INTERVAL   10

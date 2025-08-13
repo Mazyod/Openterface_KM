@@ -1,4 +1,3 @@
-
 #include "ch32v20x_usbfs_device.h"
 #include "usbd_composite_km.h"
 #include "UART.h"
@@ -9,21 +8,11 @@
 #include "HAL.h"
 #include "gattprofile.h"
 #include "peripheral.h"
+#include "include/keyboard_handler.h"
+#include "include/mouse_handler.h"
 
 /*******************************************************************************/
 /* Global Variable Definition */
-
-/* Mouse */
-volatile uint8_t  MS_Scan_Done = 0x00;                                          // Mouse Movement Scan Done
-volatile uint16_t MS_Scan_Result = 0x00F0;                                      // Mouse Movement Scan Result
-
-
-/* Keyboard */
-volatile uint8_t  KB_Scan_Done = 0x00;                                          // Keyboard Keys Scan Done
-volatile uint16_t KB_Scan_Result = 0xF000;                                      // Keyboard Keys Current Scan Result
-volatile uint16_t KB_Scan_Last_Result = 0xF000;                                 // Keyboard Keys Last Scan Resul                                       // Keyboard IN Data Packet
-volatile uint8_t  KB_LED_Last_Status = 0x00;                                    // Keyboard LED Last Result
-volatile uint8_t  KB_LED_Cur_Status = 0x00;                                     // Keyboard LED Current Result
 
 /*********************************************************************
  * @fn      USB_Sleep_Wakeup_CFG
@@ -76,133 +65,155 @@ void MCU_Sleep_Wakeup_Operate( void )
 #include <string.h>
 #include <stdint.h>
 
-// -------------------- 协议定义区 --------------------
+// -------------------- Protocol Definitions --------------------
 #define CH9329_FRAME_HEAD1      0x57
 #define CH9329_FRAME_HEAD2      0xAB
 
 #define CMD_SEND_KB_GENERAL_DATA 0x02
-#define CMD_SEND_MS_REL_DATA     0x05
-#define CMD_SEND_MS_ABS_DATA     0x04  // 绝对鼠标数据命令码
+#define CMD_SEND_KB_GAME_DATA    0x12
+#define CMD_SEND_MS_ABS_DATA    0x04
+#define CMD_SEND_MS_REL_DATA    0x05
 
-// 修饰键位定义
-#define MOD_LCTRL   0x01
-#define MOD_LSHIFT  0x02
-#define MOD_LALT    0x04
-#define MOD_LGUI    0x08
-#define MOD_RCTRL   0x10
-#define MOD_RSHIFT  0x20
-#define MOD_RALT    0x40
-#define MOD_RGUI    0x80
+// ACK Status Codes
+#define DEF_CMD_SUCCESS         0x00    // Command execution successful
+#define DEF_CMD_ERR_TIMEOUT     0xE1    // Serial receiving timeout
+#define DEF_CMD_ERR_HEAD        0xE2    // Serial receiving header error
+#define DEF_CMD_ERR_CMD         0xE3    // Serial receiving command error
+#define DEF_CMD_ERR_SUM         0xE4    // Checksum mismatch
+#define DEF_CMD_ERR_PARA        0xE5    // Parameter error
+#define DEF_CMD_ERR_OPERATE     0xE6    // Operation error/execution failed
 
-// -------------------- 数据缓冲区 --------------------
-uint8_t KB_Data_Pack[8];
-uint8_t MS_Data_Pack[4];
-
-uint8_t mod_keys = 0;
-uint8_t normal_keys[6] = {0};
-
-// -------------------- 应答函数 --------------------
+/*********************************************************************
+ * @fn      CH9329_SendAck
+ *
+ * @brief   Send ACK packet to CH9329
+ *
+ * @param   addr - Device address
+ * @param   cmd_code - Command code
+ * @param   status - Status byte
+ *
+ * @return  none
+ */
 void CH9329_SendAck(uint8_t addr, uint8_t cmd_code, uint8_t status) {
-    uint8_t ack_packet[7] = {CH9329_FRAME_HEAD1, CH9329_FRAME_HEAD2, addr, cmd_code, 0x01, status, 0};
-    for (int i = 0; i < 6; i++) {
-        ack_packet[6] += ack_packet[i];
-    }
-    USBD_ENDPx_DataUp(ENDP3, ack_packet, sizeof(ack_packet));
+    // // Check if there's space in the TX buffer for a new packet
+    // if (Uart.Tx_RemainNum >= DEF_UARTx_TX_BUF_NUM_MAX) {
+    //     return; // Buffer full, cannot send ACK
+    // }
+    
+    // uint8_t ack_cmd = cmd_code | 0x80;  // Set bit 7 to indicate ACK response
+    // uint8_t ack_packet[7] = {CH9329_FRAME_HEAD1, CH9329_FRAME_HEAD2, addr, ack_cmd, 0x01, status, 0};
+    
+    // // Calculate checksum for first 6 bytes
+    // for (int i = 0; i < 6; i++) {
+    //     ack_packet[6] += ack_packet[i];
+    // }
+    
+    // // Disable interrupts to prevent race conditions during buffer manipulation
+    // __disable_irq();
+    
+    // // Double-check buffer availability after disabling interrupts
+    // if (Uart.Tx_RemainNum >= DEF_UARTx_TX_BUF_NUM_MAX) {
+    //     __enable_irq();
+    //     return; // Buffer became full
+    // }
+    
+    // // Calculate the buffer position for the new packet
+    // uint16_t load_index = Uart.Tx_LoadNum % DEF_UARTx_TX_BUF_NUM_MAX;
+    // uint16_t buffer_offset = load_index * DEF_USB_FS_PACK_LEN;
+    
+    // // Ensure we don't exceed buffer bounds
+    // if (buffer_offset + 7 <= DEF_UARTx_TX_BUF_LEN) {
+    //     // Copy ACK packet to UART TX buffer
+    //     for (int i = 0; i < 7; i++) {
+    //         UART2_Tx_Buf[buffer_offset + i] = ack_packet[i];
+    //     }
+        
+    //     // Update packet length for this buffer slot
+    //     Uart.Tx_PackLen[load_index] = 7;
+        
+    //     // Update control structure
+    //     Uart.Tx_LoadNum++;
+    //     Uart.Tx_RemainNum++;
+    // }
+    
+    // __enable_irq();
+    
+    // // Trigger transmission if UART is not currently busy
+    // if (Uart.Tx_Flag == 0) {
+    //     UART2_DataTx_Deal();
+    // }
 }
 
-// -------------------- 数据解析处理 --------------------
-void CH9329_DataParser(uint8_t* buf, uint16_t len) {
-    uint16_t index = 0;
+// -------------------- CH9329 Data Parser --------------------
+void CH9329_DataParser(uint8_t* buf, uint8_t len) {
+    uint8_t index = 0;
 
     while (index + 6 <= len) {
-        // 查找帧头
-        if (buf[index] != CH9329_FRAME_HEAD1 || buf[index + 1] != CH9329_FRAME_HEAD2) {
-            index++;
-            continue;
-        }
+        if (buf[index] == CH9329_FRAME_HEAD1 && buf[index + 1] == CH9329_FRAME_HEAD2) {
+            uint8_t frame_start = index;
+            index += 2;
 
-        uint8_t addr = buf[index + 2];
-        uint8_t cmd_code = buf[index + 3];
-        uint8_t data_len = buf[index + 4];
+            uint8_t addr = buf[index++];
+            uint8_t cmd_code = buf[index++];
+            uint8_t data_len = buf[index++];
 
-        if ((index + 5 + data_len + 1) > len) break;  // 数据不足则退出
-
-        uint8_t checksum = 0;
-        for (uint8_t i = 0; i < 5 + data_len; i++) {
-            checksum += buf[index + i];
-        }
-
-        if (checksum != buf[index + 5 + data_len]) {
-            index++;  // 校验失败跳过此帧
-            continue;
-        }
-
-        uint8_t* data = &buf[index + 5];
-
-        // ---------- 键盘数据 ----------
-        if (cmd_code == CMD_SEND_KB_GENERAL_DATA && data_len == 8) {
-            mod_keys = data[0];
-            memcpy(normal_keys, &data[2], 6);
-
-            memset(KB_Data_Pack, 0x00, sizeof(KB_Data_Pack));
-            KB_Data_Pack[0] = mod_keys;
-            memcpy(&KB_Data_Pack[2], normal_keys, 6);
-
-            USBFS_Endp_DataUp(DEF_UEP1, KB_Data_Pack, sizeof(KB_Data_Pack), DEF_UEP_CPY_LOAD);
-            CH9329_SendAck(addr, cmd_code, 0x00);
-
-        // ---------- 绝对鼠标数据 ----------
-        } else if (cmd_code == CMD_SEND_MS_ABS_DATA && data_len == 7 && data[0] == 0x02) {
-            uint8_t buttons = data[1];
-            uint16_t x = data[2] | (data[3] << 8);
-            uint16_t y = data[4] | (data[5] << 8);
-            int8_t wheel = (int8_t)data[6];
-
-            // 构建绝对坐标鼠标包
-            uint8_t abs_mouse[5] = {
-                buttons,
-                (uint8_t)(x & 0xFF),
-                (uint8_t)((x >> 8) & 0xFF),
-                (uint8_t)(y & 0xFF),
-                (uint8_t)((y >> 8) & 0xFF),
-            };
-
-            USBFS_Endp_DataUp(DEF_UEP2, abs_mouse, sizeof(abs_mouse), DEF_UEP_CPY_LOAD);
-
-            // 滚轮单独发送
-            if (wheel != 0) {
-                uint8_t wheel_packet[4] = {0x00, 0x00, 0x00, (uint8_t)wheel};
-                USBFS_Endp_DataUp(DEF_UEP2, wheel_packet, sizeof(wheel_packet), DEF_UEP_CPY_LOAD);
+            if ((index + data_len + 1) > len) {
+                break;  // Incomplete frame
             }
 
-            CH9329_SendAck(addr, cmd_code, 0x00);
-        }
+            uint8_t checksum = CH9329_FRAME_HEAD1 + CH9329_FRAME_HEAD2 + addr + cmd_code + data_len;
+            uint8_t data[8] = {0};
+            for (uint8_t i = 0; i < data_len && i < sizeof(data); i++) {
+                data[i] = buf[index++];
+                checksum += data[i];
+            }
 
-        index += 5 + data_len + 1;  // 跳到下一帧
+            uint8_t recv_sum = buf[index++];
+
+            if (checksum != recv_sum) {
+                CH9329_SendAck(addr, cmd_code, DEF_CMD_ERR_SUM);
+                continue;  // Checksum error
+            }
+
+            // Handle Keyboard Data
+            if (cmd_code == CMD_SEND_KB_GENERAL_DATA || cmd_code == CMD_SEND_KB_GAME_DATA) {
+                Keyboard_HandleData(addr, cmd_code, data, data_len);
+            }
+            // Handle Relative Mouse Data
+            else if (cmd_code == CMD_SEND_MS_REL_DATA) {
+                Mouse_HandleRelativeData(addr, cmd_code, data, data_len);
+            } // Handle Absolute Mouse Data
+            else if (cmd_code == CMD_SEND_MS_ABS_DATA) {
+                Mouse_HandleAbsoluteData(addr, cmd_code, data, data_len);
+            }
+
+        } else {
+            index++;  // Search for next frame header
+        }
     }
 }
 
-// -------------------- 主接收处理函数 --------------------
+// -------------------- Main Data Receive Handler --------------------
 void USB_DataRx_To_KMHandle(void) {
-    // ----------- 来自 RingMemBLE ----------
+    // Step 1: Read and parse from BLE ring buffer
     while (RingMemBLE.CurrentLen > 0) {
-        uint8_t buf[64];
-        uint8_t read_len = (RingMemBLE.CurrentLen > sizeof(buf)) ? sizeof(buf) : RingMemBLE.CurrentLen;
-        if (RingMemRead(&RingMemBLE, buf, read_len) == SUCCESS) {
-            CH9329_DataParser(buf, read_len);
+        uint8_t resv[64];
+        uint8_t len = (RingMemBLE.CurrentLen > sizeof(resv)) ? sizeof(resv) : RingMemBLE.CurrentLen;
+        if (RingMemRead(&RingMemBLE, resv, len) == SUCCESS) {
+            CH9329_DataParser(resv, len);
         } else {
             break;
         }
     }
 
-    // ----------- 来自 UART2_Tx_Buf ----------
+    // Step 2: Read and parse from UART2 transmission buffer
     while (Uart.Tx_RemainNum) {
-        if (Uart.Tx_CurPackLen == 0) {
+        if (Uart.Tx_CurPackLen == 0x00) {
             Uart.Tx_CurPackLen = Uart.Tx_PackLen[Uart.Tx_DealNum];
             Uart.Tx_CurPackPtr = Uart.Tx_DealNum * DEF_USB_FS_PACK_LEN;
         }
 
-        uint8_t uart_buf[64];
+        uint8_t uart_buf[32];
         uint8_t copy_len = (Uart.Tx_CurPackLen > sizeof(uart_buf)) ? sizeof(uart_buf) : Uart.Tx_CurPackLen;
 
         for (uint8_t i = 0; i < copy_len; i++) {
@@ -230,4 +241,101 @@ void SendTouchPoint(uint8_t endp, uint8_t tip_switch, uint16_t x, uint16_t y) {
     report[4] = (uint8_t)((y >> 8) & 0xFF);
 
     USBFS_Endp_DataUp(endp, report, sizeof(report), DEF_UEP_CPY_LOAD);
+}
+
+// -------------------- Keyboard Compatibility Functions --------------------
+// These functions provide backward compatibility for existing code
+
+/*********************************************************************
+ * @fn      CH9329_SetAutoReleaseMode
+ *
+ * @brief   Configure keyboard auto-release behavior (backward compatibility)
+ *
+ * @param   sender_handles_release - true if sender will handle releases, false for auto-release
+ *
+ * @return  none
+ */
+void CH9329_SetAutoReleaseMode(bool sender_handles_release) {
+    Keyboard_SetAutoReleaseMode(sender_handles_release);
+}
+
+/*********************************************************************
+ * @fn      CH9329_GetAutoReleaseMode
+ *
+ * @brief   Get current keyboard auto-release mode (backward compatibility)
+ *
+ * @return  true if sender handles releases, false if auto-release is enabled
+ */
+bool CH9329_GetAutoReleaseMode(void) {
+    return Keyboard_GetAutoReleaseMode();
+}
+
+/*********************************************************************
+ * @fn      CH9329_ResetAutoDetection
+ *
+ * @brief   Reset auto-detection and re-enable auto-release mode (backward compatibility)
+ *
+ * @return  none
+ */
+void CH9329_ResetAutoDetection(void) {
+    Keyboard_ResetAutoDetection();
+}
+
+/*********************************************************************
+ * @fn      Keyboard_SetLEDStatus (Backward Compatibility)
+ *
+ * @brief   Set keyboard LED status (backward compatibility wrapper)
+ *
+ * @param   led_status - LED status byte
+ *
+ * @return  none
+ */
+void KB_SetLEDStatus(uint8_t led_status) {
+    Keyboard_SetLEDStatus(led_status);
+}
+
+/*********************************************************************
+ * @fn      Keyboard_GetLEDStatus (Backward Compatibility)
+ *
+ * @brief   Get current keyboard LED status (backward compatibility wrapper)
+ *
+ * @return  Current LED status byte
+ */
+uint8_t KB_GetLEDStatus(void) {
+    return Keyboard_GetLEDStatus();
+}
+
+// -------------------- Mouse Compatibility Functions --------------------
+// These functions provide backward compatibility for existing code
+
+/*********************************************************************
+ * @fn      CH9329_HandleRelativeMouse (Backward Compatibility)
+ *
+ * @brief   Handle relative mouse data (backward compatibility wrapper)
+ *
+ * @param   addr - Device address
+ * @param   cmd_code - Command code
+ * @param   data - Mouse data
+ * @param   data_len - Length of data
+ *
+ * @return  none
+ */
+void CH9329_HandleRelativeMouse(uint8_t addr, uint8_t cmd_code, uint8_t* data, uint8_t data_len) {
+    Mouse_HandleRelativeData(addr, cmd_code, data, data_len);
+}
+
+/*********************************************************************
+ * @fn      CH9329_HandleAbsoluteMouse (Backward Compatibility)
+ *
+ * @brief   Handle absolute mouse data (backward compatibility wrapper)
+ *
+ * @param   addr - Device address
+ * @param   cmd_code - Command code
+ * @param   data - Mouse data
+ * @param   data_len - Length of data
+ *
+ * @return  none
+ */
+void CH9329_HandleAbsoluteMouse(uint8_t addr, uint8_t cmd_code, uint8_t* data, uint8_t data_len) {
+    Mouse_HandleAbsoluteData(addr, cmd_code, data, data_len);
 }

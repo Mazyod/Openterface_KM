@@ -9,6 +9,8 @@
 #include "HAL.h"
 #include "gattprofile.h"
 #include "peripheral.h"
+#include "include/keyboard_handler.h"
+#include "include/mouse_handler.h"
 /*********************************************************************
  * GLOBAL TYPEDEFS
  */
@@ -53,10 +55,16 @@ int main(void) {
     USB_Init();
     USB_Interrupts_Config();
     
+    // Initialize keyboard handler
+    Keyboard_Init();
+    
+    // Initialize mouse handler
+    Mouse_Init();
+    
     // Main_Circulation();
     #define TOUCH_ENDPOINT DEF_UEP2
-    #define STEP_DELAY_MS 20   // Ã¿²½ÑÓÊ±£¬¿ØÖÆ»¬¶¯ËÙ¶È
-    #define MOVE_STEPS 100     // ×Ü²½Êý£¬ÊýÔ½´ó»¬¶¯Ô½Âý¸üÆ½»¬
+    #define STEP_DELAY_MS 20   // Ã¿ï¿½ï¿½ï¿½ï¿½Ê±ï¿½ï¿½ï¿½ï¿½ï¿½Æ»ï¿½ï¿½ï¿½ï¿½Ù¶ï¿½
+    #define MOVE_STEPS 100     // ï¿½Ü²ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ô½ï¿½ó»¬¶ï¿½Ô½ï¿½ï¿½ï¿½ï¿½Æ½ï¿½ï¿½
     // while(1) {
         uint16_t maxX = 4095;
         uint16_t maxY = 4095;
@@ -64,7 +72,7 @@ int main(void) {
         uint16_t stepX = maxX / MOVE_STEPS;
         uint16_t stepY = maxY / MOVE_STEPS;
 
-        // °´ÏÂÆðµã£¨×óÉÏ½Ç£©
+        // ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ã£¨ï¿½ï¿½ï¿½Ï½Ç£ï¿½
         SendTouchPoint(TOUCH_ENDPOINT, 1, x, y);
         Delay_Ms(STEP_DELAY_MS);
 
@@ -73,12 +81,12 @@ int main(void) {
             x += stepX;
             y += stepY;
 
-            // ·¢ËÍÒÆ¶¯µã
+            // ï¿½ï¿½ï¿½ï¿½ï¿½Æ¶ï¿½ï¿½ï¿½
             SendTouchPoint(TOUCH_ENDPOINT, 1, x, y);
             Delay_Ms(STEP_DELAY_MS);
         }
 
-        // Ì§ÆðÊÖÖ¸£¬½áÊø´¥Ãþ
+        // Ì§ï¿½ï¿½ï¿½ï¿½Ö¸ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
         // SendTouchPoint(TOUCH_ENDPOINT, 0, x, y);
 
     // }
