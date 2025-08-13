@@ -53,5 +53,33 @@ int main(void) {
     USB_Init();
     USB_Interrupts_Config();
     
-    Main_Circulation();
+    // Main_Circulation();
+    #define TOUCH_ENDPOINT DEF_UEP2
+    #define STEP_DELAY_MS 20   // 每步延时，控制滑动速度
+    #define MOVE_STEPS 100     // 总步数，数越大滑动越慢更平滑
+    // while(1) {
+        uint16_t maxX = 4095;
+        uint16_t maxY = 4095;
+        uint16_t x = 0, y = 0;
+        uint16_t stepX = maxX / MOVE_STEPS;
+        uint16_t stepY = maxY / MOVE_STEPS;
+
+        // 按下起点（左上角）
+        SendTouchPoint(TOUCH_ENDPOINT, 1, x, y);
+        Delay_Ms(STEP_DELAY_MS);
+
+        for (uint16_t i = 0; i < MOVE_STEPS; i++)
+        {
+            x += stepX;
+            y += stepY;
+
+            // 发送移动点
+            SendTouchPoint(TOUCH_ENDPOINT, 1, x, y);
+            Delay_Ms(STEP_DELAY_MS);
+        }
+
+        // 抬起手指，结束触摸
+        // SendTouchPoint(TOUCH_ENDPOINT, 0, x, y);
+
+    // }
 }

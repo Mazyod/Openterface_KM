@@ -219,3 +219,15 @@ void USB_DataRx_To_KMHandle(void) {
         }
     }
 }
+#define TOUCH_ENDPOINT DEF_UEP2
+
+void SendTouchPoint(uint8_t endp, uint8_t tip_switch, uint16_t x, uint16_t y) {
+    uint8_t report[5];
+    report[0] = tip_switch ? 0x01 : 0x00;
+    report[1] = (uint8_t)(x & 0xFF);
+    report[2] = (uint8_t)((x >> 8) & 0xFF);
+    report[3] = (uint8_t)(y & 0xFF);
+    report[4] = (uint8_t)((y >> 8) & 0xFF);
+
+    USBFS_Endp_DataUp(endp, report, sizeof(report), DEF_UEP_CPY_LOAD);
+}
