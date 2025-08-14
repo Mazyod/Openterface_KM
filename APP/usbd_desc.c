@@ -206,6 +206,9 @@ const uint8_t TouchRepDesc[] =
 
 
 
+
+
+
 /* Qualifier Descriptor */
 const uint8_t  MyQuaDesc[ ] =
 {
@@ -285,4 +288,4 @@ const uint8_t  MySerNumInfo[ ] =
     0,
     '9',
     0
-};
+}; 

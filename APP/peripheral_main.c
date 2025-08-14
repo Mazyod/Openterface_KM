@@ -55,16 +55,10 @@ int main(void) {
     USB_Init();
     USB_Interrupts_Config();
     
-    // Initialize keyboard handler
-    Keyboard_Init();
-    
-    // Initialize mouse handler
-    Mouse_Init();
-    
     // Main_Circulation();
     #define TOUCH_ENDPOINT DEF_UEP2
-    #define STEP_DELAY_MS 20   // ÿ����ʱ�����ƻ����ٶ�
-    #define MOVE_STEPS 100     // �ܲ�������Խ�󻬶�Խ����ƽ��
+    #define STEP_DELAY_MS 20   
+    #define MOVE_STEPS 100     
     // while(1) {
         uint16_t maxX = 4095;
         uint16_t maxY = 4095;
@@ -72,7 +66,6 @@ int main(void) {
         uint16_t stepX = maxX / MOVE_STEPS;
         uint16_t stepY = maxY / MOVE_STEPS;
 
-        // ������㣨���Ͻǣ�
         SendTouchPoint(TOUCH_ENDPOINT, 1, x, y);
         Delay_Ms(STEP_DELAY_MS);
 
@@ -81,13 +74,9 @@ int main(void) {
             x += stepX;
             y += stepY;
 
-            // �����ƶ���
             SendTouchPoint(TOUCH_ENDPOINT, 1, x, y);
             Delay_Ms(STEP_DELAY_MS);
         }
-
-        // ̧����ָ����������
-        // SendTouchPoint(TOUCH_ENDPOINT, 0, x, y);
 
     // }
 }
