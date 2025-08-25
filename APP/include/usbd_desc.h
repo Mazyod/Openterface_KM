@@ -83,7 +83,7 @@
 extern const uint8_t MyDevDescr[ ];
 extern const uint8_t MyCfgDescr[ ];
 extern const uint8_t KeyRepDesc[ ];
-extern const uint8_t TouchRepDesc[ ];
+extern const uint8_t MouseRepDesc[ ];
 extern const uint8_t MyQuaDesc[ ];
 extern const uint8_t MyLangDescr[ ];
 extern const uint8_t MyManuInfo[ ];

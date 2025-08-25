@@ -662,8 +662,8 @@ void USBFS_IRQHandler( void )
                                     }
                                     else if( USBFS_SetupReqIndex == 0x01 )
                                     {
-                                        pUSBFS_Descr = TouchRepDesc;
-                                        len = DEF_USBD_REPORT_DESC_LEN_MS;
+                                        pUSBFS_Descr = MouseRepDesc;
+                                        len = DEF_USBD_REPORT_DESC_LEN_REL_MS;
                                     }
                                     else
                                     {

@@ -32,5 +32,4 @@ extern void MCU_Sleep_Wakeup_Operate( void );
 extern void CH9329_SendAck(uint8_t addr, uint8_t cmd_code, uint8_t status);
 extern void CH9329_DataParser(uint8_t* buf, uint8_t len);
 extern void USB_DataRx_To_KMHandle(void);
-extern void SendTouchPoint(uint8_t endp, uint8_t tip_switch, uint16_t x, uint16_t y);
 #endif

@@ -54,29 +54,6 @@ int main(void) {
     Set_USBConfig();
     USB_Init();
     USB_Interrupts_Config();
+    Main_Circulation();
     
-    // Main_Circulation();
-    #define TOUCH_ENDPOINT DEF_UEP2
-    #define STEP_DELAY_MS 20   
-    #define MOVE_STEPS 100     
-    // while(1) {
-        uint16_t maxX = 4095;
-        uint16_t maxY = 4095;
-        uint16_t x = 0, y = 0;
-        uint16_t stepX = maxX / MOVE_STEPS;
-        uint16_t stepY = maxY / MOVE_STEPS;
-
-        SendTouchPoint(TOUCH_ENDPOINT, 1, x, y);
-        Delay_Ms(STEP_DELAY_MS);
-
-        for (uint16_t i = 0; i < MOVE_STEPS; i++)
-        {
-            x += stepX;
-            y += stepY;
-
-            SendTouchPoint(TOUCH_ENDPOINT, 1, x, y);
-            Delay_Ms(STEP_DELAY_MS);
-        }
-
-    // }
 }
