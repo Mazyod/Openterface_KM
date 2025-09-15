@@ -32,4 +32,16 @@ extern void MCU_Sleep_Wakeup_Operate( void );
 extern void CH9329_SendAck(uint8_t addr, uint8_t cmd_code, uint8_t status);
 extern void CH9329_DataParser(uint8_t* buf, uint8_t len);
 extern void USB_DataRx_To_KMHandle(void);
+
+/* Backward Compatibility Functions for Keyboard */
+extern void CH9329_SetAutoReleaseMode(bool sender_handles_release);
+extern bool CH9329_GetAutoReleaseMode(void);
+extern void CH9329_ResetAutoDetection(void);
+extern void KB_SetLEDStatus(uint8_t led_status);
+extern uint8_t KB_GetLEDStatus(void);
+
+/* Backward Compatibility Functions for Mouse */
+extern void CH9329_HandleRelativeMouse(uint8_t addr, uint8_t cmd_code, uint8_t* data, uint8_t data_len);
+extern void CH9329_HandleAbsoluteMouse(uint8_t addr, uint8_t cmd_code, uint8_t* data, uint8_t data_len);
+
 #endif

@@ -665,6 +665,11 @@ void USBFS_IRQHandler( void )
                                         pUSBFS_Descr = MouseRepDesc;
                                         len = DEF_USBD_REPORT_DESC_LEN_REL_MS;
                                     }
+                                    else if( USBFS_SetupReqIndex == 0x02 )
+                                    {
+                                        pUSBFS_Descr = AbsMouseRepDesc;
+                                        len = DEF_USBD_REPORT_DESC_LEN_ABS_MS;
+                                    }
                                     else
                                     {
                                         errflag = 0xFF;

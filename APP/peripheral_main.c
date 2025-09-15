@@ -11,6 +11,7 @@
 #include "peripheral.h"
 #include "include/keyboard_handler.h"
 #include "include/mouse_handler.h"
+#include "gpio_init.h"
 /*********************************************************************
  * GLOBAL TYPEDEFS
  */
@@ -30,15 +31,21 @@ __attribute__((section(".highcode")))
 __attribute__((noinline))
 void Main_Circulation(void)
 {
+    // GPIO_WriteBit(GPIOA, GPIO_Pin_1, Bit_RESET);
+    // GPIO_WriteBit(GPIOA, GPIO_Pin_1, Bit_SET);
+    u8 prev_state = 0; 
     while(1)
     {
+        
         TMOS_SystemProcess();
+        SD_SW(&prev_state);
         if (USBFS_DevEnumStatus) {
             USB_DataRx_To_KMHandle();
         }
     }
 }
 int main(void) {
+    
     NVIC_PriorityGroupConfig(NVIC_PriorityGroup_1);
     Delay_Init();
 
@@ -54,6 +61,13 @@ int main(void) {
     Set_USBConfig();
     USB_Init();
     USB_Interrupts_Config();
-    Main_Circulation();
+    GPIO_Toggle_INIT();
     
+    // Initialize keyboard handler
+    Keyboard_Init();
+    
+    // Initialize mouse handler
+    Mouse_Init();
+    
+    Main_Circulation();
 }
