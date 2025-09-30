@@ -31,9 +31,10 @@ __attribute__((section(".highcode")))
 __attribute__((noinline))
 void Main_Circulation(void)
 {
-    // GPIO_WriteBit(GPIOA, GPIO_Pin_1, Bit_RESET);
-    // GPIO_WriteBit(GPIOA, GPIO_Pin_1, Bit_SET);
     u8 prev_state = 0; 
+    GPIO_WriteBit(GPIOA, GPIO_Pin_1, Bit_RESET);
+    GPIO_WriteBit(GPIOA, GPIO_Pin_1, Bit_SET);
+    GPIO_WriteBit(GPIOA, GPIO_Pin_7, Bit_SET);
     while(1)
     {
         
