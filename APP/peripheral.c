@@ -89,9 +89,9 @@ uint8_t Peripheral_TaskID = INVALID_TASK_ID; // Task ID for internal task/event 
 // GAP - SCAN RSP data (max size = 31 bytes)
 static uint8_t scanRspData[] = {
     // complete name
-    0x08, // length of this data
+    0x07, // length of this data
     GAP_ADTYPE_LOCAL_NAME_COMPLETE,
-    'K', 'V','M', '_', 'G', 'O',
+    'K', 'V','M', '-', 'G', 'O',
     // connection interval range
     0x05, // length of this data
     GAP_ADTYPE_SLAVE_CONN_INTERVAL_RANGE,
@@ -124,7 +124,7 @@ static uint8_t advertData[] = {
     HI_UINT16(SIMPLEPROFILE_SERV_UUID)};
 
 // GAP GATT Attributes
-static uint8_t attDeviceName[GAP_DEVICE_NAME_LEN] = "KVM GO";
+static uint8_t attDeviceName[GAP_DEVICE_NAME_LEN] = "KVM-GO";
 
 // Connection item list
 static peripheralConnItem_t peripheralConnList;
