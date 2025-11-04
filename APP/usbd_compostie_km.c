@@ -66,6 +66,7 @@ void MCU_Sleep_Wakeup_Operate( void )
 #include <stdint.h>
 
 // -------------------- Protocol Definitions --------------------
+#define CH9329_MAX_DATA_LEN 8
 #define CH9329_FRAME_HEAD1      0x57
 #define CH9329_FRAME_HEAD2      0xAB
 
@@ -75,73 +76,67 @@ void MCU_Sleep_Wakeup_Operate( void )
 #define CMD_SEND_MS_REL_DATA    0x05
 
 // ACK Status Codes
-#define DEF_CMD_SUCCESS         0x00    // Command execution successful
-#define DEF_CMD_ERR_TIMEOUT     0xE1    // Serial receiving timeout
-#define DEF_CMD_ERR_HEAD        0xE2    // Serial receiving header error
-#define DEF_CMD_ERR_CMD         0xE3    // Serial receiving command error
-#define DEF_CMD_ERR_SUM         0xE4    // Checksum mismatch
-#define DEF_CMD_ERR_PARA        0xE5    // Parameter error
-#define DEF_CMD_ERR_OPERATE     0xE6    // Operation error/execution failed
+#define STATUS_SUCCESS        0x00
+#define STATUS_ERR_TIMEOUT    0xE1
+#define STATUS_ERR_HEADER     0xE2
+#define STATUS_ERR_CMD        0xE3
+#define STATUS_ERR_CHECKSUM   0xE4
+#define STATUS_ERR_PARAM      0xE5
+#define STATUS_ERR_FRAME      0xE6  // 自定义，帧异常执行失败
 
-/*********************************************************************
- * @fn      CH9329_SendAck
- *
- * @brief   Send ACK packet to CH9329
- *
- * @param   addr - Device address
- * @param   cmd_code - Command code
- * @param   status - Status byte
- *
- * @return  none
- */
-void CH9329_SendAck(uint8_t addr, uint8_t cmd_code, uint8_t status) {
-    // // Check if there's space in the TX buffer for a new packet
-    // if (Uart.Tx_RemainNum >= DEF_UARTx_TX_BUF_NUM_MAX) {
-    //     return; // Buffer full, cannot send ACK
-    // }
-    
-    // uint8_t ack_cmd = cmd_code | 0x80;  // Set bit 7 to indicate ACK response
-    // uint8_t ack_packet[7] = {CH9329_FRAME_HEAD1, CH9329_FRAME_HEAD2, addr, ack_cmd, 0x01, status, 0};
-    
-    // // Calculate checksum for first 6 bytes
-    // for (int i = 0; i < 6; i++) {
-    //     ack_packet[6] += ack_packet[i];
-    // }
-    
-    // // Disable interrupts to prevent race conditions during buffer manipulation
-    // __disable_irq();
-    
-    // // Double-check buffer availability after disabling interrupts
-    // if (Uart.Tx_RemainNum >= DEF_UARTx_TX_BUF_NUM_MAX) {
-    //     __enable_irq();
-    //     return; // Buffer became full
-    // }
-    
-    // // Calculate the buffer position for the new packet
-    // uint16_t load_index = Uart.Tx_LoadNum % DEF_UARTx_TX_BUF_NUM_MAX;
-    // uint16_t buffer_offset = load_index * DEF_USB_FS_PACK_LEN;
-    
-    // // Ensure we don't exceed buffer bounds
-    // if (buffer_offset + 7 <= DEF_UARTx_TX_BUF_LEN) {
-    //     // Copy ACK packet to UART TX buffer
-    //     for (int i = 0; i < 7; i++) {
-    //         UART2_Tx_Buf[buffer_offset + i] = ack_packet[i];
-    //     }
-        
-    //     // Update packet length for this buffer slot
-    //     Uart.Tx_PackLen[load_index] = 7;
-        
-    //     // Update control structure
-    //     Uart.Tx_LoadNum++;
-    //     Uart.Tx_RemainNum++;
-    // }
-    
-    // __enable_irq();
-    
-    // // Trigger transmission if UART is not currently busy
-    // if (Uart.Tx_Flag == 0) {
-    //     UART2_DataTx_Deal();
-    // }
+// 命令码定义
+#define CMD_GET_INFO  0x01
+
+// 状态：正常／异常
+#define STATUS_OK     0    // 这里示例中无专门状态码字节，因为协议里用命令码高两位区分是否异常
+
+void CH9329_SendResponse(uint8_t addr, uint8_t cmd_code, uint8_t* pdata, uint8_t len, uint8_t status) {
+    uint8_t packet[8] = {0};
+    uint8_t index = 0;
+
+    packet[index++] = CH9329_FRAME_HEAD1;
+    packet[index++] = CH9329_FRAME_HEAD2;
+    packet[index++] = addr;
+    packet[index++] = cmd_code;
+    packet[index++] = 0x01;      // 数据长度恒为 1（仅状态）
+    packet[index++] = status;
+
+    uint8_t checksum = 0;
+    for (uint8_t i = 0; i < index; i++) checksum += packet[i];
+    packet[index++] = checksum;
+
+    USBD_ENDPx_DataUp(ENDP3, packet, index);
+}
+
+// 专用 “获取信息” 应答函数
+void CH9329_Cmd_GetInfo_Reply(uint8_t addr)
+{
+    uint8_t data[CH9329_MAX_DATA_LEN] = {0};
+    data[0] = 0x30;   // 版本 v1.0
+    data[1] = 0x01;   // USB 枚举成功
+    data[2] = 0x00;   // 键盘指示灯状态（全部熄灭）
+    // data[3]..data[7] 保留 = 0x00
+
+    CH9329_SendResponse(addr, CMD_GET_INFO, data, CH9329_MAX_DATA_LEN, 0);
+}
+void CH9329_Cmd_KB_General_Reply(uint8_t addr, uint8_t recv_cmd, uint8_t status)
+{
+    uint8_t data = status;
+    CH9329_SendResponse(addr, recv_cmd, &data, 1, (status != STATUS_SUCCESS));
+}
+
+// 鼠标绝对模式命令应答 （0x04）
+void CH9329_Cmd_MS_Abs_Reply(uint8_t addr, uint8_t recv_cmd, uint8_t status)
+{
+    uint8_t data = status;
+    CH9329_SendResponse(addr, recv_cmd, &data, 1, (status != STATUS_SUCCESS));
+}
+
+// 鼠标相对模式命令应答 （0x05）
+void CH9329_Cmd_MS_Rel_Reply(uint8_t addr, uint8_t recv_cmd, uint8_t status)
+{
+    uint8_t data = status;
+    CH9329_SendResponse(addr, recv_cmd, &data, 1, (status != STATUS_SUCCESS));
 }
 
 // -------------------- CH9329 Data Parser --------------------
@@ -150,77 +145,129 @@ void CH9329_DataParser(uint8_t* buf, uint8_t len) {
 
     while (index + 6 <= len) {
         if (buf[index] == CH9329_FRAME_HEAD1 && buf[index + 1] == CH9329_FRAME_HEAD2) {
-            uint8_t frame_start = index;
-            index += 2;
+            uint8_t addr     = buf[index + 2];
+            uint8_t cmd_code = buf[index + 3];
+            uint8_t data_len = buf[index + 4];
+            uint16_t frame_total_len = 2 + 1 + 1 + 1 + data_len + 1;
 
-            uint8_t addr = buf[index++];
-            uint8_t cmd_code = buf[index++];
-            uint8_t data_len = buf[index++];
-
-            if ((index + data_len + 1) > len) {
-                break;  // Incomplete frame
+            // 检查是否接收完整帧
+            if (index + frame_total_len > len) {
+                CH9329_SendResponse(addr, cmd_code, NULL, 0, STATUS_ERR_FRAME);
+                break;
             }
 
-            uint8_t checksum = CH9329_FRAME_HEAD1 + CH9329_FRAME_HEAD2 + addr + cmd_code + data_len;
-            uint8_t data[8] = {0};
-            for (uint8_t i = 0; i < data_len && i < sizeof(data); i++) {
-                data[i] = buf[index++];
-                checksum += data[i];
+            uint8_t *pdata = &buf[index + 5];
+            uint8_t recv_sum = buf[index + 5 + data_len];
+
+            // 校验和计算
+            uint8_t sum = 0;
+            for (uint8_t i = 0; i < frame_total_len - 1; i++) sum += buf[index + i];
+            if (sum != recv_sum) {
+                CH9329_SendResponse(addr, cmd_code, NULL, 0, STATUS_ERR_CHECKSUM);
+                index += frame_total_len;
+                continue;
             }
 
-            uint8_t recv_sum = buf[index++];
+            // 命令分发
+            switch (cmd_code) {
+                case CMD_GET_INFO:
+                    CH9329_Cmd_GetInfo_Reply(addr);
+                    break;
 
-            if (checksum != recv_sum) {
-                CH9329_SendAck(addr, cmd_code, DEF_CMD_ERR_SUM);
-                continue;  // Checksum error
+                case CMD_SEND_KB_GENERAL_DATA:
+                    if (data_len != 8) {
+                        CH9329_SendResponse(addr, cmd_code, NULL, 0, STATUS_ERR_PARAM);
+                    } else {
+                        Keyboard_HandleData(addr, cmd_code, pdata, data_len);
+                        CH9329_SendResponse(addr, cmd_code, NULL, 0, STATUS_SUCCESS);
+                    }
+                    break;
+
+                case CMD_SEND_MS_ABS_DATA:
+                    if (data_len < 7) {
+                        CH9329_SendResponse(addr, cmd_code, NULL, 0, STATUS_ERR_PARAM);
+                    } else {
+                        Mouse_HandleAbsoluteData(addr, cmd_code, pdata, data_len);
+                        CH9329_SendResponse(addr, cmd_code, NULL, 0, STATUS_SUCCESS);
+                    }
+                    break;
+
+                case CMD_SEND_MS_REL_DATA:
+                    if (data_len < 5) {
+                        CH9329_SendResponse(addr, cmd_code, NULL, 0, STATUS_ERR_PARAM);
+                    } else {
+                        Mouse_HandleRelativeData(addr, cmd_code, pdata, data_len);
+                        CH9329_SendResponse(addr, cmd_code, NULL, 0, STATUS_SUCCESS);
+                    }
+                    break;
+
+                default:
+                    CH9329_SendResponse(addr, cmd_code, NULL, 0, STATUS_ERR_CMD);
+                    break;
             }
 
-            // Handle Keyboard Data
-            if (cmd_code == CMD_SEND_KB_GENERAL_DATA || cmd_code == CMD_SEND_KB_GAME_DATA) {
-                Keyboard_HandleData(addr, cmd_code, data, data_len);
-            }
-            // Handle Relative Mouse Data
-            else if (cmd_code == CMD_SEND_MS_REL_DATA) {
-                Mouse_HandleRelativeData(addr, cmd_code, data, data_len);
-            } // Handle Absolute Mouse Data
-            else if (cmd_code == CMD_SEND_MS_ABS_DATA) {
-                Mouse_HandleAbsoluteData(addr, cmd_code, data, data_len);
-            }
-
+            index += frame_total_len;
         } else {
-            index++;  // Search for next frame header
+            index++;
         }
     }
 }
 
-// -------------------- Main Data Receive Handler --------------------
+#define RX_BUF_SIZE   256
+
+static uint8_t rx_buf[RX_BUF_SIZE];
+static uint16_t rx_len = 0;
+
+// 将数据加入缓存，并尝试解析
+void CH9329_RxBuffer_Add(uint8_t *data, uint16_t len) {
+    if (len == 0 || data == NULL) return;
+
+    // 若剩余空间不足，移位清理
+    if (rx_len + len > RX_BUF_SIZE) {
+        // 将未处理数据向前移
+        memmove(rx_buf, rx_buf + (rx_len - (RX_BUF_SIZE/2)), RX_BUF_SIZE/2);
+        rx_len = RX_BUF_SIZE/2;
+    }
+
+    memcpy(rx_buf + rx_len, data, len);
+    rx_len += len;
+
+    // 尝试解析
+    CH9329_DataParser(rx_buf, rx_len);
+
+    // 删除已处理的内容（假设解析后 index 已推进）
+    // 为简化，这里清空所有；你可以增强为 “已处理 N 字节移除” 逻辑
+    rx_len = 0;
+}
+
+// 替换 USB_DataRx_To_KMHandle 中的调用为：
 void USB_DataRx_To_KMHandle(void) {
-    // Step 1: Read and parse from BLE ring buffer
+    // Step 1: BLE
     while (RingMemBLE.CurrentLen > 0) {
-        uint8_t resv[64];
-        uint8_t len = (RingMemBLE.CurrentLen > sizeof(resv)) ? sizeof(resv) : RingMemBLE.CurrentLen;
-        if (RingMemRead(&RingMemBLE, resv, len) == SUCCESS) {
-            CH9329_DataParser(resv, len);
+        uint8_t temp[64];
+        uint8_t len = (RingMemBLE.CurrentLen > sizeof(temp)) ? sizeof(temp) : RingMemBLE.CurrentLen;
+        if (RingMemRead(&RingMemBLE, temp, len) == SUCCESS) {
+            CH9329_RxBuffer_Add(temp, len);
         } else {
             break;
         }
     }
 
-    // Step 2: Read and parse from UART2 transmission buffer
+    // Step 2: UART2
     while (Uart.Tx_RemainNum) {
         if (Uart.Tx_CurPackLen == 0x00) {
             Uart.Tx_CurPackLen = Uart.Tx_PackLen[Uart.Tx_DealNum];
             Uart.Tx_CurPackPtr = Uart.Tx_DealNum * DEF_USB_FS_PACK_LEN;
         }
 
-        uint8_t uart_buf[32];
-        uint8_t copy_len = (Uart.Tx_CurPackLen > sizeof(uart_buf)) ? sizeof(uart_buf) : Uart.Tx_CurPackLen;
+        uint8_t temp[32];
+        uint8_t copy_len = (Uart.Tx_CurPackLen > sizeof(temp)) ? sizeof(temp) : Uart.Tx_CurPackLen;
 
         for (uint8_t i = 0; i < copy_len; i++) {
-            uart_buf[i] = UART2_Tx_Buf[Uart.Tx_CurPackPtr++];
+            temp[i] = UART2_Tx_Buf[Uart.Tx_CurPackPtr++];
         }
 
-        CH9329_DataParser(uart_buf, copy_len);
+        CH9329_RxBuffer_Add(temp, copy_len);
 
         Uart.Tx_CurPackLen -= copy_len;
         if (Uart.Tx_CurPackLen == 0) {

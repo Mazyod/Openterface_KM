@@ -189,7 +189,7 @@ void Keyboard_ProcessAutoRelease(uint8_t* data, uint8_t cmd_code, uint8_t repeat
 void Keyboard_HandleData(uint8_t addr, uint8_t cmd_code, uint8_t* data, uint8_t data_len) {
     // Validate data length
     if (data_len != 8) {
-        CH9329_SendAck(addr, cmd_code, DEF_CMD_ERR_PARA);
+        // CH9329_SendAck(addr, cmd_code, DEF_CMD_ERR_PARA);
         return;
     }
 
@@ -212,7 +212,7 @@ void Keyboard_HandleData(uint8_t addr, uint8_t cmd_code, uint8_t* data, uint8_t 
     Keyboard_SendDataToUSB(data);
     
     // Send ACK response
-    CH9329_SendAck(addr, cmd_code, DEF_CMD_SUCCESS);
+    // CH9329_SendAck(addr, cmd_code, DEF_CMD_SUCCESS);
 
     // Process auto-release logic
     Keyboard_ProcessAutoRelease(data, cmd_code, kb_repeat_count, &kb_long_press);

@@ -107,7 +107,7 @@ void Mouse_SendAbsoluteDataToUSB(uint8_t* data) {
 void Mouse_HandleRelativeData(uint8_t addr, uint8_t cmd_code, uint8_t* data, uint8_t data_len) {
     // Validate data length
     if (data_len < 5) {
-        CH9329_SendAck(addr, cmd_code, DEF_CMD_ERR_PARA);
+        // CH9329_SendAck(addr, cmd_code, DEF_CMD_ERR_PARA);
         return;
     }
 
@@ -118,7 +118,7 @@ void Mouse_HandleRelativeData(uint8_t addr, uint8_t cmd_code, uint8_t* data, uin
     mouse_data[3] = (data[4] & 0x80) ? (int8_t)(data[4] - 256) : data[4];  // Wheel
 
     Mouse_SendRelativeDataToUSB(mouse_data);
-    CH9329_SendAck(addr, cmd_code, DEF_CMD_SUCCESS);
+/*     CH9329_SendAck(addr, cmd_code, DEF_CMD_SUCCESS); */
 }
 
 /*********************************************************************
@@ -136,7 +136,7 @@ void Mouse_HandleRelativeData(uint8_t addr, uint8_t cmd_code, uint8_t* data, uin
 void Mouse_HandleAbsoluteData(uint8_t addr, uint8_t cmd_code, uint8_t* data, uint8_t data_len) {
     // Validate data length
     if (data_len < 7) {
-        CH9329_SendAck(addr, cmd_code, DEF_CMD_ERR_PARA);
+        // CH9329_SendAck(addr, cmd_code, DEF_CMD_ERR_PARA);
         return;
     }
 
@@ -163,9 +163,9 @@ void Mouse_HandleAbsoluteData(uint8_t addr, uint8_t cmd_code, uint8_t* data, uin
     // Check if endpoint is not busy before sending
     if (USBFS_Endp_Busy[DEF_UEP3] == 0) {
         Mouse_SendAbsoluteDataToUSB(mouse_data);
-        CH9329_SendAck(addr, cmd_code, DEF_CMD_SUCCESS);
+        // CH9329_SendAck(addr, cmd_code, DEF_CMD_SUCCESS);
     } else {
-        CH9329_SendAck(addr, cmd_code, DEF_CMD_ERR_OPERATE);
+        // CH9329_SendAck(addr, cmd_code, DEF_CMD_ERR_OPERATE);
     }
 }
 
