@@ -11,7 +11,7 @@
 #include "peripheral.h"
 #include "include/keyboard_handler.h"
 #include "include/mouse_handler.h"
-#include "gpio_init.h"
+#include "SD_SWITCH.h"
 #include "RGB.h"
 /*********************************************************************
  * GLOBAL TYPEDEFS
@@ -33,26 +33,25 @@ __attribute__((section(".highcode")))
 __attribute__((noinline))
 void Main_Circulation(void)
 {
+    uint8_t selector_prev_state;
         // 上电三色闪烁
+    selector_prev_state = GPIO_ReadInputDataBit(GPIOB, GPIO_Pin_8);
     RGB_FlashStartupSequence();
-
     // 3秒后切换呼吸模式
     uint32_t t0 = systick_ms;
-    u8 prev_state = 0; 
-    GPIO_WriteBit(GPIOA, GPIO_Pin_1, Bit_RESET);
-    GPIO_WriteBit(GPIOA, GPIO_Pin_1, Bit_SET);
-    GPIO_WriteBit(GPIOA, GPIO_Pin_7, Bit_SET);
+    TARGET_SD_Switch();
     while(1)
-    {
+    {   
         RGB_Update();
         TMOS_SystemProcess();
-        SD_SW(&prev_state);
+        
         if (USBFS_DevEnumStatus) {
             USB_DataRx_To_KMHandle();
         }
         if(systick_ms - t0 > 3000)
         {
             RGB_SetBreathMode(0.02f); // 开始呼吸模式
+            SD_Switch_StateMachine(&selector_prev_state);
         }
     }
 }
@@ -74,14 +73,16 @@ int main(void) {
     Set_USBConfig();
     USB_Init();
     USB_Interrupts_Config();
-    GPIO_Toggle_INIT();
+
     
     // Initialize keyboard handler
     Keyboard_Init();
     RGB_Init();
     // Initialize mouse handler
     Mouse_Init();
+    SD_Switch_Init();
     Delay_Ms(200);
+    
     // RGB_BreathLoop();
     Main_Circulation();
 }

@@ -132,7 +132,6 @@ void SystemCoreClockUpdate (void)
   uint32_t tmp = 0, pllmull = 0, pllsource = 0, Pll_6_5 = 0;
 
   tmp = RCC->CFGR0 & RCC_SWS;
-
   switch (tmp)
   {
     case 0x00:
