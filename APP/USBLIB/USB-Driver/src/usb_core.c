@@ -10,7 +10,7 @@
 * microcontroller manufactured by Nanjing Qinheng Microelectronics.
 *******************************************************************************/ 
 #include "usb_lib.h"
-
+#include <stdbool.h>
 /* Global define */
 #define ValBit(VAR,Place)    (VAR & (1 << Place))
 #define SetBit(VAR,Place)    (VAR |= (1 << Place))

@@ -18,6 +18,16 @@
 				"parentLogicPath": "",
 				"type": "file",
 				"name": "*.wvproj"
+			},
+			{
+				"parentLogicPath": "APP",
+				"type": "file",
+				"name": "DS18B20.c"
+			},
+			{
+				"name": "DS18B20.h",
+				"parentLogicPath": "APP/include",
+				"type": "file"
 			}
 		],
 		"projectName": "BLE_USB",

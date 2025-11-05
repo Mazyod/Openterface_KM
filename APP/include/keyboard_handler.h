@@ -3,6 +3,7 @@
 
 #include <stdint.h>
 #include "usb_type.h"  // For bool type definition
+#include <stdbool.h>
 
 /*******************************************************************************/
 /* Definitions */

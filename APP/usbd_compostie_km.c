@@ -10,7 +10,9 @@
 #include "peripheral.h"
 #include "include/keyboard_handler.h"
 #include "include/mouse_handler.h"
-
+#include "SD_SWITCH.h"
+#include "DS18B20.h"
+#include <stdbool.h>
 /*******************************************************************************/
 /* Global Variable Definition */
 
@@ -74,7 +76,8 @@ void MCU_Sleep_Wakeup_Operate( void )
 #define CMD_SEND_KB_GAME_DATA    0x12
 #define CMD_SEND_MS_ABS_DATA    0x04
 #define CMD_SEND_MS_REL_DATA    0x05
-
+#define CMD_SD_SWITCH  0x17
+#define CMD_DS18B20_GET_TEMP   0x18
 // ACK Status Codes
 #define STATUS_SUCCESS        0x00
 #define STATUS_ERR_TIMEOUT    0xE1
@@ -89,7 +92,7 @@ void MCU_Sleep_Wakeup_Operate( void )
 
 // 状态：正常／异常
 #define STATUS_OK     0    // 这里示例中无专门状态码字节，因为协议里用命令码高两位区分是否异常
-
+extern uint8_t sd_card_channel_state; 
 void CH9329_SendResponse(uint8_t addr, uint8_t cmd_code, uint8_t* pdata, uint8_t len, uint8_t status) {
     uint8_t packet[8] = {0};
     uint8_t index = 0;
@@ -140,18 +143,21 @@ void CH9329_Cmd_MS_Rel_Reply(uint8_t addr, uint8_t recv_cmd, uint8_t status)
 }
 
 // -------------------- CH9329 Data Parser --------------------
-void CH9329_DataParser(uint8_t* buf, uint8_t len) {
+void CH9329_DataParser(uint8_t* buf, uint8_t len)
+{
     uint8_t index = 0;
 
-    while (index + 6 <= len) {
-        if (buf[index] == CH9329_FRAME_HEAD1 && buf[index + 1] == CH9329_FRAME_HEAD2) {
+    while (index + 6 <= len)  // 最小帧长度检查
+    {
+        if (buf[index] == CH9329_FRAME_HEAD1 && buf[index + 1] == CH9329_FRAME_HEAD2)
+        {
             uint8_t addr     = buf[index + 2];
             uint8_t cmd_code = buf[index + 3];
             uint8_t data_len = buf[index + 4];
             uint16_t frame_total_len = 2 + 1 + 1 + 1 + data_len + 1;
 
-            // 检查是否接收完整帧
-            if (index + frame_total_len > len) {
+            if (index + frame_total_len > len)
+            {
                 CH9329_SendResponse(addr, cmd_code, NULL, 0, STATUS_ERR_FRAME);
                 break;
             }
@@ -159,47 +165,62 @@ void CH9329_DataParser(uint8_t* buf, uint8_t len) {
             uint8_t *pdata = &buf[index + 5];
             uint8_t recv_sum = buf[index + 5 + data_len];
 
-            // 校验和计算
+            // 校验和
             uint8_t sum = 0;
-            for (uint8_t i = 0; i < frame_total_len - 1; i++) sum += buf[index + i];
-            if (sum != recv_sum) {
+            for (uint8_t i = 0; i < frame_total_len - 1; i++)
+                sum += buf[index + i];
+
+            if (sum != recv_sum)
+            {
                 CH9329_SendResponse(addr, cmd_code, NULL, 0, STATUS_ERR_CHECKSUM);
                 index += frame_total_len;
                 continue;
             }
 
-            // 命令分发
-            switch (cmd_code) {
+            /* ======== 命令分发 ======== */
+            switch (cmd_code)
+            {
                 case CMD_GET_INFO:
                     CH9329_Cmd_GetInfo_Reply(addr);
                     break;
 
                 case CMD_SEND_KB_GENERAL_DATA:
-                    if (data_len != 8) {
+                    if (data_len != 8)
                         CH9329_SendResponse(addr, cmd_code, NULL, 0, STATUS_ERR_PARAM);
-                    } else {
+                    else
+                    {
                         Keyboard_HandleData(addr, cmd_code, pdata, data_len);
                         CH9329_SendResponse(addr, cmd_code, NULL, 0, STATUS_SUCCESS);
                     }
                     break;
 
                 case CMD_SEND_MS_ABS_DATA:
-                    if (data_len < 7) {
+                    if (data_len < 7)
                         CH9329_SendResponse(addr, cmd_code, NULL, 0, STATUS_ERR_PARAM);
-                    } else {
+                    else
+                    {
                         Mouse_HandleAbsoluteData(addr, cmd_code, pdata, data_len);
                         CH9329_SendResponse(addr, cmd_code, NULL, 0, STATUS_SUCCESS);
                     }
                     break;
 
                 case CMD_SEND_MS_REL_DATA:
-                    if (data_len < 5) {
+                    if (data_len < 5)
                         CH9329_SendResponse(addr, cmd_code, NULL, 0, STATUS_ERR_PARAM);
-                    } else {
+                    else
+                    {
                         Mouse_HandleRelativeData(addr, cmd_code, pdata, data_len);
                         CH9329_SendResponse(addr, cmd_code, NULL, 0, STATUS_SUCCESS);
                     }
                     break;
+
+                /* ======== SD 卡切换命令 ======== */
+                case CMD_SD_SWITCH:
+                    SD_USB_Switch(addr, cmd_code, pdata, data_len);
+                    break;
+                // case CMD_DS18B20_GET_TEMP:
+                //     DS18B20_Command(addr,cmd_code,pdata,data_len);
+                //     break;
 
                 default:
                     CH9329_SendResponse(addr, cmd_code, NULL, 0, STATUS_ERR_CMD);
@@ -207,11 +228,15 @@ void CH9329_DataParser(uint8_t* buf, uint8_t len) {
             }
 
             index += frame_total_len;
-        } else {
+        }
+
+        else
+        {
             index++;
         }
     }
 }
+
 
 #define RX_BUF_SIZE   256
 

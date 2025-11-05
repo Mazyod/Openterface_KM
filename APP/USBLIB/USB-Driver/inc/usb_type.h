@@ -14,16 +14,19 @@
 #define __USB_TYPE_H
 #include "debug.h"
 #include "usb_conf.h"
-
+#include <stdbool.h>
 #ifndef NULL
 #define NULL ((void *)0)
 #endif
+#ifndef TRUE
+#define TRUE  1
+#endif
 
-typedef enum
-{
-  FALSE = 0, TRUE  = !FALSE
-}
-bool;
+#ifndef FALSE
+#define FALSE 0
+#endif
+
+
 
 #endif /* __USB_TYPE_H */
 

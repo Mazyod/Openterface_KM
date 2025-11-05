@@ -4,6 +4,7 @@
 #include "CONFIG.h"
 #include "HAL.h"
 #include <string.h>
+#include <stdbool.h>
 
 /*******************************************************************************/
 /* Global Variables */

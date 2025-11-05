@@ -1,7 +1,7 @@
 #include "sd_switch.h"
 #include "ch32v20x_gpio.h"
 #include "ch32v20x_rcc.h"
-
+#include "usbd_composite_km.h"
 uint8_t sd_card_channel_state = 0;   // 默认 0 = TARGET
 
 static bool firstDetect = true;
@@ -45,7 +45,7 @@ void TARGET_SD_Switch(void)
     GPIO_WriteBit(GPIOA, GPIO_Pin_7, Bit_SET);
     GPIO_WriteBit(GPIOA, GPIO_Pin_1, Bit_SET);
 
-    sd_card_channel_state = 0;
+    sd_card_channel_state = 0; // TARGET
 }
 
 void HOST_SD_Switch(void)
@@ -55,8 +55,9 @@ void HOST_SD_Switch(void)
     GPIO_WriteBit(GPIOA, GPIO_Pin_7, Bit_RESET);
     GPIO_WriteBit(GPIOA, GPIO_Pin_1, Bit_SET);
 
-    sd_card_channel_state = 1;
+    sd_card_channel_state = 1; // HOST
 }
+
 
 void SD_Switch_StateMachine(uint8_t *prev_selector_state_p)
 {
@@ -89,5 +90,40 @@ void SD_Switch_StateMachine(uint8_t *prev_selector_state_p)
             }
         }
         *prev_selector_state_p = curr;
+    }
+}
+void SD_USB_Switch(uint8_t addr, uint8_t cmd_code, uint8_t *pdata, uint8_t data_len)
+{
+    if (data_len < 5)
+    {
+        CH9329_SendResponse(addr, cmd_code, NULL, 0, STATUS_ERR_PARAM);
+        return;
+    }
+
+    uint8_t op = pdata[4];  // 控制位
+    uint8_t resp_data[1];
+
+    switch (op)
+    {
+        case 0x00:  // 切换到 HOST
+            HOST_SD_Switch();
+            resp_data[0] = 0x00;  // 当前状态：HOST
+            CH9329_SendResponse(addr, cmd_code, resp_data, 1, resp_data[0]);
+            break;
+
+        case 0x01:  // 切换到 TARGET
+            TARGET_SD_Switch();
+            resp_data[0] = 0x01;  // 当前状态：TARGET
+            CH9329_SendResponse(addr, cmd_code, resp_data, 1, resp_data[0]);
+            break;
+
+        case 0x03:  // 查询当前状态
+            resp_data[0] = (sd_card_channel_state == 0) ? 0x01 : 0x00;
+            CH9329_SendResponse(addr, cmd_code, resp_data, 1, resp_data[0]);
+            break;
+
+        default:
+            CH9329_SendResponse(addr, cmd_code, NULL, 0, STATUS_ERR_PARAM);
+            break;
     }
 }

@@ -30,7 +30,7 @@ void HOST_SD_Switch(void);
  * @param prev_selector_state_p 指向 PB8 上次状态变量
  */
 void SD_Switch_StateMachine(uint8_t *prev_selector_state_p);
-
+void SD_USB_Switch(uint8_t addr, uint8_t cmd_code, uint8_t *pdata, uint8_t data_len);
 #ifdef __cplusplus
 }
 #endif
