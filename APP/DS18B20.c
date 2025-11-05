@@ -9,10 +9,6 @@
 extern uint8_t USBD_ENDPx_DataUp(uint8_t endp, uint8_t *pbuf, uint16_t len);
 #define USB_TX_ENDP     ENDP3
 
-// 延时函数，你需要根据时钟频率实现
-extern void Delay_us(uint32_t us);
-extern void Delay_ms(uint32_t ms);
-
 // 初始化 GPIO 等
 void DS18B20_Init(void)
 {

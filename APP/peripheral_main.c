@@ -13,6 +13,7 @@
 #include "include/mouse_handler.h"
 #include "SD_SWITCH.h"
 #include "RGB.h"
+#include "DS18B20.h"
 /*********************************************************************
  * GLOBAL TYPEDEFS
  */
@@ -81,6 +82,7 @@ int main(void) {
     // Initialize mouse handler
     Mouse_Init();
     SD_Switch_Init();
+    DS18B20_Init();
     Delay_Ms(200);
     
     // RGB_BreathLoop();

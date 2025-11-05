@@ -218,9 +218,9 @@ void CH9329_DataParser(uint8_t* buf, uint8_t len)
                 case CMD_SD_SWITCH:
                     SD_USB_Switch(addr, cmd_code, pdata, data_len);
                     break;
-                // case CMD_DS18B20_GET_TEMP:
-                //     DS18B20_Command(addr,cmd_code,pdata,data_len);
-                //     break;
+                case CMD_DS18B20_GET_TEMP:
+                    DS18B20_Command(addr,cmd_code,pdata,data_len);
+                    break;
 
                 default:
                     CH9329_SendResponse(addr, cmd_code, NULL, 0, STATUS_ERR_CMD);
