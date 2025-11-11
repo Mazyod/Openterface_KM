@@ -52,7 +52,7 @@
 #define STATUS_OK     0    
 void USB_Sleep_Wakeup_CFG( void );
 void MCU_Sleep_Wakeup_Operate( void );
-void CH9329_SendResponse(uint8_t addr, uint8_t cmd_code, uint8_t* pdata, uint8_t len, uint8_t status) ;
+void CH9329_SendResponse(uint8_t addr, uint8_t cmd_code, uint8_t* pdata, uint8_t len) ;
 void CH9329_Cmd_GetInfo_Reply(uint8_t addr);
 void CH9329_Cmd_KB_General_Reply(uint8_t addr, uint8_t recv_cmd, uint8_t status);
 void CH9329_Cmd_MS_Abs_Reply(uint8_t addr, uint8_t recv_cmd, uint8_t status);

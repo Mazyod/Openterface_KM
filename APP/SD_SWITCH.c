@@ -96,7 +96,8 @@ void SD_USB_Switch(uint8_t addr, uint8_t cmd_code, uint8_t *pdata, uint8_t data_
 {
     if (data_len < 5)
     {
-        CH9329_SendResponse(addr, cmd_code, NULL, 0, STATUS_ERR_PARAM);
+        uint8_t st = STATUS_ERR_FRAME;
+        CH9329_SendResponse(addr, cmd_code, &st, 1);
         return;
     }
 
@@ -107,23 +108,25 @@ void SD_USB_Switch(uint8_t addr, uint8_t cmd_code, uint8_t *pdata, uint8_t data_
     {
         case 0x00:  // 切换到 HOST
             HOST_SD_Switch();
-            resp_data[0] = 0x00;  // 当前状态：HOST
-            CH9329_SendResponse(addr, cmd_code, resp_data, 1, resp_data[0]);
+            uint8_t st = 0x00;  // 当前状态：HOST
+            
+            CH9329_SendResponse(addr, cmd_code, &st, 1 );
             break;
 
         case 0x01:  // 切换到 TARGET
             TARGET_SD_Switch();
-            resp_data[0] = 0x01;  // 当前状态：TARGET
-            CH9329_SendResponse(addr, cmd_code, resp_data, 1, resp_data[0]);
+            st = 0x01;  // 当前状态：TARGET
+            CH9329_SendResponse(addr, cmd_code, &st, 1);
             break;
 
         case 0x03:  // 查询当前状态
-            resp_data[0] = (sd_card_channel_state == 0) ? 0x01 : 0x00;
-            CH9329_SendResponse(addr, cmd_code, resp_data, 1, resp_data[0]);
+            st = (sd_card_channel_state == 0) ? 0x01 : 0x00;
+            CH9329_SendResponse(addr, cmd_code, &st, 1);
             break;
 
         default:
-            CH9329_SendResponse(addr, cmd_code, NULL, 0, STATUS_ERR_PARAM);
+            st = STATUS_ERR_PARAM;
+            CH9329_SendResponse(addr, cmd_code,&st, 0);
             break;
     }
 }

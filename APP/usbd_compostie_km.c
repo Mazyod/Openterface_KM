@@ -93,54 +93,74 @@ void MCU_Sleep_Wakeup_Operate( void )
 // 状态：正常／异常
 #define STATUS_OK     0    // 这里示例中无专门状态码字节，因为协议里用命令码高两位区分是否异常
 extern uint8_t sd_card_channel_state; 
-void CH9329_SendResponse(uint8_t addr, uint8_t cmd_code, uint8_t* pdata, uint8_t len, uint8_t status) {
-    uint8_t packet[8] = {0};
+void CH9329_SendResponse(uint8_t addr, uint8_t cmd_code, uint8_t* pdata, uint8_t len)
+{
+    uint8_t packet[32];
     uint8_t index = 0;
 
     packet[index++] = CH9329_FRAME_HEAD1;
     packet[index++] = CH9329_FRAME_HEAD2;
     packet[index++] = addr;
-    packet[index++] = cmd_code;
-    packet[index++] = 0x01;      // 数据长度恒为 1（仅状态）
-    packet[index++] = status;
 
+    uint8_t resp_cmd = cmd_code | 0x80;
+    packet[index++] = resp_cmd;
+
+    packet[index++] = len;
+
+    if (pdata != NULL && len > 0) {
+        memcpy(&packet[index], pdata, len);
+        index += len;
+    }
+
+    // 计算校验和
     uint8_t checksum = 0;
-    for (uint8_t i = 0; i < index; i++) checksum += packet[i];
+    for (uint8_t i = 0; i < index; i++) {
+        checksum += packet[i];
+    }
     packet[index++] = checksum;
 
     USBD_ENDPx_DataUp(ENDP3, packet, index);
 }
 
+
+
 // 专用 “获取信息” 应答函数
 void CH9329_Cmd_GetInfo_Reply(uint8_t addr)
 {
-    uint8_t data[CH9329_MAX_DATA_LEN] = {0};
-    data[0] = 0x30;   // 版本 v1.0
-    data[1] = 0x01;   // USB 枚举成功
-    data[2] = 0x00;   // 键盘指示灯状态（全部熄灭）
-    // data[3]..data[7] 保留 = 0x00
+    uint8_t data[8] = {0};
 
-    CH9329_SendResponse(addr, CMD_GET_INFO, data, CH9329_MAX_DATA_LEN, 0);
+    // 协议 payload 固定 8 字节
+    data[0] = 0x00; // status（你不用但占位）
+    data[1] = 0x00;
+    data[2] = 0x00;
+    data[3] = 0x00;
+    data[4] = 0x00;
+    data[5] = 0x00;
+    data[6] = 0x01;
+    data[7] = 0x30;
+
+    CH9329_SendResponse(addr, CMD_GET_INFO, data, 8);
 }
+
+
 void CH9329_Cmd_KB_General_Reply(uint8_t addr, uint8_t recv_cmd, uint8_t status)
 {
-    uint8_t data = status;
-    CH9329_SendResponse(addr, recv_cmd, &data, 1, (status != STATUS_SUCCESS));
+    uint8_t data[1] = { status };
+    CH9329_SendResponse(addr, recv_cmd, data, 1);
 }
 
-// 鼠标绝对模式命令应答 （0x04）
 void CH9329_Cmd_MS_Abs_Reply(uint8_t addr, uint8_t recv_cmd, uint8_t status)
 {
-    uint8_t data = status;
-    CH9329_SendResponse(addr, recv_cmd, &data, 1, (status != STATUS_SUCCESS));
+    uint8_t data[1] = { status };
+    CH9329_SendResponse(addr, recv_cmd, data, 1);
 }
 
-// 鼠标相对模式命令应答 （0x05）
 void CH9329_Cmd_MS_Rel_Reply(uint8_t addr, uint8_t recv_cmd, uint8_t status)
 {
-    uint8_t data = status;
-    CH9329_SendResponse(addr, recv_cmd, &data, 1, (status != STATUS_SUCCESS));
+    uint8_t data[1] = { status };
+    CH9329_SendResponse(addr, recv_cmd, data, 1);
 }
+
 
 // -------------------- CH9329 Data Parser --------------------
 void CH9329_DataParser(uint8_t* buf, uint8_t len)
@@ -158,7 +178,8 @@ void CH9329_DataParser(uint8_t* buf, uint8_t len)
 
             if (index + frame_total_len > len)
             {
-                CH9329_SendResponse(addr, cmd_code, NULL, 0, STATUS_ERR_FRAME);
+                uint8_t st = STATUS_ERR_FRAME;
+                CH9329_SendResponse(addr, cmd_code, &st, 1);
                 break;
             }
 
@@ -172,7 +193,8 @@ void CH9329_DataParser(uint8_t* buf, uint8_t len)
 
             if (sum != recv_sum)
             {
-                CH9329_SendResponse(addr, cmd_code, NULL, 0, STATUS_ERR_CHECKSUM);
+                uint8_t st = STATUS_ERR_CHECKSUM;
+                CH9329_SendResponse(addr, cmd_code, &st, 1 );
                 index += frame_total_len;
                 continue;
             }
@@ -185,46 +207,62 @@ void CH9329_DataParser(uint8_t* buf, uint8_t len)
                     break;
 
                 case CMD_SEND_KB_GENERAL_DATA:
-                    if (data_len != 8)
-                        CH9329_SendResponse(addr, cmd_code, NULL, 0, STATUS_ERR_PARAM);
-                    else
-                    {
-                        Keyboard_HandleData(addr, cmd_code, pdata, data_len);
-                        CH9329_SendResponse(addr, cmd_code, NULL, 0, STATUS_SUCCESS);
-                    }
-                    break;
+{
+    uint8_t st;
+    if (data_len != 8) {
+        st = STATUS_ERR_PARAM;
+        CH9329_SendResponse(addr, cmd_code, &st, 1);
+    } else {
+        Keyboard_HandleData(addr, cmd_code, pdata, data_len);
+        st = STATUS_SUCCESS;
+        CH9329_SendResponse(addr, cmd_code, &st, 1);
+    }
+}
+break;
 
-                case CMD_SEND_MS_ABS_DATA:
-                    if (data_len < 7)
-                        CH9329_SendResponse(addr, cmd_code, NULL, 0, STATUS_ERR_PARAM);
-                    else
-                    {
-                        Mouse_HandleAbsoluteData(addr, cmd_code, pdata, data_len);
-                        CH9329_SendResponse(addr, cmd_code, NULL, 0, STATUS_SUCCESS);
-                    }
-                    break;
+case CMD_SEND_MS_ABS_DATA:
+{
+    uint8_t st;
+    if (data_len < 7) {
+        st = STATUS_ERR_PARAM;
+        CH9329_SendResponse(addr, cmd_code, &st, 1);
+    } else {
+        Mouse_HandleAbsoluteData(addr, cmd_code, pdata, data_len);
+        st = STATUS_SUCCESS;
+        CH9329_SendResponse(addr, cmd_code, &st, 1);
+    }
+}
+break;
 
-                case CMD_SEND_MS_REL_DATA:
-                    if (data_len < 5)
-                        CH9329_SendResponse(addr, cmd_code, NULL, 0, STATUS_ERR_PARAM);
-                    else
-                    {
-                        Mouse_HandleRelativeData(addr, cmd_code, pdata, data_len);
-                        CH9329_SendResponse(addr, cmd_code, NULL, 0, STATUS_SUCCESS);
-                    }
-                    break;
+case CMD_SEND_MS_REL_DATA:
+{
+    uint8_t st;
+    if (data_len < 5) {
+        st = STATUS_ERR_PARAM;
+        CH9329_SendResponse(addr, cmd_code, &st, 1);
+    } else {
+        Mouse_HandleRelativeData(addr, cmd_code, pdata, data_len);
+        st = STATUS_SUCCESS;
+        CH9329_SendResponse(addr, cmd_code, &st, 1);
+    }
+}
+break;
 
-                /* ======== SD 卡切换命令 ======== */
-                case CMD_SD_SWITCH:
-                    SD_USB_Switch(addr, cmd_code, pdata, data_len);
-                    break;
-                case CMD_DS18B20_GET_TEMP:
-                    DS18B20_Command(addr,cmd_code,pdata,data_len);
-                    break;
+case CMD_SD_SWITCH:
+    SD_USB_Switch(addr, cmd_code, pdata, data_len);
+    break;
 
-                default:
-                    CH9329_SendResponse(addr, cmd_code, NULL, 0, STATUS_ERR_CMD);
-                    break;
+case CMD_DS18B20_GET_TEMP:
+    DS18B20_Command(addr, cmd_code, pdata, 5);
+    break;
+
+default:
+{
+    uint8_t st = STATUS_ERR_CMD;
+    CH9329_SendResponse(addr, cmd_code, &st, 1);
+}
+break;
+
             }
 
             index += frame_total_len;
