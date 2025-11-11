@@ -212,8 +212,6 @@ void Keyboard_HandleData(uint8_t addr, uint8_t cmd_code, uint8_t* data, uint8_t 
     // Send keyboard data to USB
     Keyboard_SendDataToUSB(data);
     
-    // Send ACK response
-    // CH9329_SendAck(addr, cmd_code, DEF_CMD_SUCCESS);
 
     // Process auto-release logic
     Keyboard_ProcessAutoRelease(data, cmd_code, kb_repeat_count, &kb_long_press);
