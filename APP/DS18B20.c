@@ -2,6 +2,7 @@
 #include "ch32v20x.h"
 #include "usbd_composite_km.h"
 #include "usb_lib.h"
+#include "CH32_TEMP.h"
 
 #define ONEWIRE_PORT    GPIOA
 #define ONEWIRE_PIN     GPIO_Pin_2
@@ -141,26 +142,35 @@ uint8_t DS18B20_Command(uint8_t addr, uint8_t cmd_code, uint8_t* pdata, uint8_t 
 {
     int16_t raw;
     uint8_t data[3];
-
-    if (DS18B20_StartConversion() != DS18B20_OK)
-    {
-        data[0] = STATUS_ERR_TIMEOUT;
-        CH9329_SendResponse(addr, cmd_code, data, 1);
-        return 0;
-    }
+    u16 ADC_val;
+    s32 val_mv;
+    // if (DS18B20_StartConversion() != DS18B20_OK)
+    // {
+    //     data[0] = STATUS_ERR_TIMEOUT;
+    //     CH9329_SendResponse(addr, cmd_code, data, 1);
+    //     return 0;
+    // }
     // 等待转换（12 位分辨率典型约 750ms）  
     Delay_Ms(750);
 
-    if (DS18B20_ReadRaw(&raw) != DS18B20_OK)
-    {
-        data[0] = STATUS_ERR_TIMEOUT;
-        CH9329_SendResponse(addr, cmd_code, data, 1);
-        return 0;
-    }
+    // if (DS18B20_ReadRaw(&raw) != DS18B20_OK)
+    // {
+    //     data[0] = STATUS_ERR_TIMEOUT;
+    //     CH9329_SendResponse(addr, cmd_code, data, 1);
+    //     return 0;
+    // }
+    ADC_val = Get_ADC_Average(ADC_Channel_TempSensor, 10);
+    Delay_Ms(500);
+    ADC_val = Get_ConversionVal(ADC_val);
+    val_mv = (ADC_val * 3300 / 4096);
+    float temperature_c = raw * 0.0625f;
+    int16_t temperature = (int16_t)temperature_c; 
+
+    uint16_t temp_hex = TempSensor_Volt_To_Temper_Hex(val_mv);
 
     data[0] = STATUS_SUCCESS;
-    data[1] = (uint8_t)(raw & 0xFF);
-    data[2] = (uint8_t)((raw >> 8) & 0xFF);
+    data[1] = (uint8_t)(temperature & 0xFF);
+    data[2] = (uint8_t)(temp_hex & 0xFF);
 
     CH9329_SendResponse(addr, cmd_code, data, 3);
 }

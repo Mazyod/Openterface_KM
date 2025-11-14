@@ -30,5 +30,21 @@
         <arguments>1.0-name-matches-false-false-*.wvproj</arguments>
       </matcher>
     </filter>
+    <filter>
+      <name>APP/include</name>
+      <type>6</type>
+      <matcher>
+        <id>org.eclipse.ui.ide.multiFilter</id>
+        <arguments>1.0-name-matches-false-false-DS18B20.h</arguments>
+      </matcher>
+    </filter>
+    <filter>
+      <name>APP</name>
+      <type>6</type>
+      <matcher>
+        <id>org.eclipse.ui.ide.multiFilter</id>
+        <arguments>1.0-name-matches-false-false-DS18B20.c</arguments>
+      </matcher>
+    </filter>
   </filteredResources>
 </projectDescription>

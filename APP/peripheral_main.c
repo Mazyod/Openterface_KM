@@ -14,6 +14,7 @@
 #include "SD_SWITCH.h"
 #include "RGB.h"
 #include "DS18B20.h"
+#include "CH32_TEMP.h"
 /*********************************************************************
  * GLOBAL TYPEDEFS
  */
@@ -40,7 +41,7 @@ void Main_Circulation(void)
     RGB_FlashStartupSequence();
     // 3√Î∫Û«–ªª∫ÙŒ¸ƒ£ Ω
     uint32_t t0 = systick_ms;
-    TARGET_SD_Switch();
+    // TARGET_SD_Switch();
     while(1)
     {   
         RGB_Update();
@@ -83,6 +84,7 @@ int main(void) {
     Mouse_Init();
     SD_Switch_Init();
     DS18B20_Init();
+    ADC_Function_Init();
     Delay_Ms(200);
     
     // RGB_BreathLoop();
