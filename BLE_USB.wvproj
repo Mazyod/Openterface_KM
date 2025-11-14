@@ -20,9 +20,9 @@
 				"name": "*.wvproj"
 			},
 			{
-				"parentLogicPath": "APP/include",
+				"parentLogicPath": "APP",
 				"type": "file",
-				"name": "DS18B20.h"
+				"name": "CH32_TEMP.c"
 			},
 			{
 				"name": "DS18B20.c",

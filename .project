@@ -31,11 +31,11 @@
       </matcher>
     </filter>
     <filter>
-      <name>APP/include</name>
+      <name>APP</name>
       <type>6</type>
       <matcher>
         <id>org.eclipse.ui.ide.multiFilter</id>
-        <arguments>1.0-name-matches-false-false-DS18B20.h</arguments>
+        <arguments>1.0-name-matches-false-false-CH32_TEMP.c</arguments>
       </matcher>
     </filter>
     <filter>

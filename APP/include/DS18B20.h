@@ -3,7 +3,6 @@
 
 #include <stdint.h>
 
-#include "ds18b20.h"
 #include "ch32v20x.h"
 #include "usbd_composite_km.h"
 #include "usb_lib.h"
