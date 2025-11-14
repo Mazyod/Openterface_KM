@@ -41,7 +41,7 @@ void Main_Circulation(void)
     RGB_FlashStartupSequence();
     // 3√Î∫Û«–ªª∫ÙŒ¸ƒ£ Ω
     uint32_t t0 = systick_ms;
-    // TARGET_SD_Switch();
+    TARGET_SD_Switch();
     while(1)
     {   
         RGB_Update();
