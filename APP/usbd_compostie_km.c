@@ -137,7 +137,7 @@ void CH9329_Cmd_GetInfo_Reply(uint8_t addr)
     data[4] = 0x00;
     data[5] = Keyboard_GetLEDStatus() & 0x07;
     data[6] = 0x01;
-    data[7] = 0x30;
+    data[7] = 0x10;
 
     CH9329_SendResponse(addr, CMD_GET_INFO, data, 8);
 }

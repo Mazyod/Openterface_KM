@@ -61,21 +61,21 @@ void HOST_SD_Switch(void)
 
 void SD_Switch_StateMachine(uint8_t *prev_selector_state_p)
 {
-    if (firstDetect)
-    {
-        uint8_t pa6_state = GPIO_ReadInputDataBit(GPIOA, GPIO_Pin_6);
-        if (pa6_state == Bit_SET)
-        {
-            TARGET_SD_Switch();
-        }
-        else
-        {
-            HOST_SD_Switch();
-        }
-        firstDetect = false;
-    }
-    else
-    {
+    // if (firstDetect)
+    // {
+    //     uint8_t pa6_state = GPIO_ReadInputDataBit(GPIOA, GPIO_Pin_6);
+    //     if (pa6_state == Bit_SET)
+    //     {
+    //         TARGET_SD_Switch();
+    //     }
+    //     else
+    //     {
+    //         HOST_SD_Switch();
+    //     }
+    //     firstDetect = false;
+    // }
+    // else
+    // {
         uint8_t curr = GPIO_ReadInputDataBit(GPIOB, GPIO_Pin_8);
         if ((*prev_selector_state_p == 0) && (curr == 1))
         {
@@ -90,7 +90,7 @@ void SD_Switch_StateMachine(uint8_t *prev_selector_state_p)
             }
         }
         *prev_selector_state_p = curr;
-    }
+    // }
 }
 void SD_USB_Switch(uint8_t addr, uint8_t cmd_code, uint8_t *pdata, uint8_t data_len)
 {
