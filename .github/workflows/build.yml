@@ -1,4 +1,4 @@
-name: Build Openterface KeyMod Project
+name: Build Openterface Keyboard and Mouse emulator firmware
 
 on:
   push:
@@ -52,16 +52,6 @@ jobs:
         echo "C:\\tools\\risc-none-embed-gcc\\bin" >> $GITHUB_PATH
         echo "RISC_COMPILER_PATH=C:\\tools\\risc-none-embed-gcc" >> $GITHUB_ENV
 
-    - name: Cache build dependencies
-      uses: actions/cache@v3
-      with:
-        path: |
-          build/**/*.o
-          build/**/*.d
-        key: ${{ runner.os }}-build-${{ hashFiles('APP/**', 'HAL/**', 'Profile/**', 'SRC/**', 'LIB/**') }}
-        restore-keys: |
-          ${{ runner.os }}-build-
-
     - name: Build the project
       run: |
         echo "Starting build process..."
@@ -76,5 +66,4 @@ jobs:
         name: openterface-keymod-build
         if-no-files-found: error
         path: |
-          ${{ env.BUILD_DIR }}\KeyMod.hex
-          ${{ env.BUILD_DIR }}\KeyMod.elf
+          ${{ env.BUILD_DIR }}\openterface-km-firmware.bin

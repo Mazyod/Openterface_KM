@@ -49,7 +49,7 @@ endif
 
 # Add inputs and outputs from these tool invocations to the build variables 
 SECONDARY_FLASH += \
-KeyMod.hex \
+openterface-km-firmware.bin \
 
 SECONDARY_LIST += \
 KeyMod.lst \
@@ -73,9 +73,9 @@ KeyMod.elf: $(OBJS) $(USER_OBJS)
 	riscv-none-embed-gcc -march=rv32imacxw -mabi=ilp32 -mcmodel=medany -msmall-data-limit=8 -mno-save-restore -fmax-errors=20 -Os -fmessage-length=0 -fsigned-char -ffunction-sections -fdata-sections -fno-common -g $(CFLAGS) -T "../HAL/Link.ld" -nostartfiles -Xlinker --gc-sections -L"../" -L"../LIB" -Xlinker --print-memory-usage -Wl,-Map,"KeyMod.map" --specs=nano.specs --specs=nosys.specs -o "KeyMod.elf" $(OBJS) $(USER_OBJS) $(LIBS)
 	@echo 'Finished building target: $@'
 	@
-KeyMod.hex: KeyMod.elf
-	@echo 'Invoking: GNU RISC-V Cross Create Flash Image'
-	@	riscv-none-embed-objcopy -O ihex "KeyMod.elf" "KeyMod.hex"
+openterface-km-firmware.bin: KeyMod.elf
+	@echo 'Invoking: GNU RISC-V Cross Create Binary Image'
+	@	riscv-none-embed-objcopy -O binary "KeyMod.elf" "openterface-km-firmware.bin"
 	@echo 'Finished building $@'
 	@
 KeyMod.lst: KeyMod.elf
@@ -91,7 +91,7 @@ KeyMod.siz: KeyMod.elf
 
 # Other Targets
 clean:
-	-$(RM) $(OBJS)$(SECONDARY_FLASH)$(SECONDARY_LIST)$(SECONDARY_SIZE)$(S_DEPS)$(S_UPPER_DEPS)$(ASM_DEPS)$(ASM_UPPER_DEPS)$(C_DEPS) KeyMod.elf
+	-$(RM) $(OBJS)$(SECONDARY_FLASH)$(SECONDARY_LIST)$(SECONDARY_SIZE)$(S_DEPS)$(S_UPPER_DEPS)$(ASM_DEPS)$(ASM_UPPER_DEPS)$(C_DEPS) KeyMod.elf openterface-km-firmware.bin
 
 secondary-outputs: $(SECONDARY_FLASH) $(SECONDARY_LIST) $(SECONDARY_SIZE)
 
