@@ -49,49 +49,50 @@ endif
 
 # Add inputs and outputs from these tool invocations to the build variables 
 SECONDARY_FLASH += \
-openterface-km-firmware.bin \
+openterface-km-firmware.hex \
 
 SECONDARY_LIST += \
-KeyMod.lst \
+openterface-km-firmware.lst \
 
 SECONDARY_SIZE += \
-KeyMod.siz \
+openterface-km-firmware.siz \
 
 
 # All Target
 all: 
 	$(MAKE) --no-print-directory main-build 
 
-main-build: KeyMod.elf secondary-outputs
+main-build: openterface-km-firmware.elf secondary-outputs
 
 CFLAGS += -include stdint.h -include stddef.h
 
 # Tool invocations
-KeyMod.elf: $(OBJS) $(USER_OBJS)
+openterface-km-firmware.elf: $(OBJS) $(USER_OBJS)
 	@echo 'Building target: $@'
 	@echo 'Invoking: GNU RISC-V Cross C Linker'
-	riscv-none-embed-gcc -march=rv32imacxw -mabi=ilp32 -mcmodel=medany -msmall-data-limit=8 -mno-save-restore -fmax-errors=20 -Os -fmessage-length=0 -fsigned-char -ffunction-sections -fdata-sections -fno-common -g $(CFLAGS) -T "../HAL/Link.ld" -nostartfiles -Xlinker --gc-sections -L"../" -L"../LIB" -Xlinker --print-memory-usage -Wl,-Map,"KeyMod.map" --specs=nano.specs --specs=nosys.specs -o "KeyMod.elf" $(OBJS) $(USER_OBJS) $(LIBS)
+	riscv-none-embed-gcc -march=rv32imacxw -mabi=ilp32 -mcmodel=medany -msmall-data-limit=8 -mno-save-restore -fmax-errors=20 -Os -fmessage-length=0 -fsigned-char -ffunction-sections -fdata-sections -fno-common -g $(CFLAGS) -T "../HAL/Link.ld" -nostartfiles -Xlinker --gc-sections -L"../" -L"../LIB" -Xlinker --print-memory-usage -Wl,-Map,"openterface-km-firmware.map" --specs=nano.specs --specs=nosys.specs -o "openterface-km-firmware.elf" $(OBJS) $(USER_OBJS) $(LIBS)
 	@echo 'Finished building target: $@'
 	@
-openterface-km-firmware.bin: KeyMod.elf
+openterface-km-firmware.hex: openterface-km-firmware.elf
 	@echo 'Invoking: GNU RISC-V Cross Create Binary Image'
-	@	riscv-none-embed-objcopy -O binary "KeyMod.elf" "openterface-km-firmware.bin"
+	@	riscv-none-embed-objcopy -O binary "openterface-km-firmware.elf" "openterface-km-firmware.hex"
+	@	rm -f "openterface-km-firmware.elf"
 	@echo 'Finished building $@'
 	@
-KeyMod.lst: KeyMod.elf
+openterface-km-firmware.lst: openterface-km-firmware.elf
 	@echo 'Invoking: GNU RISC-V Cross Create Listing'
-	@	riscv-none-embed-objdump --source --all-headers --demangle -M xw --line-numbers --wide "KeyMod.elf" > "KeyMod.lst"
+	@	riscv-none-embed-objdump --source --all-headers --demangle -M xw --line-numbers --wide "openterface-km-firmware.elf" > "openterface-km-firmware.lst"
 	@echo 'Finished building $@'
 	@
-KeyMod.siz: KeyMod.elf
+openterface-km-firmware.siz: openterface-km-firmware.elf
 	@echo 'Invoking: GNU RISC-V Cross Print Size'
-	riscv-none-embed-size --format=berkeley "KeyMod.elf"
+	riscv-none-embed-size --format=berkeley "openterface-km-firmware.elf"
 	@echo 'Finished building $@'
 	@
 
 # Other Targets
 clean:
-	-$(RM) $(OBJS)$(SECONDARY_FLASH)$(SECONDARY_LIST)$(SECONDARY_SIZE)$(S_DEPS)$(S_UPPER_DEPS)$(ASM_DEPS)$(ASM_UPPER_DEPS)$(C_DEPS) KeyMod.elf openterface-km-firmware.bin
+	-$(RM) $(OBJS)$(SECONDARY_FLASH)$(SECONDARY_LIST)$(SECONDARY_SIZE)$(S_DEPS)$(S_UPPER_DEPS)$(ASM_DEPS)$(ASM_UPPER_DEPS)$(C_DEPS) openterface-km-firmware.elf openterface-km-firmware.hex
 
 secondary-outputs: $(SECONDARY_FLASH) $(SECONDARY_LIST) $(SECONDARY_SIZE)
 
