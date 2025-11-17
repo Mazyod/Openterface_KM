@@ -24,9 +24,9 @@
 /*******************************************************************************
  * @fn          BLE_LowPower
  *
- * @brief       启动睡眠
+ * @brief       Start sleep
  *
- * @param   time    - 唤醒的时间点（RTC绝对值）
+ * @param   time    - Wake-up time point (RTC absolute value)
  *
  * @return      state.
  */

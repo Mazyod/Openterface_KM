@@ -11,7 +11,7 @@
 #define ONEWIRE_PIN     GPIO_Pin_2
 #define USB_TX_ENDP     ENDP3
 #define DS18B20_OK            0x00
-#define DS18B20_ERROR_BUS     0xE0  // 或自定义其他错误码
+#define DS18B20_ERROR_BUS     0xE0  // Or define other error codes
 #define DS18B20_ERROR_VALUE   0xE1
 
 extern uint8_t USBD_ENDPx_DataUp(uint8_t endp, uint8_t *pbuf, uint16_t len);

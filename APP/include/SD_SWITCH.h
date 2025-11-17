@@ -8,26 +8,26 @@ extern "C" {
 #include <stdint.h>
 #include <stdbool.h>
 
-/** µ±Ç° SD ¿¨Í¨µÀ×´Ì¬£º0 = TARGET_SD, 1 = HOST_SD */
+/** Current SD card channel status: 0 = TARGET_SD, 1 = HOST_SD */
 extern uint8_t sd_card_channel_state;
 
 /**
- * ³õÊ¼»¯ SD ¿¨ÇÐ»»Ïà¹Ø GPIO£¨PA1/PA7 Êä³ö£»PA6¡¢PB8 ÊäÈëÏÂÀ­£©
+ * Initialize SD card switch related GPIO (PA1/PA7 output; PA6, PB8 input pull-down)
  */
 void SD_Switch_Init(void);
 
-/** ÇÐ»»ÖÁ USB1£¨TARGET_SD£©Í¨µÀ */
+/** Switch to USB1 (TARGET_SD) channel */
 void TARGET_SD_Switch(void);
 
-/** ÇÐ»»ÖÁ USB2£¨HOST_SD£©Í¨µÀ */
+/** Switch to USB2 (HOST_SD) channel */
 void HOST_SD_Switch(void);
 
 /**
- * ×´Ì¬»ú¼ì²âº¯Êý£º
- * - µÚÒ»´Îµ÷ÓÃÊ±¼ì²â PA6£»
- *   Èô PA6 = ¸ßµçÆ½ ¡ú TARGET£»PA6 = µÍµçÆ½ ¡ú HOST¡£
- * - Ö®ºó²»ÔÙ¼ì²â PA6£¬Ö»Í¨¹ý PB8 µÄÉÏÉýÑØ¼ì²âÇÐ»»¡£
- * @param prev_selector_state_p Ö¸Ïò PB8 ÉÏ´Î×´Ì¬±äÁ¿
+ * State machine detection function:
+ * - Detect PA6 on first call;
+ *   If PA6 = high â†’ TARGET; PA6 = low â†’ HOST.
+ * - After that, no longer detect PA6, only detect switching via rising edge of PB8.
+ * @param prev_selector_state_p Pointer to PB8 previous state variable
  */
 void SD_Switch_StateMachine(uint8_t *prev_selector_state_p);
 void SD_USB_Switch(uint8_t addr, uint8_t cmd_code, uint8_t *pdata, uint8_t data_len);

@@ -185,7 +185,7 @@ extern const uint8_t VER_LIB[];  // LIB version
 #define ABS(n)     (((n) < 0) ? -(n) : (n))
 #endif
 
-/* Tx_POWER define(Accuracy:卤2dBm) */
+/* Tx_POWER define(Accuracy: ±2dBm) */
 #define LL_TX_POWEER_MINUS_18_DBM       0x01
 #define LL_TX_POWEER_MINUS_10_DBM       0x03
 #define LL_TX_POWEER_MINUS_5_DBM        0x05

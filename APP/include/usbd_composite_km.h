@@ -30,7 +30,7 @@
 #define STATUS_ERR_CMD        0xE3
 #define STATUS_ERR_CHECKSUM   0xE4
 #define STATUS_ERR_PARAM      0xE5
-#define STATUS_ERR_FRAME      0xE6  // 自定义，帧异常执行失败
+#define STATUS_ERR_FRAME      0xE6  // Custom frame format error, frame exception, execution failed
 /*******************************************************************************/
 
 #define CH9329_MAX_DATA_LEN 8

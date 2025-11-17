@@ -226,7 +226,7 @@ tmosEvents HAL_ProcessEvent(tmosTaskID task_id, tmosEvents events)
 /*******************************************************************************
  * @fn      HAL_Init
  *
- * @brief   Ó²¼þ³õÊ¼»¯
+ * @brief   Hardware initialization
  *
  * @param   None.
  *

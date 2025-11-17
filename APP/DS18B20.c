@@ -10,12 +10,12 @@
 
 extern uint8_t USBD_ENDPx_DataUp(uint8_t endp, uint8_t *pbuf, uint16_t len);
 
-// === One?Wire 驱动函数 ===
+// === One-Wire driver functions ===
 static void OW_PinOutput(void)
 {
     GPIO_InitTypeDef GPIO_InitStructure;
     GPIO_InitStructure.GPIO_Pin = ONEWIRE_PIN;
-    GPIO_InitStructure.GPIO_Mode = GPIO_Mode_Out_OD;  // 开漏输出
+    GPIO_InitStructure.GPIO_Mode = GPIO_Mode_Out_OD;  // Open-drain output
     GPIO_InitStructure.GPIO_Speed = GPIO_Speed_50MHz;
     GPIO_Init(ONEWIRE_PORT, &GPIO_InitStructure);
 }
@@ -23,7 +23,7 @@ static void OW_PinInput(void)
 {
     GPIO_InitTypeDef GPIO_InitStructure;
     GPIO_InitStructure.GPIO_Pin = ONEWIRE_PIN;
-    GPIO_InitStructure.GPIO_Mode = GPIO_Mode_IPU;  // 上拉输入
+    GPIO_InitStructure.GPIO_Mode = GPIO_Mode_IPU;  // Pull-up input
     GPIO_InitStructure.GPIO_Speed = GPIO_Speed_50MHz;
     GPIO_Init(ONEWIRE_PORT, &GPIO_InitStructure);
 }
@@ -31,12 +31,12 @@ static void OW_PinInput(void)
 static void OW_WriteLow(void)
 {
     OW_PinOutput();
-    ONEWIRE_PORT->BCR = ONEWIRE_PIN;  // 拉低
+    ONEWIRE_PORT->BCR = ONEWIRE_PIN;  // Pull low
 }
 
 static void OW_Release(void)
 {
-    OW_PinInput();  // 切至输入，上拉电阻拉高
+    OW_PinInput();  // Switch to input, pull-up resistor pulls high
 }
 
 static uint8_t OW_Reset(void)
@@ -104,7 +104,7 @@ static uint8_t OW_ReadByte(uint8_t *byte)
     return 0;
 }
 
-// === DS18B20 特定命令 ===
+// === DS18B20 specific commands ===
 
 #define DS18B20_CMD_SKIP_ROM       0xCC  // Skip ROM
 #define DS18B20_CMD_CONVERT_T      0x44  // Convert T
@@ -150,7 +150,7 @@ uint8_t DS18B20_Command(uint8_t addr, uint8_t cmd_code, uint8_t* pdata, uint8_t 
     //     CH9329_SendResponse(addr, cmd_code, data, 1);
     //     return 0;
     // }
-    // 等待转换（12 位分辨率典型约 750ms）  
+    // Wait for conversion (12-bit resolution typically ~750ms)  
     Delay_Ms(750);
 
     // if (DS18B20_ReadRaw(&raw) != DS18B20_OK)

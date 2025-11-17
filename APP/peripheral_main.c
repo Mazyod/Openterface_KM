@@ -36,10 +36,10 @@ __attribute__((noinline))
 void Main_Circulation(void)
 {
     uint8_t selector_prev_state;
-        // 上电三色闪烁
+        // Power-on three-color flashing
     selector_prev_state = GPIO_ReadInputDataBit(GPIOB, GPIO_Pin_8);
     RGB_FlashStartupSequence();
-    // 3秒后切换呼吸模式
+    // Switch to breathing mode after 3 seconds
     uint32_t t0 = systick_ms;
     TARGET_SD_Switch();
     while(1)
@@ -52,7 +52,7 @@ void Main_Circulation(void)
         }
         if(systick_ms - t0 > 3000)
         {
-            RGB_SetBreathMode(0.02f); // 开始呼吸模式
+            RGB_SetBreathMode(0.02f); // Start breathing mode
             SD_Switch_StateMachine(&selector_prev_state);
         }
     }

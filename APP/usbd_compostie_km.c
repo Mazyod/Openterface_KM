@@ -85,13 +85,13 @@ void MCU_Sleep_Wakeup_Operate( void )
 #define STATUS_ERR_CMD        0xE3
 #define STATUS_ERR_CHECKSUM   0xE4
 #define STATUS_ERR_PARAM      0xE5
-#define STATUS_ERR_FRAME      0xE6  // 自定义，帧异常执行失败
+#define STATUS_ERR_FRAME      0xE6  // Custom frame format error, frame exception, execution failed
 
-// 命令码定义
+// Command code definitions
 #define CMD_GET_INFO  0x01
 
-// 状态：正常／异常
-#define STATUS_OK     0    // 这里示例中无专门状态码字节，因为协议里用命令码高两位区分是否异常
+// Status: Normal/Exception
+#define STATUS_OK     0    // No dedicated status byte in this example, protocol uses command code high bits to distinguish exceptions
 extern uint8_t sd_card_channel_state; 
 void CH9329_SendResponse(uint8_t addr, uint8_t cmd_code, uint8_t* pdata, uint8_t len)
 {
@@ -112,7 +112,7 @@ void CH9329_SendResponse(uint8_t addr, uint8_t cmd_code, uint8_t* pdata, uint8_t
         index += len;
     }
 
-    // 计算校验和
+    // Calculate checksum
     uint8_t checksum = 0;
     for (uint8_t i = 0; i < index; i++) {
         checksum += packet[i];
@@ -124,13 +124,13 @@ void CH9329_SendResponse(uint8_t addr, uint8_t cmd_code, uint8_t* pdata, uint8_t
 
 
 
-// 专用 “获取信息” 应答函数
+// Dedicated "Get Info" response function
 void CH9329_Cmd_GetInfo_Reply(uint8_t addr)
 {
     uint8_t data[8] = {0};
 
-    // 协议 payload 固定 8 字节
-    data[0] = 0x00; // status（你不用但占位）
+    // Protocol payload fixed 8 bytes
+    data[0] = 0x00; // status (not used but placeholder)
     data[1] = 0x00;
     data[2] = 0x00;
     data[3] = 0x00;
@@ -167,7 +167,7 @@ void CH9329_DataParser(uint8_t* buf, uint8_t len)
 {
     uint8_t index = 0;
 
-    while (index + 6 <= len)  // 最小帧长度检查
+    while (index + 6 <= len)  // Minimum frame length check
     {
         if (buf[index] == CH9329_FRAME_HEAD1 && buf[index + 1] == CH9329_FRAME_HEAD2)
         {
@@ -186,7 +186,7 @@ void CH9329_DataParser(uint8_t* buf, uint8_t len)
             uint8_t *pdata = &buf[index + 5];
             uint8_t recv_sum = buf[index + 5 + data_len];
 
-            // 校验和
+            // Checksum
             uint8_t sum = 0;
             for (uint8_t i = 0; i < frame_total_len - 1; i++)
                 sum += buf[index + i];
@@ -199,7 +199,7 @@ void CH9329_DataParser(uint8_t* buf, uint8_t len)
                 continue;
             }
 
-            /* ======== 命令分发 ======== */
+            /* ======== Command dispatch ======== */
             switch (cmd_code)
             {
                 case CMD_GET_INFO:
@@ -281,13 +281,13 @@ break;
 static uint8_t rx_buf[RX_BUF_SIZE];
 static uint16_t rx_len = 0;
 
-// 将数据加入缓存，并尝试解析
+// Add data to buffer and try to parse
 void CH9329_RxBuffer_Add(uint8_t *data, uint16_t len) {
     if (len == 0 || data == NULL) return;
 
-    // 若剩余空间不足，移位清理
+    // If remaining space is insufficient, shift and clean
     if (rx_len + len > RX_BUF_SIZE) {
-        // 将未处理数据向前移
+        // Move unprocessed data forward
         memmove(rx_buf, rx_buf + (rx_len - (RX_BUF_SIZE/2)), RX_BUF_SIZE/2);
         rx_len = RX_BUF_SIZE/2;
     }
@@ -295,15 +295,15 @@ void CH9329_RxBuffer_Add(uint8_t *data, uint16_t len) {
     memcpy(rx_buf + rx_len, data, len);
     rx_len += len;
 
-    // 尝试解析
+    // Try to parse
     CH9329_DataParser(rx_buf, rx_len);
 
-    // 删除已处理的内容（假设解析后 index 已推进）
-    // 为简化，这里清空所有；你可以增强为 “已处理 N 字节移除” 逻辑
+    // Delete processed content (assume index advanced after parsing)
+    // For simplicity, clear all here; can enhance to "remove N bytes processed" logic
     rx_len = 0;
 }
 
-// 替换 USB_DataRx_To_KMHandle 中的调用为：
+// Replace the call in USB_DataRx_To_KMHandle with:
 void USB_DataRx_To_KMHandle(void) {
     // Step 1: BLE
     while (RingMemBLE.CurrentLen > 0) {

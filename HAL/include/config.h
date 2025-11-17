@@ -29,48 +29,48 @@
 #include "ch32v20x.h"
 
 /*********************************************************************
- ¡¾MAC¡¿
- BLE_MAC                                    - ÊÇ·ñ×Ô¶¨ÒåÀ¶ÑÀMacµØÖ· ( Ä¬ÈÏ:FALSE - Ê¹ÓÃĞ¾Æ¬MacµØÖ· )£¬ĞèÒªÔÚmain.cĞŞ¸ÄMacµØÖ·¶¨Òå
+ ã€MACã€‘
+ BLE_MAC                                    - Whether to customize Bluetooth MAC address (Default: FALSE - use chip MAC address), need to modify MAC address in main.c
 
- ¡¾SLEEP¡¿
- HAL_SLEEP                                  - ÊÇ·ñ¿ªÆôË¯Ãß¹¦ÄÜ ( Ä¬ÈÏ:FALSE )
- WAKE_UP_MAX_TIME_US                        - ÌáÇ°»½ĞÑÊ±¼ä£¬¼´ÏµÍ³Ê±ÖÓÎÈ¶¨ËùĞèÒªÊ±¼ä
-                                                                                                                                        ÔİÍ£Ä£Ê½    - 45
-                                                                                                                                       ¿ÕÏĞÄ£Ê½    - 5
+ ã€SLEEPã€‘
+ HAL_SLEEP                                  - Whether to enable sleep function (Default: FALSE)
+ WAKE_UP_MAX_TIME_US                        - Early wake time, i.e., the time required for system clock stabilization
+                                                                                                                                        Pause mode    - 45
+                                                                                                                                       Idle mode    - 5
  
- ¡¾TEMPERATION¡¿
- TEM_SAMPLE                                 - ÊÇ·ñ´ò¿ª¸ù¾İÎÂ¶È±ä»¯Ğ£×¼µÄ¹¦ÄÜ£¬µ¥´ÎĞ£×¼ºÄÊ±Ğ¡ÓÚ10ms( Ä¬ÈÏ:TRUE )
+ ã€TEMPERATIONã€‘
+ TEM_SAMPLE                                 - Whether to enable temperature change calibration function, single calibration takes less than 10ms (Default: TRUE)
  
- ¡¾CALIBRATION¡¿
- BLE_CALIBRATION_ENABLE                     - ÊÇ·ñ´ò¿ª¶¨Ê±Ğ£×¼µÄ¹¦ÄÜ£¬µ¥´ÎĞ£×¼ºÄÊ±Ğ¡ÓÚ10ms( Ä¬ÈÏ:TRUE )
- BLE_CALIBRATION_PERIOD                     - ¶¨Ê±Ğ£×¼µÄÖÜÆÚ£¬µ¥Î»ms( Ä¬ÈÏ:120000 )
+ ã€CALIBRATIONã€‘
+ BLE_CALIBRATION_ENABLE                     - Whether to enable periodic calibration function, single calibration takes less than 10ms (Default: TRUE)
+ BLE_CALIBRATION_PERIOD                     - Period of periodic calibration in ms (Default: 120000)
  
- ¡¾SNV¡¿
- BLE_SNV                                    - ÊÇ·ñ¿ªÆôSNV¹¦ÄÜ£¬ÓÃÓÚ´¢´æ°ó¶¨ĞÅÏ¢( Ä¬ÈÏ:TRUE )
- BLE_SNV_ADDR                               - SNVĞÅÏ¢±£´æµØÖ·£¬Ê¹ÓÃdata flash×îºó( Ä¬ÈÏ:0x77E00 )
- BLE_SNV_NUM                                - SNVĞÅÏ¢´æ´¢ÉÈÇøÊıÁ¿µÈÓÚ¿É´æ´¢µÄ°ó¶¨ÊıÁ¿( Ä¬ÈÏ:3 )
-                                            - Èç¹ûÅäÖÃÁËSNVNum²ÎÊı£¬ÔòĞèÒª¶ÔÓ¦ĞŞ¸ÄLib_Write_Flashº¯ÊıÄÚ²Á³ıµÄflash´óĞ¡£¬´óĞ¡ÎªSNVBlock*SNVNum
+ ã€SNVã€‘
+ BLE_SNV                                    - Whether to enable SNV function for storing pairing information (Default: TRUE)
+ BLE_SNV_ADDR                               - SNV information storage address, use end of data flash (Default: 0x77E00)
+ BLE_SNV_NUM                                - Number of SNV information storage sectors equals the number of storable pairings (Default: 3)
+                                            - If SNVNum parameter is configured, need to modify the flash size erased in Lib_Write_Flash function, size is SNVBlock*SNVNum
 
- ¡¾RTC¡¿
- CLK_OSC32K                                 - RTCÊ±ÖÓÑ¡Ôñ£¬Èç°üº¬Ö÷»ú½ÇÉ«±ØĞëÊ¹ÓÃÍâ²¿32K( 0 Íâ²¿(32768Hz)£¬Ä¬ÈÏ:1£ºÄÚ²¿(32000Hz)£¬2£ºÄÚ²¿(32768Hz) )
+ ã€RTCã€‘
+ CLK_OSC32K                                 - RTC clock selection, must use external 32K if master role included (0 external (32768Hz), default: 1 internal (32000Hz), 2 internal (32768Hz))
 
- ¡¾MEMORY¡¿
- BLE_MEMHEAP_SIZE                           - À¶ÑÀĞ­ÒéÕ»Ê¹ÓÃµÄRAM´óĞ¡£¬²»Ğ¡ÓÚ6K ( Ä¬ÈÏ:(1024*6) )
+ ã€MEMORYã€‘
+ BLE_MEMHEAP_SIZE                           - RAM size used by Bluetooth protocol stack, not less than 6K (Default: (1024*6))
 
- ¡¾DATA¡¿
- BLE_BUFF_MAX_LEN                           - µ¥¸öÁ¬½Ó×î´ó°ü³¤¶È( Ä¬ÈÏ:27 (ATT_MTU=23)£¬È¡Öµ·¶Î§[27~251] )
- BLE_BUFF_NUM                               - ¿ØÖÆÆ÷»º´æµÄ°üÊıÁ¿( Ä¬ÈÏ:5 )
- BLE_TX_NUM_EVENT                           - µ¥¸öÁ¬½ÓÊÂ¼ş×î¶à¿ÉÒÔ·¢¶àÉÙ¸öÊı¾İ°ü( Ä¬ÈÏ:1 )
- BLE_TX_POWER                               - ·¢Éä¹¦ÂÊ( Ä¬ÈÏ:LL_TX_POWEER_0_DBM (0dBm) )
+ ã€DATAã€‘
+ BLE_BUFF_MAX_LEN                           - Maximum packet length per connection (Default: 27 (ATT_MTU=23), value range [27~251])
+ BLE_BUFF_NUM                               - Number of packets cached by controller (Default: 5)
+ BLE_TX_NUM_EVENT                           - Maximum number of data packets per connection event (Default: 1)
+ BLE_TX_POWER                               - Transmit power (Default: LL_TX_POWEER_0_DBM (0dBm))
  
- ¡¾MULTICONN¡¿
- PERIPHERAL_MAX_CONNECTION                  - ×î¶à¿ÉÍ¬Ê±×ö¶àÉÙ´Ó»ú½ÇÉ«( Ä¬ÈÏ:1 )
- CENTRAL_MAX_CONNECTION                     - ×î¶à¿ÉÍ¬Ê±×ö¶àÉÙÖ÷»ú½ÇÉ«( Ä¬ÈÏ:3 )
+ ã€MULTICONNã€‘
+ PERIPHERAL_MAX_CONNECTION                  - Maximum number of simultaneous peripheral roles (Default: 1)
+ CENTRAL_MAX_CONNECTION                     - Maximum number of simultaneous master roles (Default: 3)
 
  **********************************************************************/
 
 /*********************************************************************
- * Ä¬ÈÏÅäÖÃÖµ
+ * Default configuration values
  */
 #ifndef BLE_MAC
 #define BLE_MAC                             FALSE
@@ -106,7 +106,7 @@
 #define BLE_SNV_NUM                         3
 #endif
 #ifndef CLK_OSC32K
-#define CLK_OSC32K                          1   // ¸ÃÏîÇëÎğÔÚ´ËĞŞ¸Ä£¬±ØĞëÔÚ¹¤³ÌÅäÖÃÀïµÄÔ¤´¦ÀíÖĞĞŞ¸Ä£¬Èç°üº¬Ö÷»ú½ÇÉ«±ØĞëÊ¹ÓÃÍâ²¿32K
+#define CLK_OSC32K                          1   // Do not modify this item here, must modify in project configuration preprocessor if master role is included
 #endif
 #ifndef BLE_MEMHEAP_SIZE
 #define BLE_MEMHEAP_SIZE                    (1024*7)

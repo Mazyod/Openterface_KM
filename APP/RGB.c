@@ -1,22 +1,22 @@
 #include "rgb.h"
 #include <math.h>
 
-/* 毫秒计数 */
+/* Millisecond counter */
 volatile uint32_t systick_ms = 0;
 
-/* RGB 内部状态 */
+/* RGB internal state */
 static RGB_Mode_t rgb_mode = RGB_MODE_SOLID;
 static float rgb_r=0, rgb_g=0, rgb_b=0;
 static float breath_phase = 0;
 static float breath_speed = 0.01f;
 
-/* 单色闪烁状态 */
+/* Monochrome flashing state */
 static uint16_t flash_interval = 500;
 static RGB_Color_t flash_color = RGB_RED;
 static uint32_t flash_last_ms = 0;
 static uint8_t flash_state = 0;
 
-/* 上电闪烁序列 */
+/* Startup flashing sequence */
 typedef struct {
     RGB_Color_t color;
     uint16_t duration_ms;
@@ -33,7 +33,7 @@ static uint8_t startup_index = 0;
 static uint32_t startup_last_ms = 0;
 static uint8_t startup_active = 0;
 
-/* ====================== TIM2 初始化 ====================== */
+/* ====================== TIM2 Initialization ====================== */
 void RGB_TIM_Init(void)
 {
     RCC_APB1PeriphClockCmd(RCC_APB1Periph_TIM2, ENABLE);
@@ -56,7 +56,7 @@ void RGB_TIM_Init(void)
     NVIC_Init(&NVIC_InitStructure);
 }
 
-/* ====================== TIM2 中断 ====================== */
+/* ====================== TIM2 Interrupt Handler ====================== */
 void TIM2_IRQHandler(void) __attribute__((interrupt("WCH-Interrupt-fast")));
 void TIM2_IRQHandler(void)
 {
@@ -67,13 +67,13 @@ void TIM2_IRQHandler(void)
     }
 }
 
-/* ====================== RGB 初始化 ====================== */
+/* ====================== RGB Initialization ====================== */
 void RGB_Init(void)
 {
     GPIO_InitTypeDef GPIO_InitStructure = {0};
     TIM_OCInitTypeDef TIM_OCInitStructure = {0};
 
-    /* GPIO 初始化 */
+    /* GPIO initialization */
     RCC_APB2PeriphClockCmd(RCC_APB2Periph_GPIOC | RCC_APB2Periph_AFIO, ENABLE);
     GPIO_PinRemapConfig(GPIO_FullRemap_TIM3, ENABLE);
 
@@ -107,11 +107,11 @@ void RGB_Init(void)
     TIM_ARRPreloadConfig(TIM3, ENABLE);
     TIM_Cmd(TIM3, ENABLE);
 
-    /* 初始化 TIM2 毫秒计数 */
+    /* Initialize TIM2 millisecond counter */
     RGB_TIM_Init();
 }
 
-/* ====================== 设置颜色 ====================== */
+/* ====================== Set Color ====================== */
 void RGB_SetColor(float r, float g, float b)
 {
     if(r>1) r=1; if(g>1) g=1; if(b>1) b=1;
@@ -128,7 +128,7 @@ void RGB_SetColor(float r, float g, float b)
     rgb_r = r; rgb_g = g; rgb_b = b;
 }
 
-/* ====================== 常亮 ====================== */
+/* ====================== Solid Color (Always On) ====================== */
 void RGB_SetColorSolid(RGB_Color_t color, float brightness)
 {
     rgb_mode = RGB_MODE_SOLID;
@@ -147,14 +147,14 @@ void RGB_SetColorSolid(RGB_Color_t color, float brightness)
     RGB_SetColor(r*brightness, g*brightness, b*brightness);
 }
 
-/* ====================== 呼吸模式 ====================== */
+/* ====================== Breathing Mode ====================== */
 void RGB_SetBreathMode(float speed)
 {
     rgb_mode = RGB_MODE_BREATH;
     breath_speed = speed;
 }
 
-/* ====================== 单色闪烁 ====================== */
+/* ====================== Monochrome Flashing ====================== */
 void RGB_SetFlashMode(uint16_t interval_ms, RGB_Color_t color)
 {
     rgb_mode = RGB_MODE_FLASH;
@@ -164,7 +164,7 @@ void RGB_SetFlashMode(uint16_t interval_ms, RGB_Color_t color)
     flash_state = 0;
 }
 
-/* ====================== 上电三色闪烁 ====================== */
+/* ====================== Power-on Three-Color Flashing ====================== */
 void RGB_FlashStartupSequence(void)
 {
     rgb_mode = RGB_MODE_STARTUP;
@@ -174,13 +174,13 @@ void RGB_FlashStartupSequence(void)
     RGB_SetColorSolid(startup_steps[0].color, 1.0f);
 }
 
-/* ====================== 非阻塞刷新 ====================== */
+/* ====================== Non-blocking Refresh ====================== */
 void RGB_Update(void)
 {
     static uint32_t last_ms = 0;
     uint32_t now = systick_ms;
 
-    /* 开机闪烁优先 */
+    /* Power-on flashing has priority */
     if(startup_active)
     {
         if(now - startup_last_ms >= startup_steps[startup_index].duration_ms)
