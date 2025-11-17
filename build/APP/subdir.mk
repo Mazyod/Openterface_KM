@@ -14,7 +14,11 @@ C_SRCS += \
 ../APP/peripheral_main.c \
 ../APP/system_ch32v20x.c \
 ../APP/usbd_compostie_km.c \
-../APP/usbd_desc.c 
+../APP/usbd_desc.c \
+../APP/RGB.c \
+../APP/SD_SWITCH.c \
+../APP/DS18B20.c \
+../APP/CH32_TEMP.c 
 
 C_DEPS += \
 ./APP/RingMem.d \
@@ -26,7 +30,11 @@ C_DEPS += \
 ./APP/peripheral_main.d \
 ./APP/system_ch32v20x.d \
 ./APP/usbd_compostie_km.d \
-./APP/usbd_desc.d 
+./APP/usbd_desc.d \
+./APP/RGB.d \
+./APP/SD_SWITCH.d \
+./APP/DS18B20.d \
+./APP/CH32_TEMP.d 
 
 OBJS += \
 ./APP/RingMem.o \
@@ -38,7 +46,11 @@ OBJS += \
 ./APP/peripheral_main.o \
 ./APP/system_ch32v20x.o \
 ./APP/usbd_compostie_km.o \
-./APP/usbd_desc.o 
+./APP/usbd_desc.o \
+./APP/RGB.o \
+./APP/SD_SWITCH.o \
+./APP/DS18B20.o \
+./APP/CH32_TEMP.o 
 
 
 
