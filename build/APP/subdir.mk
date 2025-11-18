@@ -7,9 +7,9 @@
 C_SRCS += \
 ../APP/RingMem.c \
 ../APP/RGB.c \
-../APP/sd_switch.c \
-../APP/ds18b20.c \
-../APP/ch32_temp.c \
+../APP/SD_SWITCH.c \
+../APP/DS18B20.c \
+../APP/CH32_TEMP.c \
 ../APP/ch32v20x_it.c \
 ../APP/ch32v20x_usbfs_device.c \
 ../APP/keyboard_handler.c \
@@ -23,9 +23,9 @@ C_SRCS += \
 C_DEPS += \
 ./APP/RingMem.d \
 ./APP/RGB.d \
-./APP/sd_switch.d \
-./APP/ds18b20.d \
-./APP/ch32_temp.d \
+./APP/SD_SWITCH.d \
+./APP/DS18B20.d \
+./APP/CH32_TEMP.d \
 ./APP/ch32v20x_it.d \
 ./APP/ch32v20x_usbfs_device.d \
 ./APP/keyboard_handler.d \
@@ -39,9 +39,9 @@ C_DEPS += \
 OBJS += \
 ./APP/RingMem.o \
 ./APP/RGB.o \
-./APP/sd_switch.o \
-./APP/ds18b20.o \
-./APP/ch32_temp.o \
+./APP/SD_SWITCH.o \
+./APP/DS18B20.o \
+./APP/CH32_TEMP.o \
 ./APP/ch32v20x_it.o \
 ./APP/ch32v20x_usbfs_device.o \
 ./APP/keyboard_handler.o \

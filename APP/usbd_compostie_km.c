@@ -10,7 +10,7 @@
 #include "peripheral.h"
 #include "include/keyboard_handler.h"
 #include "include/mouse_handler.h"
-#include "sd_switch.h"
+#include "SD_SWITCH.h"
 #include "DS18B20.h"
 #include <stdbool.h>
 #include <string.h>

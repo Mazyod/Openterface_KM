@@ -1,8 +1,8 @@
-#include "ds18b20.h"
+#include "DS18B20.h"
 #include "ch32v20x.h"
 #include "usbd_composite_km.h"
 #include "usb_lib.h"
-#include "ch32_temp.h"
+#include "CH32_TEMP.h"
 
 #define ONEWIRE_PORT    GPIOA
 #define ONEWIRE_PIN     GPIO_Pin_2
