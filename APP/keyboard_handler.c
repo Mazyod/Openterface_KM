@@ -161,7 +161,6 @@ void Keyboard_ProcessAutoRelease(uint8_t* data, uint8_t cmd_code, uint8_t repeat
         if (repeat_count >= 3) {
             *long_press = TRUE;
         } else {
-            Delay_Ms(10);
             uint8_t release_pack[8] = {0};
             release_pack[0] = mod_keys;  // Keep modifier keys
             Keyboard_SendDataToUSB(release_pack);

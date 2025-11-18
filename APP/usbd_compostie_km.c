@@ -112,7 +112,11 @@ void CH9329_Cmd_GetInfo_Reply(uint8_t addr)
     data[3] = 0x00; // bit4, status (not used but placeholder)
     data[4] = 0x00; // bit3, status (not used but placeholder)
     data[5] = Keyboard_GetLEDStatus() & 0x07; // bit2 for LED status
-    data[6] = 0x01; // bit1 for target device connection status, 0x00- not connected, 0x01- connected
+     if (USBFS_DevConfig != 0 || USBFS_DevEnumStatus == 1) {
+        data[6] = 0x01;   // 已连接（已枚举）
+    } else {
+        data[6] = 0x00;   // 未连接
+    }
     data[7] = 0x10; // bit0 version number
 
     CH9329_SendResponse(addr, CMD_GET_INFO, data, 8);

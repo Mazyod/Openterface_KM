@@ -47,9 +47,9 @@ void Main_Circulation(void)
         RGB_Update();
         TMOS_SystemProcess();
         
-        if (USBFS_DevEnumStatus) {
+        // if (USBFS_DevEnumStatus) {
             USB_DataRx_To_KMHandle();
-        }
+        // }
         if(systick_ms - t0 > 3000)
         {
             RGB_SetBreathMode(0.02f); // Start breathing mode
