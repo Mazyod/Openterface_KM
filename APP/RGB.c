@@ -1,4 +1,4 @@
-#include "rgb.h"
+#include "RGB.h"
 #include <math.h>
 
 /* Millisecond counter */

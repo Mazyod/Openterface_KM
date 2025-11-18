@@ -6,7 +6,7 @@
 # Add inputs and outputs from these tool invocations to the build variables 
 C_SRCS += \
 ../APP/RingMem.c \
-../APP/rgb.c \
+../APP/RGB.c \
 ../APP/sd_switch.c \
 ../APP/ds18b20.c \
 ../APP/ch32_temp.c \
@@ -22,7 +22,7 @@ C_SRCS += \
 
 C_DEPS += \
 ./APP/RingMem.d \
-./APP/rgb.d \
+./APP/RGB.d \
 ./APP/sd_switch.d \
 ./APP/ds18b20.d \
 ./APP/ch32_temp.d \
@@ -38,7 +38,7 @@ C_DEPS += \
 
 OBJS += \
 ./APP/RingMem.o \
-./APP/rgb.o \
+./APP/RGB.o \
 ./APP/sd_switch.o \
 ./APP/ds18b20.o \
 ./APP/ch32_temp.o \

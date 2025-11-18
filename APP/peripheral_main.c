@@ -12,7 +12,7 @@
 #include "include/keyboard_handler.h"
 #include "include/mouse_handler.h"
 #include "sd_switch.h"
-#include "rgb.h"
+#include "RGB.h"
 #include "ds18b20.h"
 #include "ch32_temp.h"
 /*********************************************************************
