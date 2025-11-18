@@ -19,7 +19,7 @@ A firmware project running on a CH32V20x microcontroller that enables the Opente
   - RGB LED status indication for connection and mode visualization
   - Temperature sensor support (DS18B20)
   - SD card detection and mode switching
-  - UART debugging interface
+  - USB debugging interface
   - RTC and power management with sleep mode support
 
 ## Source Folder Structure
@@ -82,7 +82,7 @@ The firmware supports multiple input modes for mouse emulation:
 
 - **Absolute Mouse Mode**: Reports absolute cursor position within a coordinate space (0-32767 for X and Y axes). Ideal for drawing and precision tasks.
 - **Relative Mouse Mode**: Reports relative cursor movements (delta X and Y). Standard for typical mouse usage.
-- **Keyboard Mode**: Full USB/BLE keyboard emulation with support for modifier keys and special functions.
+- **Keyboard Mode**: Full USB keyboard emulation with support for modifier keys and special functions.
 
 ## Communication Protocol
 
@@ -109,13 +109,13 @@ Before compiling and flashing, ensure you have the following tools installed:
 #### Windows (Recommended)
 
 1. **Download and Install WCH MounRiver Studio**:
-   - Visit [WCH's official website](http://www.wch.cn/)
+   - Visit [WCH's official website](https://www.mounriver.com/download)
    - Download MounRiver Studio for Windows
    - Follow the installation instructions
    - The toolchain and build tools are included with MounRiver Studio
 
 2. **Download and Install WCH Flash Uploader**:
-   - Download from [WCH's official website](http://www.wch.cn/)
+   - Download from [WCH's official website](https://www.wch.cn/downloads/WCHISPTool_Setup_exe.html)
    - Follow the installation instructions
    - This tool will be used to flash the compiled firmware to the device
 
@@ -180,7 +180,7 @@ build/obj/BLE_USB.elf
 
 An additional binary file may also be created:
 ```
-build/obj/BLE_USB.bin
+build/obj/BLE_USB.hex
 ```
 
 ### Build Targets
@@ -217,22 +217,22 @@ make clean && make
 
 ### Prerequisites
 
-You'll need a WCH-LinkE or WCH-LinkV programmer/debugger connected to your system.
+You’ll need the target device’s USB port connected to your computer 
+(no external WCH-LinkE/LinkV programmer required). The flashing tool is WCHISPStudio
 
-### Using WCH Flash Uploader (Recommended)
+### Using WCHISPStudio
 
-1. **Connect the programmer**:
-   - Connect WCH-LinkE/LinkV to your computer via USB
-   - Connect the debug interface of the programmer to the CH32V20x device
+1. **Connect the device**:
+   - Plug the device into your computer via the USB port
+   - Ensure the device enters its built-in bootloader or USB-ISP mode (if required by your hardware design)
 
-2. **Open WCH Flash Uploader**:
-   - Launch the WCH Flash Uploader application (installed with WCH tools)
-   - The programmer should be automatically detected
+2. **Open WCHISPStudio**:
+   - Launch the WCHISPStudio application (provided by WCH Nanjing Qinheng Microelectronics)
+   - The tool should detect the target device connected via USB
 
 3. **Flash the firmware**:
-   - Load the binary file: `build/obj/BLE_USB.bin`
+   - Load the binary file: `build/obj/BLE_USB.hex`
    - Ensure the correct MCU is selected: **CH32V208**
-   - Set the flash address if necessary (typically 0x00000000 for main program)
    - Click the **Download** or **Program** button
    - Wait for the operation to complete successfully
    - You should see a success message indicating the flash is complete
@@ -243,11 +243,10 @@ If using WCH MounRiver Studio:
 
 1. **Build the project** (as described in "How to Compile" section)
 2. **Configure the debugger**:
-   - Connect WCH-LinkE/LinkV via USB
+   - Connect device via USB
    - Ensure the device is connected to the target
 3. **Flash the firmware**:
    - Click the **Debug** or **Run** button in the toolbar
-   - Select the WCH-Link programmer when prompted
    - The firmware will be automatically compiled and flashed
    - Check the Console for completion status
 
@@ -295,7 +294,7 @@ This project uses:
 
 ## Integration with Openterface KVM
 
-The Openterface KVM series (KVMGo and MiniKVM v2) is a KVM-over-IP controller that enables remote access to target computers. This firmware provides the device-side component that translates Openterface KVM controller input commands into HID keyboard and mouse events on the target system.
+The Openterface KVM series (KVMGo and MiniKVM v2) is a KVM-over-USB controller that enables direct access to target computers. This firmware provides the device-side component that translates Openterface KVM controller input commands into HID keyboard and mouse events on the target system.
 
 ### How It Works
 
@@ -304,17 +303,13 @@ The firmware bridges the Openterface KVM controller with the target system:
 1. **Receives Commands**: Accepts keyboard and mouse input commands from the Openterface KVM controller via USB or BLE
 2. **Emulates HID Devices**: Presents itself as a standard USB keyboard and mouse to the target operating system
 3. **Translates Input**: Converts command protocols into HID reports that the target OS understands
-4. **Flexible Connectivity**: Supports both direct USB and wireless BLE connections
+4. **Flexible Connectivity**: Supports both direct USB and wireless BLE connections(Only supports keyboard and mouse parts)
 
 ### System Architecture
 
 ```
 Openterface KVM Controller (KVMGo / MiniKVM v2)
-        ↓
-    USB or BLE
-        ↓
-    Openterface_KM (CH32V20x Microcontroller)
-        ↓
+        ↓ 
     USB HID: Keyboard + Mouse
         ↓
     Target System (Windows/macOS/Linux)
