@@ -22,10 +22,10 @@
 			{
 				"parentLogicPath": "APP",
 				"type": "file",
-				"name": "CH32_TEMP.c"
+				"name": "ch32_temp.c"
 			},
 			{
-				"name": "DS18B20.c",
+				"name": "ds18b20.c",
 				"parentLogicPath": "APP",
 				"type": "file"
 			}

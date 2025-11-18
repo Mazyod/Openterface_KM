@@ -15,10 +15,10 @@ C_SRCS += \
 ../APP/system_ch32v20x.c \
 ../APP/usbd_compostie_km.c \
 ../APP/usbd_desc.c \
-../APP/RGB.c \
-../APP/SD_SWITCH.c \
-../APP/DS18B20.c \
-../APP/CH32_TEMP.c 
+../APP/rgb.c \
+../APP/sd_switch.c \
+../APP/ds18b20.c \
+../APP/ch32_temp.c 
 
 C_DEPS += \
 ./APP/RingMem.d \
@@ -31,10 +31,10 @@ C_DEPS += \
 ./APP/system_ch32v20x.d \
 ./APP/usbd_compostie_km.d \
 ./APP/usbd_desc.d \
-./APP/RGB.d \
-./APP/SD_SWITCH.d \
-./APP/DS18B20.d \
-./APP/CH32_TEMP.d 
+./APP/rgb.d \
+./APP/sd_switch.d \
+./APP/ds18b20.d \
+./APP/ch32_temp.d 
 
 OBJS += \
 ./APP/RingMem.o \
@@ -47,10 +47,10 @@ OBJS += \
 ./APP/system_ch32v20x.o \
 ./APP/usbd_compostie_km.o \
 ./APP/usbd_desc.o \
-./APP/RGB.o \
-./APP/SD_SWITCH.o \
-./APP/DS18B20.o \
-./APP/CH32_TEMP.o 
+./APP/rgb.o \
+./APP/sd_switch.o \
+./APP/ds18b20.o \
+./APP/ch32_temp.o 
 
 
 

@@ -11,10 +11,10 @@
 #include "peripheral.h"
 #include "include/keyboard_handler.h"
 #include "include/mouse_handler.h"
-#include "SD_SWITCH.h"
-#include "RGB.h"
-#include "DS18B20.h"
-#include "CH32_TEMP.h"
+#include "sd_switch.h"
+#include "rgb.h"
+#include "ds18b20.h"
+#include "ch32_temp.h"
 /*********************************************************************
  * GLOBAL TYPEDEFS
  */
