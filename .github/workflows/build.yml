@@ -39,6 +39,14 @@ jobs:
         path: C:\tools\risc-none-embed-gcc
         key: ${{ runner.os }}-risc-compiler-${{ env.RISC_COMPILER_VERSION }}
 
+    - name: Check cache status
+      run: |
+        if ("${{ steps.cache-risc-compiler.outputs.cache-hit }}" -eq "true") {
+          Write-Host "✓ Cache HIT: Using cached RISC-V compiler" -ForegroundColor Green
+        } else {
+          Write-Host "✗ Cache MISS: Downloading fresh RISC-V compiler" -ForegroundColor Yellow
+        }
+
     - name: Clone risc-none-embed-gcc and configure environment
       if: steps.cache-risc-compiler.outputs.cache-hit != 'true'
       run: |
@@ -55,11 +63,19 @@ jobs:
     - name: Build the project
       run: |
         echo "Starting build process..."
+        echo "Compiler path: $env:RISC_COMPILER_PATH"
         cd build
         $env:PATH = "C:\tools\risc-none-embed-gcc\bin;" + $env:PATH
         $env:RISC_COMPILER_PATH = "C:\tools\risc-none-embed-gcc"
+        riscv-none-embed-gcc --version
         make clean
-        make -j4 all || echo "Build failed. Check logs for details."
+        make -j4 all
+        if ($LASTEXITCODE -eq 0) {
+          Write-Host "✓ Build succeeded" -ForegroundColor Green
+        } else {
+          Write-Host "✗ Build failed with exit code $LASTEXITCODE" -ForegroundColor Red
+          exit 1
+        }
 
     - name: Save build artifacts
       uses: actions/upload-artifact@v4
