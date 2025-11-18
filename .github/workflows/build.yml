@@ -58,6 +58,7 @@ jobs:
         cd build
         $env:PATH = "C:\tools\risc-none-embed-gcc\bin;" + $env:PATH
         $env:RISC_COMPILER_PATH = "C:\tools\risc-none-embed-gcc"
+        make clean
         make -j4 all || echo "Build failed. Check logs for details."
 
     - name: Save build artifacts
