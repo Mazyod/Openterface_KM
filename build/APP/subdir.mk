@@ -6,6 +6,10 @@
 # Add inputs and outputs from these tool invocations to the build variables 
 C_SRCS += \
 ../APP/RingMem.c \
+../APP/rgb.c \
+../APP/sd_switch.c \
+../APP/ds18b20.c \
+../APP/ch32_temp.c \
 ../APP/ch32v20x_it.c \
 ../APP/ch32v20x_usbfs_device.c \
 ../APP/keyboard_handler.c \
@@ -14,14 +18,14 @@ C_SRCS += \
 ../APP/peripheral_main.c \
 ../APP/system_ch32v20x.c \
 ../APP/usbd_compostie_km.c \
-../APP/usbd_desc.c \
-../APP/rgb.c \
-../APP/sd_switch.c \
-../APP/ds18b20.c \
-../APP/ch32_temp.c 
+../APP/usbd_desc.c 
 
 C_DEPS += \
 ./APP/RingMem.d \
+./APP/rgb.d \
+./APP/sd_switch.d \
+./APP/ds18b20.d \
+./APP/ch32_temp.d \
 ./APP/ch32v20x_it.d \
 ./APP/ch32v20x_usbfs_device.d \
 ./APP/keyboard_handler.d \
@@ -30,14 +34,14 @@ C_DEPS += \
 ./APP/peripheral_main.d \
 ./APP/system_ch32v20x.d \
 ./APP/usbd_compostie_km.d \
-./APP/usbd_desc.d \
-./APP/rgb.d \
-./APP/sd_switch.d \
-./APP/ds18b20.d \
-./APP/ch32_temp.d 
+./APP/usbd_desc.d
 
 OBJS += \
 ./APP/RingMem.o \
+./APP/rgb.o \
+./APP/sd_switch.o \
+./APP/ds18b20.o \
+./APP/ch32_temp.o \
 ./APP/ch32v20x_it.o \
 ./APP/ch32v20x_usbfs_device.o \
 ./APP/keyboard_handler.o \
@@ -46,13 +50,7 @@ OBJS += \
 ./APP/peripheral_main.o \
 ./APP/system_ch32v20x.o \
 ./APP/usbd_compostie_km.o \
-./APP/usbd_desc.o \
-./APP/rgb.o \
-./APP/sd_switch.o \
-./APP/ds18b20.o \
-./APP/ch32_temp.o 
-
-
+./APP/usbd_desc.o
 
 # Each subdirectory must supply rules for building sources it contributes
 APP/%.o: ../APP/%.c

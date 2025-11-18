@@ -188,12 +188,6 @@ void Keyboard_ProcessAutoRelease(uint8_t* data, uint8_t cmd_code, uint8_t repeat
  * @return  none
  */
 void Keyboard_HandleData(uint8_t addr, uint8_t cmd_code, uint8_t* data, uint8_t data_len) {
-    // Validate data length
-    if (data_len != 8) {
-        // CH9329_SendAck(addr, cmd_code, DEF_CMD_ERR_PARA);
-        return;
-    }
-
     // Check if data is same as last
     bool kb_same_as_last = (memcmp(data, kb_last_data, 8) == 0);
 

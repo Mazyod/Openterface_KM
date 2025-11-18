@@ -33,6 +33,7 @@
 #define STATUS_ERR_FRAME      0xE6  // Custom frame format error, frame exception, execution failed
 /*******************************************************************************/
 
+// -------------------- Protocol Definitions --------------------
 #define CH9329_MAX_DATA_LEN 8
 #define CH9329_FRAME_HEAD1      0x57
 #define CH9329_FRAME_HEAD2      0xAB
@@ -41,15 +42,24 @@
 #define CMD_SEND_MS_ABS_DATA    0x04
 #define CMD_SEND_MS_REL_DATA    0x05
 #define CMD_SD_SWITCH  0x17
+
+// ACK Status Codes
 #define STATUS_SUCCESS        0x00
 #define STATUS_ERR_TIMEOUT    0xE1
 #define STATUS_ERR_HEADER     0xE2
 #define STATUS_ERR_CMD        0xE3
 #define STATUS_ERR_CHECKSUM   0xE4
 #define STATUS_ERR_PARAM      0xE5
-#define STATUS_ERR_FRAME      0xE6  
+#define STATUS_ERR_FRAME      0xE6  // Custom frame format error, frame exception, execution failed
 #define CMD_GET_INFO  0x01
 #define STATUS_OK     0    
+
+// Custom DS18B20 Command
+#define CMD_DS18B20_GET_TEMP   0x18
+
+#define RX_BUF_SIZE   256
+
+/*******************************************************************************/
 void USB_Sleep_Wakeup_CFG( void );
 void MCU_Sleep_Wakeup_Operate( void );
 void CH9329_SendResponse(uint8_t addr, uint8_t cmd_code, uint8_t* pdata, uint8_t len) ;

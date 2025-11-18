@@ -13,6 +13,9 @@
 #include "sd_switch.h"
 #include "DS18B20.h"
 #include <stdbool.h>
+#include <string.h>
+#include <stdint.h>
+
 /*******************************************************************************/
 /* Global Variable Definition */
 
@@ -64,34 +67,7 @@ void MCU_Sleep_Wakeup_Operate( void )
     }
     __enable_irq( );
 }
-#include <string.h>
-#include <stdint.h>
 
-// -------------------- Protocol Definitions --------------------
-#define CH9329_MAX_DATA_LEN 8
-#define CH9329_FRAME_HEAD1      0x57
-#define CH9329_FRAME_HEAD2      0xAB
-
-#define CMD_SEND_KB_GENERAL_DATA 0x02
-#define CMD_SEND_KB_GAME_DATA    0x12
-#define CMD_SEND_MS_ABS_DATA    0x04
-#define CMD_SEND_MS_REL_DATA    0x05
-#define CMD_SD_SWITCH  0x17
-#define CMD_DS18B20_GET_TEMP   0x18
-// ACK Status Codes
-#define STATUS_SUCCESS        0x00
-#define STATUS_ERR_TIMEOUT    0xE1
-#define STATUS_ERR_HEADER     0xE2
-#define STATUS_ERR_CMD        0xE3
-#define STATUS_ERR_CHECKSUM   0xE4
-#define STATUS_ERR_PARAM      0xE5
-#define STATUS_ERR_FRAME      0xE6  // Custom frame format error, frame exception, execution failed
-
-// Command code definitions
-#define CMD_GET_INFO  0x01
-
-// Status: Normal/Exception
-#define STATUS_OK     0    // No dedicated status byte in this example, protocol uses command code high bits to distinguish exceptions
 extern uint8_t sd_card_channel_state; 
 void CH9329_SendResponse(uint8_t addr, uint8_t cmd_code, uint8_t* pdata, uint8_t len)
 {
@@ -130,14 +106,14 @@ void CH9329_Cmd_GetInfo_Reply(uint8_t addr)
     uint8_t data[8] = {0};
 
     // Protocol payload fixed 8 bytes
-    data[0] = 0x00; // status (not used but placeholder)
-    data[1] = 0x00;
-    data[2] = 0x00;
-    data[3] = 0x00;
-    data[4] = 0x00;
-    data[5] = Keyboard_GetLEDStatus() & 0x07;
-    data[6] = 0x01;
-    data[7] = 0x10;
+    data[0] = 0x00; // bit7, status (not used but placeholder)
+    data[1] = 0x00; // bit6, status (not used but placeholder)
+    data[2] = 0x00; // bit5, status (not used but placeholder)
+    data[3] = 0x00; // bit4, status (not used but placeholder)
+    data[4] = 0x00; // bit3, status (not used but placeholder)
+    data[5] = Keyboard_GetLEDStatus() & 0x07; // bit2 for LED status
+    data[6] = 0x01; // bit1 for target device connection status, 0x00- not connected, 0x01- connected
+    data[7] = 0x10; // bit0 version number
 
     CH9329_SendResponse(addr, CMD_GET_INFO, data, 8);
 }
@@ -161,6 +137,86 @@ void CH9329_Cmd_MS_Rel_Reply(uint8_t addr, uint8_t recv_cmd, uint8_t status)
     CH9329_SendResponse(addr, recv_cmd, data, 1);
 }
 
+
+// -------------------- CH9329 Command Dispatcher --------------------
+/*********************************************************************
+ * @fn      CH9329_DispatchCommand
+ *
+ * @brief   Dispatch and handle CH9329 commands
+ *
+ * @param   addr - Device address
+ * @param   cmd_code - Command code
+ * @param   pdata - Pointer to command data
+ * @param   data_len - Length of command data
+ *
+ * @return  none
+ */
+void CH9329_DispatchCommand(uint8_t addr, uint8_t cmd_code, uint8_t* pdata, uint8_t data_len)
+{
+    switch (cmd_code)
+    {
+        case CMD_GET_INFO:
+            CH9329_Cmd_GetInfo_Reply(addr);
+            break;
+
+        case CMD_SEND_KB_GENERAL_DATA:
+        {
+            uint8_t st;
+            if (data_len != 8) {
+                st = STATUS_ERR_PARAM;
+                CH9329_SendResponse(addr, cmd_code, &st, 1);
+            } else {
+                Keyboard_HandleData(addr, cmd_code, pdata, data_len);
+                st = STATUS_SUCCESS;
+                CH9329_SendResponse(addr, cmd_code, &st, 1);
+            }
+        }
+        break;
+
+        case CMD_SEND_MS_ABS_DATA:
+        {
+            uint8_t st;
+            if (data_len < 7) {
+                st = STATUS_ERR_PARAM;
+                CH9329_SendResponse(addr, cmd_code, &st, 1);
+            } else {
+                Mouse_HandleAbsoluteData(addr, cmd_code, pdata, data_len);
+                st = STATUS_SUCCESS;
+                CH9329_SendResponse(addr, cmd_code, &st, 1);
+            }
+        }
+        break;
+
+        case CMD_SEND_MS_REL_DATA:
+        {
+            uint8_t st;
+            if (data_len < 5) {
+                st = STATUS_ERR_PARAM;
+                CH9329_SendResponse(addr, cmd_code, &st, 1);
+            } else {
+                Mouse_HandleRelativeData(addr, cmd_code, pdata, data_len);
+                st = STATUS_SUCCESS;
+                CH9329_SendResponse(addr, cmd_code, &st, 1);
+            }
+        }
+        break;
+
+        case CMD_SD_SWITCH:
+            SD_USB_Switch(addr, cmd_code, pdata, data_len);
+            break;
+
+        case CMD_DS18B20_GET_TEMP:
+            DS18B20_Command(addr, cmd_code, pdata, 5);
+            break;
+
+        default:
+        {
+            uint8_t st = STATUS_ERR_CMD;
+            CH9329_SendResponse(addr, cmd_code, &st, 1);
+        }
+        break;
+    }
+}
 
 // -------------------- CH9329 Data Parser --------------------
 void CH9329_DataParser(uint8_t* buf, uint8_t len)
@@ -200,70 +256,7 @@ void CH9329_DataParser(uint8_t* buf, uint8_t len)
             }
 
             /* ======== Command dispatch ======== */
-            switch (cmd_code)
-            {
-                case CMD_GET_INFO:
-                    CH9329_Cmd_GetInfo_Reply(addr);
-                    break;
-
-                case CMD_SEND_KB_GENERAL_DATA:
-{
-    uint8_t st;
-    if (data_len != 8) {
-        st = STATUS_ERR_PARAM;
-        CH9329_SendResponse(addr, cmd_code, &st, 1);
-    } else {
-        Keyboard_HandleData(addr, cmd_code, pdata, data_len);
-        st = STATUS_SUCCESS;
-        CH9329_SendResponse(addr, cmd_code, &st, 1);
-    }
-}
-break;
-
-case CMD_SEND_MS_ABS_DATA:
-{
-    uint8_t st;
-    if (data_len < 7) {
-        st = STATUS_ERR_PARAM;
-        CH9329_SendResponse(addr, cmd_code, &st, 1);
-    } else {
-        Mouse_HandleAbsoluteData(addr, cmd_code, pdata, data_len);
-        st = STATUS_SUCCESS;
-        CH9329_SendResponse(addr, cmd_code, &st, 1);
-    }
-}
-break;
-
-case CMD_SEND_MS_REL_DATA:
-{
-    uint8_t st;
-    if (data_len < 5) {
-        st = STATUS_ERR_PARAM;
-        CH9329_SendResponse(addr, cmd_code, &st, 1);
-    } else {
-        Mouse_HandleRelativeData(addr, cmd_code, pdata, data_len);
-        st = STATUS_SUCCESS;
-        CH9329_SendResponse(addr, cmd_code, &st, 1);
-    }
-}
-break;
-
-case CMD_SD_SWITCH:
-    SD_USB_Switch(addr, cmd_code, pdata, data_len);
-    break;
-
-case CMD_DS18B20_GET_TEMP:
-    DS18B20_Command(addr, cmd_code, pdata, 5);
-    break;
-
-default:
-{
-    uint8_t st = STATUS_ERR_CMD;
-    CH9329_SendResponse(addr, cmd_code, &st, 1);
-}
-break;
-
-            }
+            CH9329_DispatchCommand(addr, cmd_code, pdata, data_len);
 
             index += frame_total_len;
         }
@@ -274,9 +267,6 @@ break;
         }
     }
 }
-
-
-#define RX_BUF_SIZE   256
 
 static uint8_t rx_buf[RX_BUF_SIZE];
 static uint16_t rx_len = 0;
