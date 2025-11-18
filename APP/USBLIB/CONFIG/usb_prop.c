@@ -16,6 +16,7 @@
 #include "usb_pwr.h"
 #include "hw_config.h"
 #include "UART.h"
+#include "ch32v20x_usb.h"
 
 uint8_t Request = 0;
 
