@@ -2,6 +2,7 @@
 /* Header Files */
 #include "ch32v20x_usbfs_device.h"
 #include "usbd_composite_km.h"
+#include "iwdg_auto.h"
 #include "UART.h"
 #include "debug.h"
 #include "usb_lib.h"
@@ -44,17 +45,17 @@ void Main_Circulation(void)
     TARGET_SD_Switch();
     while(1)
     {   
-        RGB_Update();
+       RGB_Update();
         TMOS_SystemProcess();
-        
-        // if (USBFS_DevEnumStatus) {
-            USB_DataRx_To_KMHandle();
-        // }
+        USB_DataRx_To_KMHandle();
+
         if(systick_ms - t0 > 3000)
         {
-            RGB_SetBreathMode(0.02f); // Start breathing mode
+            RGB_SetBreathMode(0.02f);
             SD_Switch_StateMachine(&selector_prev_state);
         }
+
+        IWDG_Auto_Handler();
     }
 }
 int main(void) {
@@ -65,6 +66,7 @@ int main(void) {
     SystemCoreClockUpdate();
     Delay_Init();
     USART_Printf_Init(115200);
+    IWDG_Auto_Init(IWDG_Prescaler_32, 8000);
     WCHBLE_Init();
     HAL_Init();
     GAPRole_PeripheralInit();
@@ -85,7 +87,7 @@ int main(void) {
     SD_Switch_Init();
     DS18B20_Init();
     ADC_Function_Init();
-    Delay_Ms(200);
+    Delay_Ms(1000);
     
     // RGB_BreathLoop();
     Main_Circulation();

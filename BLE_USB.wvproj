@@ -25,7 +25,12 @@
 				"name": "CH32_TEMP.c"
 			},
 			{
-				"name": "DS18B20.c",
+				"parentLogicPath": "APP",
+				"type": "file",
+				"name": "DS18B20.c"
+			},
+			{
+				"name": "iwdg_auto.h",
 				"parentLogicPath": "APP",
 				"type": "file"
 			}
