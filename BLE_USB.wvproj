@@ -22,17 +22,22 @@
 			{
 				"parentLogicPath": "APP",
 				"type": "file",
-				"name": "CH32_TEMP.c"
+				"name": "iwdg_auto.h"
 			},
 			{
-				"parentLogicPath": "APP",
+				"parentLogicPath": "APP/USBLIB",
 				"type": "file",
 				"name": "DS18B20.c"
 			},
 			{
-				"name": "iwdg_auto.h",
-				"parentLogicPath": "APP",
-				"type": "file"
+				"parentLogicPath": "APP/USBLIB/USB-Driver",
+				"type": "file",
+				"name": "CH32_TEMP.c"
+			},
+			{
+				"parentLogicPath": "APP/USBLIB/USB-Driver/src",
+				"type": "file",
+				"name": "CH32_TEMP.c"
 			}
 		],
 		"projectName": "BLE_USB",

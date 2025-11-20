@@ -35,11 +35,11 @@
       <type>6</type>
       <matcher>
         <id>org.eclipse.ui.ide.multiFilter</id>
-        <arguments>1.0-name-matches-false-false-CH32_TEMP.c</arguments>
+        <arguments>1.0-name-matches-false-false-iwdg_auto.h</arguments>
       </matcher>
     </filter>
     <filter>
-      <name>APP</name>
+      <name>APP/USBLIB</name>
       <type>6</type>
       <matcher>
         <id>org.eclipse.ui.ide.multiFilter</id>
@@ -47,11 +47,19 @@
       </matcher>
     </filter>
     <filter>
-      <name>APP</name>
+      <name>APP/USBLIB/USB-Driver</name>
       <type>6</type>
       <matcher>
         <id>org.eclipse.ui.ide.multiFilter</id>
-        <arguments>1.0-name-matches-false-false-iwdg_auto.h</arguments>
+        <arguments>1.0-name-matches-false-false-CH32_TEMP.c</arguments>
+      </matcher>
+    </filter>
+    <filter>
+      <name>APP/USBLIB/USB-Driver/src</name>
+      <type>6</type>
+      <matcher>
+        <id>org.eclipse.ui.ide.multiFilter</id>
+        <arguments>1.0-name-matches-false-false-CH32_TEMP.c</arguments>
       </matcher>
     </filter>
   </filteredResources>

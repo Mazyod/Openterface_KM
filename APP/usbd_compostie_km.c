@@ -78,7 +78,7 @@ void CH9329_SendResponse(uint8_t addr, uint8_t cmd_code, uint8_t* pdata, uint8_t
     packet[index++] = CH9329_FRAME_HEAD2;
     packet[index++] = addr;
 
-    uint8_t resp_cmd = cmd_code | 0x80;
+    uint8_t resp_cmd = cmd_code;
     packet[index++] = resp_cmd;
 
     packet[index++] = len;
@@ -117,9 +117,11 @@ void CH9329_Cmd_GetInfo_Reply(uint8_t addr)
     } else {
         data[6] = 0x00;   // Î´Á¬½Ó
     }
-    data[7] = 0x10; // bit0 version number
+    //The first byte represents the product version, and the second byte represents the KM version
+    //0x00 = kvm go ,0x40 = minikvm v2
+    data[7] = 0x40|0x01; // bit0 version number
 
-    CH9329_SendResponse(addr, CMD_GET_INFO, data, 8);
+    CH9329_SendResponse(addr, CMD_GET_INFO|0x80, data, 8);
 }
 
 
@@ -168,11 +170,11 @@ void CH9329_DispatchCommand(uint8_t addr, uint8_t cmd_code, uint8_t* pdata, uint
             uint8_t st;
             if (data_len != 8) {
                 st = STATUS_ERR_PARAM;
-                CH9329_SendResponse(addr, cmd_code, &st, 1);
+                CH9329_SendResponse(addr, cmd_code|0xC0, &st, 1);
             } else {
                 Keyboard_HandleData(addr, cmd_code, pdata, data_len);
                 st = STATUS_SUCCESS;
-                CH9329_SendResponse(addr, cmd_code, &st, 1);
+                CH9329_SendResponse(addr, cmd_code|0x80, &st, 1);
             }
         }
         break;
@@ -182,11 +184,11 @@ void CH9329_DispatchCommand(uint8_t addr, uint8_t cmd_code, uint8_t* pdata, uint
             uint8_t st;
             if (data_len < 7) {
                 st = STATUS_ERR_PARAM;
-                CH9329_SendResponse(addr, cmd_code, &st, 1);
+                CH9329_SendResponse(addr, cmd_code|0XC0, &st, 1);
             } else {
                 Mouse_HandleAbsoluteData(addr, cmd_code, pdata, data_len);
                 st = STATUS_SUCCESS;
-                CH9329_SendResponse(addr, cmd_code, &st, 1);
+                CH9329_SendResponse(addr, cmd_code|0X80, &st, 1);
             }
         }
         break;
@@ -196,27 +198,27 @@ void CH9329_DispatchCommand(uint8_t addr, uint8_t cmd_code, uint8_t* pdata, uint
             uint8_t st;
             if (data_len < 5) {
                 st = STATUS_ERR_PARAM;
-                CH9329_SendResponse(addr, cmd_code, &st, 1);
+                CH9329_SendResponse(addr, cmd_code|0XC0, &st, 1);
             } else {
                 Mouse_HandleRelativeData(addr, cmd_code, pdata, data_len);
                 st = STATUS_SUCCESS;
-                CH9329_SendResponse(addr, cmd_code, &st, 1);
+                CH9329_SendResponse(addr, cmd_code|0X80, &st, 1);
             }
         }
         break;
 
         case CMD_SD_SWITCH:
-            SD_USB_Switch(addr, cmd_code, pdata, data_len);
+            SD_USB_Switch(addr, cmd_code|0X80, pdata, data_len);
             break;
 
         case CMD_DS18B20_GET_TEMP:
-            DS18B20_Command(addr, cmd_code, pdata, 5);
+            DS18B20_Command(addr, cmd_code|0X80, pdata, 5);
             break;
 
         default:
         {
             uint8_t st = STATUS_ERR_CMD;
-            CH9329_SendResponse(addr, cmd_code, &st, 1);
+            CH9329_SendResponse(addr, cmd_code|0XC0, &st, 1);
         }
         break;
     }
