@@ -119,7 +119,7 @@ void CH9329_Cmd_GetInfo_Reply(uint8_t addr)
     }
     //The first byte represents the product version, and the second byte represents the KM version
     //0x00 = kvm go ,0x40 = minikvm v2
-    data[7] = 0x40|0x01; // bit0 version number
+    data[7] = 0x00|0x01; // bit0 version number
 
     CH9329_SendResponse(addr, CMD_GET_INFO|0x80, data, 8);
 }

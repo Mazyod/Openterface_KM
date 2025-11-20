@@ -48,11 +48,11 @@ void Main_Circulation(void)
        RGB_Update();
         TMOS_SystemProcess();
         USB_DataRx_To_KMHandle();
-        SD_Switch_StateMachine();
+
         if(systick_ms - t0 > 3000)
         {
             RGB_SetBreathMode(0.02f);
-            
+            SD_Switch_StateMachine(&selector_prev_state);
         }
 
         IWDG_Auto_Handler();
@@ -66,7 +66,7 @@ int main(void) {
     SystemCoreClockUpdate();
     Delay_Init();
     USART_Printf_Init(115200);
-    IWDG_Auto_Init(IWDG_Prescaler_32, 4000);
+    IWDG_Auto_Init(IWDG_Prescaler_32, 8000);
     WCHBLE_Init();
     HAL_Init();
     GAPRole_PeripheralInit();
@@ -87,9 +87,9 @@ int main(void) {
     SD_Switch_Init();
     DS18B20_Init();
     ADC_Function_Init();
-    
     Delay_Ms(1000);
     
+    // RGB_BreathLoop();
     Main_Circulation();
 }
 
