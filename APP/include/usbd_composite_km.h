@@ -41,6 +41,7 @@
 #define CMD_SEND_KB_GAME_DATA    0x12
 #define CMD_SEND_MS_ABS_DATA    0x04
 #define CMD_SEND_MS_REL_DATA    0x05
+#define CMD_GET_PARA_CFG     0x08
 #define CMD_SD_SWITCH  0x17
 
 // ACK Status Codes
@@ -62,11 +63,8 @@
 /*******************************************************************************/
 void USB_Sleep_Wakeup_CFG( void );
 void MCU_Sleep_Wakeup_Operate( void );
-void CH9329_SendResponse(uint8_t addr, uint8_t cmd_code, uint8_t* pdata, uint8_t len) ;
+void CH9329_SendResponse(uint8_t addr, uint8_t cmd_code, uint8_t* pdata, uint8_t len, uint8_t resp_mode);
 void CH9329_Cmd_GetInfo_Reply(uint8_t addr);
-void CH9329_Cmd_KB_General_Reply(uint8_t addr, uint8_t recv_cmd, uint8_t status);
-void CH9329_Cmd_MS_Abs_Reply(uint8_t addr, uint8_t recv_cmd, uint8_t status);
-void CH9329_Cmd_MS_Rel_Reply(uint8_t addr, uint8_t recv_cmd, uint8_t status);
 void CH9329_DataParser(uint8_t* buf, uint8_t len);
 void CH9329_RxBuffer_Add(uint8_t *data, uint16_t len) ;
 void USB_DataRx_To_KMHandle(void) ;

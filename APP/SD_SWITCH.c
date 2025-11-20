@@ -97,7 +97,7 @@ void SD_USB_Switch(uint8_t addr, uint8_t cmd_code, uint8_t *pdata, uint8_t data_
     if (data_len < 5)
     {
         uint8_t st = STATUS_ERR_FRAME;
-        CH9329_SendResponse(addr, cmd_code, &st, 1);
+        CH9329_SendResponse(addr, cmd_code, &st, 1,0);
         return;
     }
 
@@ -110,23 +110,23 @@ void SD_USB_Switch(uint8_t addr, uint8_t cmd_code, uint8_t *pdata, uint8_t data_
             HOST_SD_Switch();
             uint8_t st = 0x00;  // Current status: HOST
             
-            CH9329_SendResponse(addr, cmd_code, &st, 1 );
+            CH9329_SendResponse(addr, cmd_code, &st, 1 ,1);
             break;
 
         case 0x01:  // Switch to TARGET
             TARGET_SD_Switch();
             st = 0x01;  // Current status: TARGET
-            CH9329_SendResponse(addr, cmd_code, &st, 1);
+            CH9329_SendResponse(addr, cmd_code, &st, 1,1);
             break;
 
         case 0x03:  // Query current status
             st = (sd_card_channel_state == 0) ? 0x01 : 0x00;
-            CH9329_SendResponse(addr, cmd_code, &st, 1);
+            CH9329_SendResponse(addr, cmd_code, &st, 1,1);
             break;
 
         default:
             st = STATUS_ERR_PARAM;
-            CH9329_SendResponse(addr, cmd_code,&st, 0);
+            CH9329_SendResponse(addr, cmd_code,&st, 0,0);
             break;
     }
 }

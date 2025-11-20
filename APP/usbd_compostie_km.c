@@ -69,16 +69,36 @@ void MCU_Sleep_Wakeup_Operate( void )
 }
 
 extern uint8_t sd_card_channel_state; 
-void CH9329_SendResponse(uint8_t addr, uint8_t cmd_code, uint8_t* pdata, uint8_t len)
+
+void CH9329_SendResponse(uint8_t addr, uint8_t cmd_code, uint8_t* pdata,
+                         uint8_t len, uint8_t resp_mode)
 {
     uint8_t packet[32];
     uint8_t index = 0;
+
+    /* Optional: protect against oversized payload */
+    if (len > CH9329_MAX_DATA_LEN) {
+        /* Truncate to the maximum allowed payload length */
+        len = CH9329_MAX_DATA_LEN;
+    }
 
     packet[index++] = CH9329_FRAME_HEAD1;
     packet[index++] = CH9329_FRAME_HEAD2;
     packet[index++] = addr;
 
-    uint8_t resp_cmd = cmd_code;
+    /* Select mask:
+       resp_mode == 1 → OR with 0x80
+       resp_mode == 0 → OR with 0x0C
+    */
+    uint8_t mask = (resp_mode ? 0x80 : 0xC0);
+
+    /* Optional:
+       Clear existing bits in cmd_code to avoid duplicate OR operations.
+       For example: cmd_code &= ~(0xC0u | 0x0Fu);
+       (Actual required masks depend on protocol definition.)
+       Not applied here based on your original intention.
+    */
+    uint8_t resp_cmd = (cmd_code | mask);
     packet[index++] = resp_cmd;
 
     packet[index++] = len;
@@ -88,59 +108,51 @@ void CH9329_SendResponse(uint8_t addr, uint8_t cmd_code, uint8_t* pdata, uint8_t
         index += len;
     }
 
-    // Calculate checksum
+    /* Calculate checksum for all preceding bytes */
     uint8_t checksum = 0;
     for (uint8_t i = 0; i < index; i++) {
         checksum += packet[i];
     }
     packet[index++] = checksum;
 
+    /* Send the packet (same interface as your original implementation) */
     USBD_ENDPx_DataUp(ENDP3, packet, index);
 }
 
 
 
-// Dedicated "Get Info" response function
+// ------------------------------------------------------------
+//      Dedicated "Get Info" Command Response
+// ------------------------------------------------------------
 void CH9329_Cmd_GetInfo_Reply(uint8_t addr)
 {
     uint8_t data[8] = {0};
 
-    // Protocol payload fixed 8 bytes
-    data[0] = 0x00; // bit7, status (not used but placeholder)
-    data[1] = 0x00; // bit6, status (not used but placeholder)
-    data[2] = 0x00; // bit5, status (not used but placeholder)
-    data[3] = 0x00; // bit4, status (not used but placeholder)
-    data[4] = 0x00; // bit3, status (not used but placeholder)
-    data[5] = Keyboard_GetLEDStatus() & 0x07; // bit2 for LED status
-     if (USBFS_DevConfig != 0 || USBFS_DevEnumStatus == 1) {
-        data[6] = 0x01;   // 已连接（已枚举）
+    /* Protocol requires a fixed 8-byte payload */
+
+    data[0] = 0x00; // bit7 placeholder (status unused)
+    data[1] = 0x00; // bit6 placeholder
+    data[2] = 0x00; // bit5 placeholder
+    data[3] = 0x00; // bit4 placeholder
+    data[4] = 0x00; // bit3 placeholder
+    data[5] = Keyboard_GetLEDStatus() & 0x07; // bit2-bit0: LED status
+
+    /* Device connection / enumeration status */
+    if (USBFS_DevConfig != 0 || USBFS_DevEnumStatus == 1) {
+        data[6] = 0x01;   // Connected (enumerated)
     } else {
-        data[6] = 0x00;   // 未连接
+        data[6] = 0x00;   // Not connected
     }
-    //The first byte represents the product version, and the second byte represents the KM version
-    //0x00 = kvm go ,0x40 = minikvm v2
-    data[7] = 0x00|0x01; // bit0 version number
 
-    CH9329_SendResponse(addr, CMD_GET_INFO|0x80, data, 8);
-}
+    /* Firmware Version:
+       - High nibble: product type
+           0x00 = KVM Go
+           0x40 = MiniKVM v2
+       - Low nibble: KM firmware version number
+    */
+    data[7] = 0x00 | 0x01;    // Product type 0x00, version 0x01
 
-
-void CH9329_Cmd_KB_General_Reply(uint8_t addr, uint8_t recv_cmd, uint8_t status)
-{
-    uint8_t data[1] = { status };
-    CH9329_SendResponse(addr, recv_cmd, data, 1);
-}
-
-void CH9329_Cmd_MS_Abs_Reply(uint8_t addr, uint8_t recv_cmd, uint8_t status)
-{
-    uint8_t data[1] = { status };
-    CH9329_SendResponse(addr, recv_cmd, data, 1);
-}
-
-void CH9329_Cmd_MS_Rel_Reply(uint8_t addr, uint8_t recv_cmd, uint8_t status)
-{
-    uint8_t data[1] = { status };
-    CH9329_SendResponse(addr, recv_cmd, data, 1);
+    CH9329_SendResponse(addr, CMD_GET_INFO , data, 8, 1);
 }
 
 
@@ -170,11 +182,11 @@ void CH9329_DispatchCommand(uint8_t addr, uint8_t cmd_code, uint8_t* pdata, uint
             uint8_t st;
             if (data_len != 8) {
                 st = STATUS_ERR_PARAM;
-                CH9329_SendResponse(addr, cmd_code|0xC0, &st, 1);
+                CH9329_SendResponse(addr, cmd_code, &st, 1,0);
             } else {
                 Keyboard_HandleData(addr, cmd_code, pdata, data_len);
                 st = STATUS_SUCCESS;
-                CH9329_SendResponse(addr, cmd_code|0x80, &st, 1);
+                CH9329_SendResponse(addr, cmd_code, &st, 1,1);
             }
         }
         break;
@@ -184,11 +196,11 @@ void CH9329_DispatchCommand(uint8_t addr, uint8_t cmd_code, uint8_t* pdata, uint
             uint8_t st;
             if (data_len < 7) {
                 st = STATUS_ERR_PARAM;
-                CH9329_SendResponse(addr, cmd_code|0XC0, &st, 1);
+                CH9329_SendResponse(addr, cmd_code, &st, 1,0);
             } else {
                 Mouse_HandleAbsoluteData(addr, cmd_code, pdata, data_len);
                 st = STATUS_SUCCESS;
-                CH9329_SendResponse(addr, cmd_code|0X80, &st, 1);
+                CH9329_SendResponse(addr, cmd_code, &st, 1,1);
             }
         }
         break;
@@ -198,27 +210,27 @@ void CH9329_DispatchCommand(uint8_t addr, uint8_t cmd_code, uint8_t* pdata, uint
             uint8_t st;
             if (data_len < 5) {
                 st = STATUS_ERR_PARAM;
-                CH9329_SendResponse(addr, cmd_code|0XC0, &st, 1);
+                CH9329_SendResponse(addr, cmd_code, &st, 1,0);
             } else {
                 Mouse_HandleRelativeData(addr, cmd_code, pdata, data_len);
                 st = STATUS_SUCCESS;
-                CH9329_SendResponse(addr, cmd_code|0X80, &st, 1);
+                CH9329_SendResponse(addr, cmd_code, &st, 1,1);
             }
         }
         break;
 
         case CMD_SD_SWITCH:
-            SD_USB_Switch(addr, cmd_code|0X80, pdata, data_len);
+            SD_USB_Switch(addr, cmd_code, pdata, data_len);
             break;
 
         case CMD_DS18B20_GET_TEMP:
-            DS18B20_Command(addr, cmd_code|0X80, pdata, 5);
+            DS18B20_Command(addr, cmd_code, pdata, 5);
             break;
 
         default:
         {
             uint8_t st = STATUS_ERR_CMD;
-            CH9329_SendResponse(addr, cmd_code|0XC0, &st, 1);
+            CH9329_SendResponse(addr, cmd_code, &st, 1,0);
         }
         break;
     }
@@ -241,7 +253,7 @@ void CH9329_DataParser(uint8_t* buf, uint8_t len)
             if (index + frame_total_len > len)
             {
                 uint8_t st = STATUS_ERR_FRAME;
-                CH9329_SendResponse(addr, cmd_code, &st, 1);
+                CH9329_SendResponse(addr, cmd_code, &st, 1,0);
                 break;
             }
 
@@ -256,7 +268,7 @@ void CH9329_DataParser(uint8_t* buf, uint8_t len)
             if (sum != recv_sum)
             {
                 uint8_t st = STATUS_ERR_CHECKSUM;
-                CH9329_SendResponse(addr, cmd_code, &st, 1 );
+                CH9329_SendResponse(addr, cmd_code, &st, 1 ,0);
                 index += frame_total_len;
                 continue;
             }

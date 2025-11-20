@@ -42,7 +42,7 @@ void Main_Circulation(void)
     RGB_FlashStartupSequence();
     // Switch to breathing mode after 3 seconds
     uint32_t t0 = systick_ms;
-    TARGET_SD_Switch();
+    CH9329_Cmd_GetInfo_Reply(00);
     while(1)
     {   
        RGB_Update();
@@ -51,9 +51,13 @@ void Main_Circulation(void)
 
         if(systick_ms - t0 > 3000)
         {
+
             RGB_SetBreathMode(0.02f);
             SD_Switch_StateMachine(&selector_prev_state);
+            
         }
+
+        
 
         IWDG_Auto_Handler();
     }
