@@ -34,7 +34,7 @@
 /*******************************************************************************/
 
 // -------------------- Protocol Definitions --------------------
-#define CH9329_MAX_DATA_LEN 8
+#define CH9329_MAX_DATA_LEN 100
 #define CH9329_FRAME_HEAD1      0x57
 #define CH9329_FRAME_HEAD2      0xAB
 #define CMD_SEND_KB_GENERAL_DATA 0x02

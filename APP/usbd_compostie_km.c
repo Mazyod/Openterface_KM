@@ -73,7 +73,7 @@ extern uint8_t sd_card_channel_state;
 void CH9329_SendResponse(uint8_t addr, uint8_t cmd_code, uint8_t* pdata,
                          uint8_t len, uint8_t resp_mode)
 {
-    uint8_t packet[32];
+    uint8_t packet[100];
     uint8_t index = 0;
 
     /* Optional: protect against oversized payload */
@@ -226,7 +226,24 @@ void CH9329_DispatchCommand(uint8_t addr, uint8_t cmd_code, uint8_t* pdata, uint
         case CMD_DS18B20_GET_TEMP:
             DS18B20_Command(addr, cmd_code, pdata, 5);
             break;
+        case CMD_GET_PARA_CFG:
+        {
+            uint8_t response[] = {
+            0x80, 0x80, 0x00, 0x00, 0x01, 0xC2, 
+            0x00, 0x08, 0x00, 0x00, 0x03, 0x86, 
+            0x1A, 0x29, 0xE1, 0x00, 0x00, 0x00, 
+            0x01, 0x00, 0x0D, 0x00, 0x00, 0x00, 
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00
+            };
 
+            // ∑¢ÀÕœÏ”¶
+            CH9329_SendResponse(addr, cmd_code, response, sizeof(response), 1);
+        }
+        break;
         default:
         {
             uint8_t st = STATUS_ERR_CMD;
