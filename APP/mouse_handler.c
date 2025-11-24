@@ -10,18 +10,13 @@
 volatile uint8_t  MS_Scan_Done = 0x00;
 volatile uint16_t MS_Scan_Result = 0x00F0;
 
-uint8_t MS_Data_Pack[4];
-uint8_t ABS_MS_Data_Pack[6];
+uint8_t MS_Data_Pack[4];    // Relative mouse data
+uint8_t ABS_MS_Data_Pack[6]; // Absolute mouse data
 
 /*******************************************************************************/
 /* External Functions */
 
 extern void CH9329_SendAck(uint8_t addr, uint8_t cmd_code, uint8_t status);
-
-// ACK Status Codes (from main file)
-#define DEF_CMD_SUCCESS         0x00
-#define DEF_CMD_ERR_PARA        0xE5
-#define DEF_CMD_ERR_OPERATE     0xE6
 
 /*******************************************************************************/
 /* Function Implementations */
@@ -34,11 +29,8 @@ extern void CH9329_SendAck(uint8_t addr, uint8_t cmd_code, uint8_t status);
  * @return  none
  */
 void Mouse_Init(void) {
-    // Initialize mouse data structures
     memset(MS_Data_Pack, 0, sizeof(MS_Data_Pack));
     memset(ABS_MS_Data_Pack, 0, sizeof(ABS_MS_Data_Pack));
-    
-    // Initialize scan variables
     MS_Scan_Done = 0x00;
     MS_Scan_Result = 0x00F0;
 }
@@ -46,47 +38,42 @@ void Mouse_Init(void) {
 /*********************************************************************
  * @fn      Mouse_ProcessCoordinateMapping
  *
- * @brief   Map coordinates from CH9329 range to HID range
+ * @brief   Map CH9329 coordinate to HID coordinate range
  *
  * @param   ch9329_coord - Input coordinate from CH9329
- * @param   scale_factor - Scaling factor for mapping
+ * @param   scale_factor - Scaling factor for mapping (bit shift)
  *
- * @return  Mapped coordinate for HID
+ * @return  Mapped HID coordinate
  */
-uint16_t Mouse_ProcessCoordinateMapping(uint16_t ch9329_coord, uint8_t scale_factor) {
-    return ch9329_coord << scale_factor;  // Bit shift for efficient scaling
+static uint16_t Mouse_ProcessCoordinateMapping(uint16_t ch9329_coord, uint8_t scale_factor) {
+    return ch9329_coord << scale_factor;  // Shift for efficient scaling
 }
 
 /*********************************************************************
  * @fn      Mouse_SendRelativeDataToUSB
  *
- * @brief   Send relative mouse data to USB endpoint
+ * @brief   Send relative mouse report to USB
  *
- * @param   data - Mouse data to send
+ * @param   data - 4-byte mouse report [buttons, x, y, wheel]
  *
  * @return  none
  */
-void Mouse_SendRelativeDataToUSB(uint8_t* data) {
-    memset(MS_Data_Pack, 0x00, sizeof(MS_Data_Pack));
+static void Mouse_SendRelativeDataToUSB(uint8_t* data) {
     memcpy(MS_Data_Pack, data, sizeof(MS_Data_Pack));
-    
     USBFS_Endp_DataUp(DEF_UEP2, MS_Data_Pack, sizeof(MS_Data_Pack), DEF_UEP_CPY_LOAD);
 }
 
 /*********************************************************************
  * @fn      Mouse_SendAbsoluteDataToUSB
  *
- * @brief   Send absolute mouse data to USB endpoint
+ * @brief   Send absolute mouse report to USB
  *
- * @param   data - Mouse data to send
+ * @param   data - 6-byte mouse report [buttons, x_low, x_high, y_low, y_high, wheel]
  *
  * @return  none
  */
-void Mouse_SendAbsoluteDataToUSB(uint8_t* data) {
-    memset(ABS_MS_Data_Pack, 0x00, sizeof(ABS_MS_Data_Pack));
+static void Mouse_SendAbsoluteDataToUSB(uint8_t* data) {
     memcpy(ABS_MS_Data_Pack, data, sizeof(ABS_MS_Data_Pack));
-    
-    // Check if endpoint is not busy before sending
     if (USBFS_Endp_Busy[DEF_UEP3] == 0) {
         USBFS_Endp_DataUp(DEF_UEP3, ABS_MS_Data_Pack, sizeof(ABS_MS_Data_Pack), DEF_UEP_CPY_LOAD);
     }
@@ -95,95 +82,57 @@ void Mouse_SendAbsoluteDataToUSB(uint8_t* data) {
 /*********************************************************************
  * @fn      Mouse_HandleRelativeData
  *
- * @brief   Handle relative mouse data from CH9329
+ * @brief   Handle relative mouse input from CH9329
  *
  * @param   addr - Device address
  * @param   cmd_code - Command code
- * @param   data - Mouse data
- * @param   data_len - Length of data
+ * @param   data - Raw mouse data
+ * @param   data_len - Length of data (should be >=5)
  *
  * @return  none
  */
 void Mouse_HandleRelativeData(uint8_t addr, uint8_t cmd_code, uint8_t* data, uint8_t data_len) {
-    // Validate data length
-    if (data_len < 5) {
-        // CH9329_SendAck(addr, cmd_code, DEF_CMD_ERR_PARA);
-        return;
-    }
+    if (data_len < 5) return; // Invalid data length
 
-    uint8_t mouse_data[4];
-    mouse_data[0] = data[1];  // Mouse buttons
-    mouse_data[1] = (data[2] & 0x80) ? (int8_t)(data[2] - 256) : data[2];  // X movement
-    mouse_data[2] = (data[3] & 0x80) ? (int8_t)(data[3] - 256) : data[3];  // Y movement
-    mouse_data[3] = (data[4] & 0x80) ? (int8_t)(data[4] - 256) : data[4];  // Wheel
+    uint8_t report[4];
+    report[0] = data[1];  // Buttons
+    report[1] = (int8_t)data[2];  // X movement
+    report[2] = (int8_t)data[3];  // Y movement
+    report[3] = (int8_t)data[4];  // Wheel
 
-    Mouse_SendRelativeDataToUSB(mouse_data);
-/*     CH9329_SendAck(addr, cmd_code, DEF_CMD_SUCCESS); */
+    Mouse_SendRelativeDataToUSB(report);
 }
 
 /*********************************************************************
  * @fn      Mouse_HandleAbsoluteData
  *
- * @brief   Handle absolute mouse data from CH9329
+ * @brief   Handle absolute mouse input from CH9329
  *
  * @param   addr - Device address
  * @param   cmd_code - Command code
- * @param   data - Mouse data
- * @param   data_len - Length of data
+ * @param   data - Raw mouse data
+ * @param   data_len - Length of data (should be >=7)
  *
  * @return  none
  */
 void Mouse_HandleAbsoluteData(uint8_t addr, uint8_t cmd_code, uint8_t* data, uint8_t data_len) {
-    // Validate data length
-    if (data_len < 7) {
-        // CH9329_SendAck(addr, cmd_code, DEF_CMD_ERR_PARA);
-        return;
-    }
+    if (data_len < 7) return; // Invalid data length
 
-    uint8_t mouse_data[6];
-    mouse_data[0] = data[1];  // Mouse buttons
-    
-    // More efficient coordinate mapping using bit shifting
-    // Map X coordinate from CH9329 4096 range to HID 32768 range (scale by 8)
-    uint16_t x_ch9329 = (data[3] << 8) | data[2];  // Combine high and low bytes
-    uint16_t x_hid = Mouse_ProcessCoordinateMapping(x_ch9329, 3);  // Scale by 8 (2^3)
-    mouse_data[1] = x_hid & 0xFF;        // X low byte
-    mouse_data[2] = (x_hid >> 8) & 0xFF; // X high byte
-    
-    // Map Y coordinate from CH9329 4096 range to HID 32768 range (scale by 8)
-    uint16_t y_ch9329 = (data[5] << 8) | data[4];  // Combine high and low bytes
-    uint16_t y_hid = Mouse_ProcessCoordinateMapping(y_ch9329, 3);  // Scale by 8 (2^3)
-    mouse_data[3] = y_hid & 0xFF;        // Y low byte
-    mouse_data[4] = (y_hid >> 8) & 0xFF; // Y high byte
-    
-    // Wheel (8-bit signed relative)
-    mouse_data[5] = (int8_t)data[6];  // Simpler cast for wheel
+    uint8_t report[6];
+    report[0] = data[1]; // Buttons
 
-    // Send data immediately without additional processing delay
-    // Check if endpoint is not busy before sending
-    if (USBFS_Endp_Busy[DEF_UEP3] == 0) {
-        Mouse_SendAbsoluteDataToUSB(mouse_data);
-        // CH9329_SendAck(addr, cmd_code, DEF_CMD_SUCCESS);
-    } else {
-        // CH9329_SendAck(addr, cmd_code, DEF_CMD_ERR_OPERATE);
-    }
+    // Convert 16-bit coordinates from CH9329 to HID
+    uint16_t x = (data[3] << 8) | data[2];
+    uint16_t y = (data[5] << 8) | data[4];
+    uint16_t x_hid = Mouse_ProcessCoordinateMapping(x, 3); // Scale by 8
+    uint16_t y_hid = Mouse_ProcessCoordinateMapping(y, 3);
+
+    report[1] = x_hid & 0xFF;
+    report[2] = (x_hid >> 8) & 0xFF;
+    report[3] = y_hid & 0xFF;
+    report[4] = (y_hid >> 8) & 0xFF;
+
+    report[5] = (int8_t)data[6]; // Wheel
+
+    Mouse_SendAbsoluteDataToUSB(report);
 }
-
-/*
- * Example of extending mouse functionality:
- * 
- * 1. Add mouse acceleration/deceleration:
- *    void Mouse_SetAcceleration(float accel_factor);
- * 
- * 2. Add mouse sensitivity control:
- *    void Mouse_SetSensitivity(uint8_t sensitivity);
- * 
- * 3. Add coordinate transformation:
- *    void Mouse_SetCoordinateTransform(transform_matrix_t matrix);
- * 
- * 4. Add mouse button mapping:
- *    uint8_t Mouse_RemapButtons(uint8_t original_buttons);
- * 
- * 5. Add gesture recognition:
- *    gesture_t Mouse_DetectGesture(mouse_movement_t* movements, uint8_t count);
- */
