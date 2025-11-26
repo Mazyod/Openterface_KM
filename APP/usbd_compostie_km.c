@@ -12,6 +12,7 @@
 #include "include/mouse_handler.h"
 #include "SD_SWITCH.h"
 #include "DS18B20.h"
+#include "km_ring.h"
 #include <stdbool.h>
 #include <string.h>
 #include <stdint.h>
@@ -251,6 +252,7 @@ void CH9329_DispatchCommand(uint8_t addr, uint8_t cmd_code, uint8_t* pdata, uint
         }
         break;
     }
+
 }
 
 // -------------------- CH9329 Data Parser --------------------
@@ -348,7 +350,7 @@ void USB_DataRx_To_KMHandle(void) {
             Uart.Tx_CurPackPtr = Uart.Tx_DealNum * DEF_USB_FS_PACK_LEN;
         }
 
-        uint8_t temp[32];
+        uint8_t temp[64];
         uint8_t copy_len = (Uart.Tx_CurPackLen > sizeof(temp)) ? sizeof(temp) : Uart.Tx_CurPackLen;
 
         for (uint8_t i = 0; i < copy_len; i++) {

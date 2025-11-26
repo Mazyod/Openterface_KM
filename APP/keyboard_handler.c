@@ -3,6 +3,7 @@
 #include "usbd_composite_km.h"
 #include "CONFIG.h"
 #include "HAL.h"
+#include "km_ring.h"
 #include <string.h>
 #include <stdbool.h>
 
@@ -63,8 +64,7 @@ void Keyboard_Init(void) {
  * @return  none
  */
 void Keyboard_SendDataToUSB(uint8_t* data) {
-    memcpy(KB_Data_Pack, data, 8);
-    USBFS_Endp_DataUp(DEF_UEP1, KB_Data_Pack, sizeof(KB_Data_Pack), DEF_UEP_CPY_LOAD);
+    Queue_Push_Keyboard(data);
 }
 
 /*********************************************************************

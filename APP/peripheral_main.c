@@ -16,6 +16,8 @@
 #include "rgb.h"
 #include "ds18B20.h"
 #include "ch32_temp.h"
+#include "km_ring.h"
+
 /*********************************************************************
  * GLOBAL TYPEDEFS
  */
@@ -46,11 +48,12 @@ void Main_Circulation(void)
     GPIO_WriteBit(GPIOA, GPIO_Pin_1, Bit_RESET);
     while(1)
     {   
-       RGB_Update();
+        RGB_Update();
         TMOS_SystemProcess();
         USB_DataRx_To_KMHandle();
+
         RGB_SetBreathMode(0.02f);
-        
+        USB_SendFromQueues();
         if(systick_ms - t0 > 10000)
         {
             SD_Switch_StateMachine(&selector_prev_state);
@@ -82,7 +85,7 @@ int main(void) {
     Set_USBConfig();
     USB_Init();
     USB_Interrupts_Config();
-
+    Queue_Init();
     
     // Initialize keyboard handler
     Keyboard_Init();

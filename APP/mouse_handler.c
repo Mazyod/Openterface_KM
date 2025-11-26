@@ -2,6 +2,7 @@
 #include "ch32v20x_usbfs_device.h"
 #include "usbd_composite_km.h"
 #include "CONFIG.h"
+#include "km_ring.h"
 #include <string.h>
 
 /*******************************************************************************/
@@ -58,9 +59,8 @@ static uint16_t Mouse_ProcessCoordinateMapping(uint16_t ch9329_coord, uint8_t sc
  *
  * @return  none
  */
-static void Mouse_SendRelativeDataToUSB(uint8_t* data) {
-    memcpy(MS_Data_Pack, data, sizeof(MS_Data_Pack));
-    USBFS_Endp_DataUp(DEF_UEP2, MS_Data_Pack, sizeof(MS_Data_Pack), DEF_UEP_CPY_LOAD);
+void Mouse_SendRelativeDataToUSB(uint8_t* data) {
+    Queue_Push_MouseRel(data);
 }
 
 /*********************************************************************
@@ -72,11 +72,8 @@ static void Mouse_SendRelativeDataToUSB(uint8_t* data) {
  *
  * @return  none
  */
-static void Mouse_SendAbsoluteDataToUSB(uint8_t* data) {
-    memcpy(ABS_MS_Data_Pack, data, sizeof(ABS_MS_Data_Pack));
-    if (USBFS_Endp_Busy[DEF_UEP3] == 0) {
-        USBFS_Endp_DataUp(DEF_UEP3, ABS_MS_Data_Pack, sizeof(ABS_MS_Data_Pack), DEF_UEP_CPY_LOAD);
-    }
+void Mouse_SendAbsoluteDataToUSB(uint8_t* data) {
+    Queue_Push_MouseAbs(data);
 }
 
 /*********************************************************************
