@@ -144,21 +144,21 @@ uint8_t DS18B20_Command(uint8_t addr, uint8_t cmd_code, uint8_t* pdata, uint8_t 
     uint8_t data[3];
     u16 ADC_val;
     s32 val_mv;
-    if (DS18B20_StartConversion() != DS18B20_OK)
-     {
-         data[0] = STATUS_ERR_TIMEOUT;
-         CH9329_SendResponse(addr, cmd_code, data, 1,0);
-        return 0;
-     }
-    //  Wait for conversion (12-bit resolution typically ~750ms)  
-     Delay_Ms(750);
+    // if (DS18B20_StartConversion() != DS18B20_OK)
+    //  {
+    //      data[0] = STATUS_ERR_TIMEOUT;
+    //      CH9329_SendResponse(addr, cmd_code, data, 1,0);
+    //     return 0;
+    //  }
+    // //  Wait for conversion (12-bit resolution typically ~750ms)  
+    //  Delay_Ms(750);
 
-     if (DS18B20_ReadRaw(&raw) != DS18B20_OK)
-     {
-         data[0] = STATUS_ERR_TIMEOUT;
-         CH9329_SendResponse(addr, cmd_code, data, 1,0);
-         return 0;
-     }
+    //  if (DS18B20_ReadRaw(&raw) != DS18B20_OK)
+    //  {
+    //      data[0] = STATUS_ERR_TIMEOUT;
+    //      CH9329_SendResponse(addr, cmd_code, data, 1,0);
+    //      return 0;
+    //  }
     ADC_val = Get_ADC_Average(ADC_Channel_TempSensor, 10);
     Delay_Ms(500);
     ADC_val = Get_ConversionVal(ADC_val);
