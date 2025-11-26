@@ -58,14 +58,14 @@
 // Custom DS18B20 Command
 #define CMD_DS18B20_GET_TEMP   0x18
 
-#define RX_BUF_SIZE   256
+#define RX_BUF_SIZE   2048
 
 /*******************************************************************************/
 void USB_Sleep_Wakeup_CFG( void );
 void MCU_Sleep_Wakeup_Operate( void );
 void CH9329_SendResponse(uint8_t addr, uint8_t cmd_code, uint8_t* pdata, uint8_t len, uint8_t resp_mode);
 void CH9329_Cmd_GetInfo_Reply(uint8_t addr);
-void CH9329_DataParser(uint8_t* buf, uint8_t len);
+int CH9329_DataParser(uint8_t* buf, uint16_t len);
 void CH9329_RxBuffer_Add(uint8_t *data, uint16_t len) ;
 void USB_DataRx_To_KMHandle(void) ;
 void CH9329_SetAutoReleaseMode(bool sender_handles_release) ;
