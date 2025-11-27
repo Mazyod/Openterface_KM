@@ -41,19 +41,25 @@ void Main_Circulation(void)
     uint8_t selector_prev_state;
         // Power-on three-color flashing
     selector_prev_state = GPIO_ReadInputDataBit(GPIOB, GPIO_Pin_8);
+    RGB_FlashStartupSequence();
     // Switch to breathing mode after 3 seconds
     uint32_t t0 = systick_ms;
     CH9329_Cmd_GetInfo_Reply(00);
-
+    GPIO_WriteBit(GPIOA, GPIO_Pin_1, Bit_RESET);
     while(1)
     {   
+        RGB_Update();
         TMOS_SystemProcess();
         USB_DataRx_To_KMHandle();
 
+        RGB_SetBreathMode(0.02f);
         USB_SendFromQueues();
         if(systick_ms - t0 > 10000)
         {
-            SD_Switch_StateMachine();
+            SD_Switch_StateMachine(&selector_prev_state);
+        }
+        else {
+        GPIO_WriteBit(GPIOA, GPIO_Pin_1, Bit_RESET);
         }
         
 

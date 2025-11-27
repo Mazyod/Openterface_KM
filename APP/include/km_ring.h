@@ -8,7 +8,7 @@
 #define KB_QUEUE_SIZE      2048   // Keyboard report queue size
 #define MS_REL_QUEUE_SIZE  28     // Relative mouse report queue size
 #define MS_ABS_QUEUE_SIZE  28     // Absolute mouse report queue size
-#define RESP_QUEUE_SIZE    64     // Response packet queue size
+#define RESP_QUEUE_SIZE    28     // Response packet queue size
 
 /* Keyboard report structure */
 typedef struct {
