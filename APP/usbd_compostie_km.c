@@ -69,57 +69,33 @@ void MCU_Sleep_Wakeup_Operate( void )
     __enable_irq( );
 }
 
-// extern uint8_t sd_card_channel_state; 
+ extern uint8_t sd_card_channel_state; 
 
-// void CH9329_SendResponse(uint8_t addr, uint8_t cmd_code, uint8_t* pdata,
-//                          uint8_t len, uint8_t resp_mode)
-// {
-//     uint8_t packet[100];
-//     uint8_t index = 0;
+/* CH9329_SendResponse enqueues the response packet instead of sending directly */
+void CH9329_SendResponse(uint8_t addr, uint8_t cmd_code, uint8_t* pdata,
+                         uint8_t len, uint8_t resp_mode)
+{
+    uint8_t packet[64];
+    uint8_t index = 0;
 
-//     /* Optional: protect against oversized payload */
-//     if (len > CH9329_MAX_DATA_LEN) {
-//         /* Truncate to the maximum allowed payload length */
-//         len = CH9329_MAX_DATA_LEN;
-//     }
+    if (len > 58) len = 58; // max 58 bytes payload (64 - 6 header+checksum)
+    packet[index++] = 0x57; // FRAME_HEAD1
+    packet[index++] = 0xAB; // FRAME_HEAD2
+    packet[index++] = addr;
+    packet[index++] = cmd_code | (resp_mode ? 0x80 : 0xC0);
+    packet[index++] = len;
 
-//     packet[index++] = CH9329_FRAME_HEAD1;
-//     packet[index++] = CH9329_FRAME_HEAD2;
-//     packet[index++] = addr;
+    if (pdata && len > 0) {
+        memcpy(&packet[index], pdata, len);
+        index += len;
+    }
 
-//     /* Select mask:
-//        resp_mode == 1 → OR with 0x80
-//        resp_mode == 0 → OR with 0x0C
-//     */
-//     uint8_t mask = (resp_mode ? 0x80 : 0xC0);
+    uint8_t checksum = 0;
+    for (uint8_t i = 0; i < index; i++) checksum += packet[i];
+    packet[index++] = checksum;
 
-//     /* Optional:
-//        Clear existing bits in cmd_code to avoid duplicate OR operations.
-//        For example: cmd_code &= ~(0xC0u | 0x0Fu);
-//        (Actual required masks depend on protocol definition.)
-//        Not applied here based on your original intention.
-//     */
-//     uint8_t resp_cmd = (cmd_code | mask);
-//     packet[index++] = resp_cmd;
-
-//     packet[index++] = len;
-
-//     if (pdata != NULL && len > 0) {
-//         memcpy(&packet[index], pdata, len);
-//         index += len;
-//     }
-
-//     /* Calculate checksum for all preceding bytes */
-//     uint8_t checksum = 0;
-//     for (uint8_t i = 0; i < index; i++) {
-//         checksum += packet[i];
-//     }
-//     packet[index++] = checksum;
-
-//     /* Send the packet (same interface as your original implementation) */
-//     USBD_ENDPx_DataUp(ENDP3, packet, index);
-// }
-
+    Queue_Push_Response(packet, index);
+}
 
 
 // ------------------------------------------------------------
@@ -183,11 +159,11 @@ void CH9329_DispatchCommand(uint8_t addr, uint8_t cmd_code, uint8_t* pdata, uint
             uint8_t st;
             if (data_len != 8) {
                 st = STATUS_ERR_PARAM;
-                CH9329_SendResponse(addr, cmd_code, &st, 1,0);
+                CH9329_SendResponse(addr, cmd_code, &st, 1, 0);
             } else {
                 Keyboard_HandleData(addr, cmd_code, pdata, data_len);
                 st = STATUS_SUCCESS;
-                CH9329_SendResponse(addr, cmd_code, &st, 1,1);
+                CH9329_SendResponse(addr, cmd_code, &st, 1, 1);
             }
         }
         break;
@@ -197,11 +173,11 @@ void CH9329_DispatchCommand(uint8_t addr, uint8_t cmd_code, uint8_t* pdata, uint
             uint8_t st;
             if (data_len < 7) {
                 st = STATUS_ERR_PARAM;
-                CH9329_SendResponse(addr, cmd_code, &st, 1,0);
+                CH9329_SendResponse(addr, cmd_code, &st, 1, 0);
             } else {
                 Mouse_HandleAbsoluteData(addr, cmd_code, pdata, data_len);
                 st = STATUS_SUCCESS;
-                CH9329_SendResponse(addr, cmd_code, &st, 1,1);
+                CH9329_SendResponse(addr, cmd_code, &st, 1, 1);
             }
         }
         break;
@@ -211,11 +187,11 @@ void CH9329_DispatchCommand(uint8_t addr, uint8_t cmd_code, uint8_t* pdata, uint
             uint8_t st;
             if (data_len < 5) {
                 st = STATUS_ERR_PARAM;
-                CH9329_SendResponse(addr, cmd_code, &st, 1,0);
+                CH9329_SendResponse(addr, cmd_code, &st, 1, 0);
             } else {
                 Mouse_HandleRelativeData(addr, cmd_code, pdata, data_len);
                 st = STATUS_SUCCESS;
-                CH9329_SendResponse(addr, cmd_code, &st, 1,1);
+                CH9329_SendResponse(addr, cmd_code, &st, 1, 1);
             }
         }
         break;
@@ -225,135 +201,111 @@ void CH9329_DispatchCommand(uint8_t addr, uint8_t cmd_code, uint8_t* pdata, uint
             break;
 
         case CMD_DS18B20_GET_TEMP:
+            // Always pass length = 5 to DS18B20 command handler
             DS18B20_Command(addr, cmd_code, pdata, 5);
             break;
+
         case CMD_GET_PARA_CFG:
         {
             uint8_t response[] = {
-            0x80, 0x80, 0x00, 0x00, 0x01, 0xC2, 
-            0x00, 0x08, 0x00, 0x00, 0x03, 0x86, 
-            0x1A, 0x29, 0xE1, 0x00, 0x00, 0x00, 
-            0x01, 0x00, 0x0D, 0x00, 0x00, 0x00, 
-            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
-            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
-            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
-            0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-            0x00, 0x00
+                0x80, 0x80, 0x00, 0x00, 0x01, 0xC2, 
+                0x00, 0x08, 0x00, 0x00, 0x03, 0x86, 
+                0x1A, 0x29, 0xE1, 0x00, 0x00, 0x00, 
+                0x01, 0x00, 0x0D, 0x00, 0x00, 0x00, 
+                0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
+                0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
+                0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
+                0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+                0x00, 0x00
             };
 
-            // 发送响应
+            // Send parameter configuration response
             CH9329_SendResponse(addr, cmd_code, response, sizeof(response), 1);
         }
         break;
+
         default:
         {
             uint8_t st = STATUS_ERR_CMD;
-            CH9329_SendResponse(addr, cmd_code, &st, 1,0);
+            CH9329_SendResponse(addr, cmd_code, &st, 1, 0);
         }
         break;
     }
-
 }
 
 int CH9329_DataParser(uint8_t* buf, uint16_t len)
 {
-    uint16_t index = 0;
+    // Check that buffer is at least long enough for header + minimal fields
+    if (len < 6) return 0;
 
-    // 最小帧长： head(2) + addr(1) + cmd(1) + len(1) + checksum(1) = 6
-    while (index + 6 <= len)
-    {
-        // 找到帧头
-        if (buf[index] == CH9329_FRAME_HEAD1 && buf[index + 1] == CH9329_FRAME_HEAD2)
-        {
-            // 可能的帧起点
-            if (index + 5 > len) {
-                // 虽然找到了头，但连长度字段都还不完整，等待更多数据
-                break;
-            }
-
-            uint8_t addr     = buf[index + 2];
-            uint8_t cmd_code = buf[index + 3];
-            uint8_t data_len = buf[index + 4];
-            uint16_t frame_total_len = 2 + 1 + 1 + 1 + (uint16_t)data_len + 1; // head+addr+cmd+len+data+chk
-
-            // 如果整个帧还没到齐 -> 等待更多数据（不要回复错误）
-            if (index + frame_total_len > len) {
-                break;
-            }
-
-            uint8_t *pdata = &buf[index + 5];
-            uint8_t recv_sum = buf[index + 5 + data_len];
-
-            // 计算校验和（对 frame_total_len - 1 字节求和）
-            uint8_t sum = 0;
-            for (uint16_t i = 0; i < frame_total_len - 1; i++) {
-                sum += buf[index + i];
-            }
-
-            if (sum != recv_sum)
-            {
-                // 校验错误：回复错误并把该帧视为已消费（以便继续同步下一帧）
-                uint8_t st = STATUS_ERR_CHECKSUM;
-                CH9329_SendResponse(addr, cmd_code, &st, 1, 0);
-
-                // 跳过这个帧（认为已被处理），继续解析下一个可能的帧
-                index += frame_total_len;
-                continue;
-            }
-
-            // 校验通过 -> 分发
-            CH9329_DispatchCommand(addr, cmd_code, pdata, data_len);
-
-            // 标记已消费
-            index += frame_total_len;
-        }
-        else
-        {
-            // 如果不是帧头，单字节跳过以寻找帧头（同步恢复）
-            index++;
-        }
+    // Verify frame header
+    if (buf[0] != CH9329_FRAME_HEAD1 || buf[1] != CH9329_FRAME_HEAD2) {
+        // Not a valid frame header — skip one byte and try again
+        return 1;
     }
 
-    // index 是已消费（解析或跳过）的字节数
-    return (int)index;
+    uint8_t addr     = buf[2];
+    uint8_t cmd_code = buf[3];
+    uint8_t data_len = buf[4];
+    uint16_t frame_total_len = 2 + 1 + 1 + 1 + (uint16_t)data_len + 1;
+
+    // Wait until the full frame is received
+    if (len < frame_total_len) return 0;
+
+    uint8_t *pdata = &buf[5];
+    uint8_t recv_sum = buf[5 + data_len];
+
+    // Calculate checksum
+    uint8_t sum = 0;
+    for (uint16_t i = 0; i < frame_total_len - 1; i++) {
+        sum += buf[i];
+    }
+
+    if (sum != recv_sum) {
+        // Checksum mismatch — treat as invalid frame, skip full length
+        return frame_total_len;
+    }
+
+    // Valid frame — dispatch command
+    CH9329_DispatchCommand(addr, cmd_code, pdata, data_len);
+    return frame_total_len;
 }
+
 static uint8_t rx_buf[RX_BUF_SIZE];
 static uint16_t rx_len = 0;
 
 void CH9329_RxBuffer_Add(uint8_t *data, uint16_t len) {
     if (len == 0 || data == NULL) return;
 
-    // 如果可用空间不足，尝试腾出空间（保留最近的数据）
+    // Prevent buffer overflow; if overflow risk, retain only the latter half
     if (rx_len + len > RX_BUF_SIZE) {
-        // 尽量保留最近的未处理部分，丢弃最老的一半（保守策略）
-        // 更好的办法是增大 RX_BUF_SIZE 或减少上游发送速率
         uint16_t keep = RX_BUF_SIZE / 2;
         if (keep > rx_len) keep = rx_len;
         memmove(rx_buf, rx_buf + (rx_len - keep), keep);
         rx_len = keep;
     }
 
-    // 追加新数据
+    // Append new data
     memcpy(rx_buf + rx_len, data, len);
     rx_len += len;
 
-    // 循环解析尽量多的完整帧，保留未完成的尾部
+    // Try parsing frames as long as data exists
     while (rx_len > 0) {
         int consumed = CH9329_DataParser(rx_buf, rx_len);
         if (consumed < 0) {
-            // 致命错误：清空缓冲避免死循环（可以改为更复杂的恢复策略）
+            // Parsing error — clear buffer
             rx_len = 0;
             break;
         } else if (consumed == 0) {
-            // 没有完整帧可处理（尾部不完整），等待后续数据
+            // Incomplete frame — wait for more data
             break;
         } else {
-            // 移除已处理 bytes
+            // Remove consumed bytes from buffer
             if ((uint16_t)consumed < rx_len) {
                 memmove(rx_buf, rx_buf + consumed, rx_len - consumed);
                 rx_len -= (uint16_t)consumed;
             } else {
-                // 恰好全部处理
+                // Exactly consumed all data
                 rx_len = 0;
                 break;
             }
@@ -361,9 +313,8 @@ void CH9329_RxBuffer_Add(uint8_t *data, uint16_t len) {
     }
 }
 
-
 void USB_DataRx_To_KMHandle(void) {
-    // Step 1: BLE
+    // Step 1: Handle data from BLE ring buffer
     while (RingMemBLE.CurrentLen > 0) {
         uint8_t temp[64];
         uint8_t len = (RingMemBLE.CurrentLen > sizeof(temp)) ? sizeof(temp) : (uint8_t)RingMemBLE.CurrentLen;
@@ -374,7 +325,7 @@ void USB_DataRx_To_KMHandle(void) {
         }
     }
 
-    // Step 2: UART2
+    // Step 2: Handle data from UART2 transmit buffer
     while (Uart.Tx_RemainNum) {
         if (Uart.Tx_CurPackLen == 0x00) {
             Uart.Tx_CurPackLen = Uart.Tx_PackLen[Uart.Tx_DealNum];

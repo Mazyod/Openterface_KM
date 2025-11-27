@@ -124,28 +124,3 @@ void USB_SendFromQueues(void) {
 }
 
 
-/* CH9329_SendResponse enqueues the response packet instead of sending directly */
-void CH9329_SendResponse(uint8_t addr, uint8_t cmd_code, uint8_t* pdata,
-                         uint8_t len, uint8_t resp_mode)
-{
-    uint8_t packet[64];
-    uint8_t index = 0;
-
-    if (len > 58) len = 58; // max 58 bytes payload (64 - 6 header+checksum)
-    packet[index++] = 0x57; // FRAME_HEAD1
-    packet[index++] = 0xAB; // FRAME_HEAD2
-    packet[index++] = addr;
-    packet[index++] = cmd_code | (resp_mode ? 0x80 : 0xC0);
-    packet[index++] = len;
-
-    if (pdata && len > 0) {
-        memcpy(&packet[index], pdata, len);
-        index += len;
-    }
-
-    uint8_t checksum = 0;
-    for (uint8_t i = 0; i < index; i++) checksum += packet[i];
-    packet[index++] = checksum;
-
-    Queue_Push_Response(packet, index);
-}

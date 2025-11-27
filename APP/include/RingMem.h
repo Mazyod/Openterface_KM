@@ -18,9 +18,10 @@
  * CONSTANTS
  */
 
+
 #ifndef RINGMEM_H
 #define RINGMEM_H
-
+#include "ch32v20x_usbfs_device.h"
 #ifndef SUCCESS
   #define SUCCESS    0
 #endif
@@ -37,7 +38,6 @@
 
 typedef unsigned char  uint8_t;
 typedef unsigned short uint16;
-typedef unsigned long  uint32_t;
 typedef int (*RingMemProtection_t)(uint8_t enable);
 
 //Buffer structure
