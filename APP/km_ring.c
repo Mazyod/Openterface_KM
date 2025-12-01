@@ -117,7 +117,7 @@ void USB_SendFromQueues(void) {
     /* Attempt to send response packets (USBD endpoint). Keep head if endpoint busy. */
     while (resp_queue.head != resp_queue.tail) {
         Resp_Report_t *pkt = &resp_queue.buf[resp_queue.head];
-        if (USBD_ENDPx_DataUp(ENDP3, pkt->data, pkt->len) == READY)
+        if (USBD_ENDPx_DataUp(ENDP3, pkt->data, pkt->len) == 0)
             resp_queue.head = (resp_queue.head + 1) % RESP_QUEUE_SIZE;
         else break;
     }
