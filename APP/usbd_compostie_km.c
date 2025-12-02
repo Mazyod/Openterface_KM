@@ -127,7 +127,7 @@ void CH9329_Cmd_GetInfo_Reply(uint8_t addr)
            0x40 = MiniKVM v2
        - Low nibble: KM firmware version number
     */
-    data[7] = 0x40 | 0x02;    // Product type 0x00, version 0x02
+    data[7] = 0x00 | 0x02;    // Product type 0x00, version 0x02
 
     CH9329_SendResponse(addr, CMD_GET_INFO , data, 8, 1);
 }

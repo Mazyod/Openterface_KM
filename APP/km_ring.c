@@ -122,5 +122,3 @@ void USB_SendFromQueues(void) {
         else break;
     }
 }
-
-
