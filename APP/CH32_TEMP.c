@@ -1,5 +1,7 @@
 #include "debug.h"
 #include "ch32v20x_adc.h"
+#include "DS18B20.h"
+#include "Version_selection.h"
 s16 Calibrattion_Val = 0;
 void ADC_Function_Init(void)
 {
@@ -75,3 +77,44 @@ u16 Get_ConversionVal(s16 val)
         return 4095;
     return (val + Calibrattion_Val);
 }
+uint8_t Temp_Command(uint8_t addr, uint8_t cmd_code, uint8_t* pdata, uint8_t len)
+{
+    int16_t raw;
+    uint8_t data[3];
+    u16 ADC_val;
+    s32 val_mv;
+    if(version == 1)
+    {if (DS18B20_StartConversion() != DS18B20_OK)
+     {
+         data[0] = STATUS_ERR_TIMEOUT;
+         CH9329_SendResponse(addr, cmd_code, data, 1,0);
+        return 0;
+     }
+    //  Wait for conversion (12-bit resolution typically ~750ms)  
+     Delay_Ms(750);
+
+     if (DS18B20_ReadRaw(&raw) != DS18B20_OK)
+     {
+         data[0] = STATUS_ERR_TIMEOUT;
+         CH9329_SendResponse(addr, cmd_code, data, 1,0);
+         return 0;
+     }
+    }
+    ADC_val = Get_ADC_Average(ADC_Channel_TempSensor, 10);
+    Delay_Ms(500);
+    ADC_val = Get_ConversionVal(ADC_val);
+    val_mv = (ADC_val * 3300 / 4096);
+    float temperature_c = raw * 0.0625f;
+    int16_t temperature = (int16_t)temperature_c; 
+
+    uint16_t temp_hex = TempSensor_Volt_To_Temper_Hex(val_mv);
+
+    data[0] = STATUS_SUCCESS;
+    data[1] = (uint8_t)(temperature & 0xFF);
+    data[2] = (uint8_t)(temp_hex & 0xFF);
+
+    CH9329_SendResponse(addr, cmd_code, data, 3,1);
+    return 0;
+}
+
+

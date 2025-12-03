@@ -33,6 +33,5 @@ static uint8_t OW_ReadByte(uint8_t *byte);
 uint8_t DS18B20_Init(void);
 uint8_t DS18B20_StartConversion(void);
 uint8_t DS18B20_ReadRaw(int16_t *rawValue);
-uint8_t DS18B20_Command(uint8_t addr, uint8_t cmd_code, uint8_t* pdata, uint8_t len);
 
 #endif /* __DS18B20_H */

@@ -17,6 +17,7 @@
 #include "ds18B20.h"
 #include "ch32_temp.h"
 #include "km_ring.h"
+#include "Version_selection.h"
 
 /*********************************************************************
  * GLOBAL TYPEDEFS
@@ -40,12 +41,16 @@ void Main_Circulation(void)
 {
     uint8_t selector_prev_state;
         // Power-on three-color flashing
-    selector_prev_state = GPIO_ReadInputDataBit(GPIOB, GPIO_Pin_8);
-    RGB_FlashStartupSequence();
+    if (version == 1) {
+        selector_prev_state = GPIO_ReadInputDataBit(GPIOB, GPIO_Pin_8);
+    }
+    else if (version == 2) {
+        selector_prev_state = GPIO_ReadInputDataBit(GPIOA, GPIO_Pin_4);
+    }
     // Switch to breathing mode after 3 seconds
     uint32_t t0 = systick_ms;
     CH9329_Cmd_GetInfo_Reply(00);
-    GPIO_WriteBit(GPIOA, GPIO_Pin_1, Bit_RESET);
+    // TARGET_SD_Switch();
     while(1)
     {   
         RGB_Update();
@@ -54,15 +59,17 @@ void Main_Circulation(void)
 
         RGB_SetBreathMode(0.02f);
         USB_SendFromQueues();
+        if (version == 1) {
         if(systick_ms - t0 > 10000)
         {
-            SD_Switch_StateMachine(&selector_prev_state);
+            SD_Switch_StateMachine();
         }
         else {
         GPIO_WriteBit(GPIOA, GPIO_Pin_1, Bit_RESET);
         }
-        
-
+        }
+        else
+        {SD_Switch_StateMachine();}
         IWDG_Auto_Handler();
     }
 }
@@ -86,18 +93,17 @@ int main(void) {
     USB_Init();
     USB_Interrupts_Config();
     Queue_Init();
-    
-    // Initialize keyboard handler
     Keyboard_Init();
-    RGB_Init();
-    // Initialize mouse handler
     Mouse_Init();
     SD_Switch_Init();
-    DS18B20_Init();
     ADC_Function_Init();
+    if (version == 1)
+        {    
+        DS18B20_Init();
+        }
+    RGB_Init(); 
     Delay_Ms(1000);
     
-    // RGB_BreathLoop();
     Main_Circulation();
 }
 

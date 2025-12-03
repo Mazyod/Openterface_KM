@@ -9,4 +9,5 @@ u16 Get_ADC_Val(u8 ch);
 
 u16 Get_ADC_Average(u8 ch, u8 times);
 u16 Get_ConversionVal(s16 val);
+uint8_t Temp_Command(uint8_t addr, uint8_t cmd_code, uint8_t* pdata, uint8_t len);
 #endif

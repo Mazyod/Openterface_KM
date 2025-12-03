@@ -11,8 +11,9 @@
 #include "include/keyboard_handler.h"
 #include "include/mouse_handler.h"
 #include "SD_SWITCH.h"
-#include "DS18B20.h"
+#include "CH32_TEMP.h"
 #include "km_ring.h"
+#include "Version_selection.h"
 #include <stdbool.h>
 #include <string.h>
 #include <stdint.h>
@@ -127,7 +128,12 @@ void CH9329_Cmd_GetInfo_Reply(uint8_t addr)
            0x40 = MiniKVM v2
        - Low nibble: KM firmware version number
     */
+    if (version == 1) {
     data[7] = 0x00 | 0x02;    // Product type 0x00, version 0x02
+    }
+    else if (version == 2) {
+    data[7] = 0x40 | 0x02;    // Product type 0x00, version 0x02
+    }
 
     CH9329_SendResponse(addr, CMD_GET_INFO , data, 8, 1);
 }
@@ -202,7 +208,7 @@ void CH9329_DispatchCommand(uint8_t addr, uint8_t cmd_code, uint8_t* pdata, uint
 
         case CMD_DS18B20_GET_TEMP:
             // Always pass length = 5 to DS18B20 command handler
-            DS18B20_Command(addr, cmd_code, pdata, 5);
+            Temp_Command(addr, cmd_code, pdata, 5);
             break;
 
         case CMD_GET_PARA_CFG:

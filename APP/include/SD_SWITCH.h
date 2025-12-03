@@ -29,7 +29,7 @@ void HOST_SD_Switch(void);
  * - After that, no longer detect PA6, only detect switching via rising edge of PB8.
  * @param prev_selector_state_p Pointer to PB8 previous state variable
  */
-void SD_Switch_StateMachine(uint8_t *prev_selector_state_p);
+void SD_Switch_StateMachine(void);
 void SD_USB_Switch(uint8_t addr, uint8_t cmd_code, uint8_t *pdata, uint8_t data_len);
 #ifdef __cplusplus
 }
