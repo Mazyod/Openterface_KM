@@ -80,28 +80,39 @@ void Keyboard_SendDataToUSB(uint8_t* data) {
  *
  * @return  none
  */
-void Keyboard_HandleData(uint8_t addr, uint8_t cmd_code, uint8_t* data, uint8_t data_len) {
-    // Check if data is the same as last sent
-    bool same_as_last = (memcmp(data, kb_last_data, 8) == 0);
+void Keyboard_HandleData(uint8_t addr, uint8_t cmd_code, uint8_t* data, uint8_t data_len)
+{
+    uint8_t mod = 0;
+    uint8_t keys[6] = {0};
+    int key_count = 0;
 
-    // Update last data if different
-    if(!same_as_last) {
-        memcpy(kb_last_data, data, 8);
+    // CH9329 的普通键区在 data[2]~data[7]
+    for(int i = 2; i < 8; i++)
+    {
+        uint8_t key = data[i];
+
+        if(key >= 0xE0 && key <= 0xE7)
+        {
+            // 将特殊键转换为 HID 修饰键 bit 位
+            mod |= (1 << (key - 0xE0));
+        }
+        else if(key != 0 && key_count < 6)
+        {
+            // 普通键
+            keys[key_count++] = key;
+        }
     }
 
-    // Extract modifier and normal keys
-    mod_keys = data[0];
-    memcpy(normal_keys, &data[2], 6);
+    uint8_t hid_report[8] = {0};
 
-    // Send keyboard data to USB
-    Keyboard_SendDataToUSB(data);
+    hid_report[0] = mod;          // modifier byte
+    hid_report[1] = 0x00;         // reserved
+    memcpy(&hid_report[2], keys, 6);
 
-    // Only clear last data when host explicitly sends release (all zeros)
-    bool is_release = (memcmp(data, "\0\0\0\0\0\0\0\0", 8) == 0);
-    if(is_release) {
-        memset(kb_last_data, 0, sizeof(kb_last_data));
-    }
+    // 发送 HID 报告到 USB
+    Keyboard_SendDataToUSB(hid_report);
 }
+
 
 /*********************************************************************
  * @fn      Keyboard_SetLEDStatus

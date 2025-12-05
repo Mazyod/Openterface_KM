@@ -108,33 +108,24 @@ void CH9329_Cmd_GetInfo_Reply(uint8_t addr)
 
     /* Protocol requires a fixed 8-byte payload */
 
-    data[0] = 0x00; // bit7 placeholder (status unused)
-    data[1] = 0x00; // bit6 placeholder
-    data[2] = 0x00; // bit5 placeholder
-    data[3] = 0x00; // bit4 placeholder
-    data[4] = 0x00; // bit3 placeholder
-    data[5] = Keyboard_GetLEDStatus() & 0x07; // bit2-bit0: LED status
-
-    /* Device connection / enumeration status */
-    if (USBFS_DevConfig != 0 || USBFS_DevEnumStatus == 1) {
-        data[6] = 0x01;   // Connected (enumerated)
-    } else {
-        data[6] = 0x00;   // Not connected
-    }
-
-    /* Firmware Version:
-       - High nibble: product type
-           0x00 = KVM Go
-           0x40 = MiniKVM v2
-       - Low nibble: KM firmware version number
-    */
     if (version == 1) {
-    data[7] = 0x00 | 0x02;    // Product type 0x00, version 0x02
+    data[0] = 0x01;    // Product type 0x00, version 0x02
     }
     else if (version == 2) {
-    data[7] = 0x40 | 0x02;    // Product type 0x00, version 0x02
+    data[0] = 0x02;    // Product type 0x00, version 0x02
     }
-
+    /* Device connection / enumeration status */
+    if (USBFS_DevConfig != 0 || USBFS_DevEnumStatus == 1) {
+        data[1] = 0x01;   // Connected (enumerated)
+    } else {
+        data[1] = 0x00;   // Not connected
+    }
+    data[2] = Keyboard_GetLEDStatus() & 0x07; // bit2-bit0: LED status
+    data[3] = 0x03; // bit6 placeholder
+    data[4] = 0x00; // bit5 placeholder
+    data[5] = 0x00; // bit4 placeholder
+    data[6] = 0x00; // bit3 placeholder
+    data[7] = 0x00; // bit3 placeholder
     CH9329_SendResponse(addr, CMD_GET_INFO , data, 8, 1);
 }
 
