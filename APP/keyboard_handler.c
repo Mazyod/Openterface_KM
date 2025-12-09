@@ -82,35 +82,56 @@ void Keyboard_SendDataToUSB(uint8_t* data) {
  */
 void Keyboard_HandleData(uint8_t addr, uint8_t cmd_code, uint8_t* data, uint8_t data_len)
 {
-    uint8_t mod = 0;
+
+
+    uint8_t hid_report[8] = {0}; 
+    uint8_t hid_mod = 0;
     uint8_t keys[6] = {0};
-    int key_count = 0;
+    int key_idx = 0;
 
-    // CH9329 的普通键区在 data[2]~data[7]
-    for(int i = 2; i < 8; i++)
-    {
-        uint8_t key = data[i];
+    uint8_t available = (data_len >= 8) ? 8 : data_len;
 
-        if(key >= 0xE0 && key <= 0xE7)
-        {
-            // 将特殊键转换为 HID 修饰键 bit 位
-            mod |= (1 << (key - 0xE0));
-        }
-        else if(key != 0 && key_count < 6)
-        {
-            // 普通键
-            keys[key_count++] = key;
+    if (available >= 1) {
+        hid_mod |= data[0];
+    }
+
+
+    for (int i = 2; i < (int)available && i < 8; ++i) {
+        uint8_t k = data[i];
+        if (k == 0) continue;
+        if (k >= 0xE0 && k <= 0xE7) {
+            hid_mod |= (1 << (k - 0xE0));
+        } else {
+            if (key_idx < 6) {
+                keys[key_idx++] = k;
+            }
         }
     }
 
-    uint8_t hid_report[8] = {0};
-
-    hid_report[0] = mod;          // modifier byte
-    hid_report[1] = 0x00;         // reserved
+    hid_report[0] = hid_mod; // modifier
+    hid_report[1] = 0x00;    // reserved
     memcpy(&hid_report[2], keys, 6);
 
-    // 发送 HID 报告到 USB
-    Keyboard_SendDataToUSB(hid_report);
+    bool is_release = true;
+    for (int i = 0; i < 8; ++i) {
+        if (hid_report[i] != 0) {
+            is_release = false;
+            break;
+        }
+    }
+
+    if (memcmp(hid_report, kb_last_data, 8) != 0) {
+        Keyboard_SendDataToUSB(hid_report);
+
+        memcpy(kb_last_data, hid_report, 8);
+    }
+
+    if (is_release) {
+        memset(kb_last_data, 0, sizeof(kb_last_data));
+    }
+
+    mod_keys = hid_report[0];
+    memcpy(normal_keys, &hid_report[2], 6);
 }
 
 
