@@ -50,14 +50,15 @@ void Main_Circulation(void)
     // Switch to breathing mode after 3 seconds
     uint32_t t0 = systick_ms;
     CH9329_Cmd_GetInfo_Reply(00);
-    // TARGET_SD_Switch();
     while(1)
     {   
         RGB_Update();
+        Update_SDcard();
+        if (version == 1) {
         TMOS_SystemProcess();
+        }
         USB_DataRx_To_KMHandle();
 
-        RGB_SetBreathMode(0.02f);
         USB_SendFromQueues();
         if (version == 1) {
         if(systick_ms - t0 > 10000)
@@ -82,7 +83,11 @@ int main(void) {
     Delay_Init();
     USART_Printf_Init(115200);
     IWDG_Auto_Init(IWDG_Prescaler_32, 4000);
+    if (version == 1)
+    {    
     WCHBLE_Init();
+    DS18B20_Init();
+    }
     HAL_Init();
     GAPRole_PeripheralInit();
     Peripheral_Init();
@@ -97,10 +102,7 @@ int main(void) {
     Mouse_Init();
     SD_Switch_Init();
     ADC_Function_Init();
-    if (version == 1)
-        {    
-        DS18B20_Init();
-        }
+
     RGB_Init(); 
     Delay_Ms(1000);
     

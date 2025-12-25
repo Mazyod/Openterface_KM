@@ -1,4 +1,5 @@
 #include "RGB.h"
+#include "SD_SWITCH.h"
 #include <math.h>
 
 /* Millisecond counter */
@@ -68,13 +69,12 @@ void TIM2_IRQHandler(void)
     }
 }
 
-/* ====================== RGB Initialization ====================== */
 void RGB_Init(void)
 {
     GPIO_InitTypeDef GPIO_InitStructure = {0};
     TIM_OCInitTypeDef TIM_OCInitStructure = {0};
 
-    /* GPIO initialization */
+    /* RGB PWM GPIO */
     RCC_APB2PeriphClockCmd(RCC_APB2Periph_GPIOC | RCC_APB2Periph_AFIO, ENABLE);
     GPIO_PinRemapConfig(GPIO_FullRemap_TIM3, ENABLE);
 
@@ -83,7 +83,7 @@ void RGB_Init(void)
     GPIO_InitStructure.GPIO_Speed = GPIO_Speed_50MHz;
     GPIO_Init(GPIOC, &GPIO_InitStructure);
 
-    /* TIM3 PWM */
+    /* TIM3 PWM Init */
     RCC_APB1PeriphClockCmd(RCC_APB1Periph_TIM3, ENABLE);
     TIM_TimeBaseInitTypeDef TIM_TimeBaseStructure = {0};
     TIM_TimeBaseStructure.TIM_Period = 999;
@@ -108,9 +108,25 @@ void RGB_Init(void)
     TIM_ARRPreloadConfig(TIM3, ENABLE);
     TIM_Cmd(TIM3, ENABLE);
 
-    /* Initialize TIM2 millisecond counter */
+    /* TIM2 ms Counter */
     RGB_TIM_Init();
+
+    /* PA14 Input */
+    RCC_APB2PeriphClockCmd(RCC_APB2Periph_GPIOA, ENABLE);
+    GPIO_InitStructure.GPIO_Pin = GPIO_Pin_14;
+    GPIO_InitStructure.GPIO_Mode = GPIO_Mode_IPU;
+    GPIO_Init(GPIOA, &GPIO_InitStructure);
+
+    /* PC13 Feedback Output (no PWM conflict) */
+    GPIO_InitStructure.GPIO_Pin = GPIO_Pin_13;
+    GPIO_InitStructure.GPIO_Mode = GPIO_Mode_Out_PP;
+    GPIO_InitStructure.GPIO_Speed = GPIO_Speed_50MHz;
+    GPIO_Init(GPIOC, &GPIO_InitStructure);
+
+    GPIO_ResetBits(GPIOC, GPIO_Pin_13);
 }
+
+
 
 /* ====================== Set Color ====================== */
 void RGB_SetColor(float r, float g, float b)
@@ -233,4 +249,22 @@ void RGB_Update(void)
         case RGB_MODE_STARTUP:
             break;
     }
+}
+void Update_SDcard(void)
+{   
+    if (sd_card_channel_state == 1) {
+        if(GPIO_ReadInputDataBit(GPIOA, GPIO_Pin_14))
+        RGB_SetColorSolid(RGB_OFF, 1.0f);
+        else 
+        RGB_SetColorSolid(RGB_GREEN, 1.0f);
+    
+    }
+    else if(sd_card_channel_state == 0){
+        if(GPIO_ReadInputDataBit(GPIOA, GPIO_Pin_14)||sd_card_channel_state == 1)
+        RGB_SetColorSolid(RGB_OFF, 1.0f);
+        else
+        RGB_SetColorSolid(RGB_BLUE, 1.0f);    
+    }
+
+
 }

@@ -44,6 +44,7 @@ void RGB_SetFlashMode(uint16_t interval_ms, RGB_Color_t color);
 /* Start power-on three-color flashing */
 void RGB_FlashStartupSequence(void);
 
+void Update_SDcard(void);
 /* Global millisecond counter */
 extern volatile uint32_t systick_ms;
 
