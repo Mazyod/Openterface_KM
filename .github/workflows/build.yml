@@ -83,7 +83,7 @@ jobs:
         }
         
         # Copy artifact with version suffix
-        Copy-Item "${{ env.BUILD_DIR }}\openterface-kvmgo-firmware.hex" "${{ env.BUILD_DIR }}\openterface-km-firmware-kvmgo.hex"
+        Copy-Item "${{ env.BUILD_DIR }}\openterface-km-firmware.hex" "${{ env.BUILD_DIR }}\openterface-km-firmware-kvmgo.hex"
 
     - name: Build Mini-KVM v1.2
       run: |
@@ -108,7 +108,7 @@ jobs:
         }
         
         # Copy artifact with version suffix
-        Copy-Item "${{ env.BUILD_DIR }}\openterface-minikvm-firmware.hex" "${{ env.BUILD_DIR }}\openterface-km-firmware-mini-kvm.hex"
+        Copy-Item "${{ env.BUILD_DIR }}\openterface-km-firmware.hex" "${{ env.BUILD_DIR }}\openterface-km-firmware-mini-kvm.hex"
 
     - name: Save build artifacts
       uses: actions/upload-artifact@v4
