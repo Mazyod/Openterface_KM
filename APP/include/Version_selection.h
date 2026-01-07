@@ -4,8 +4,8 @@
 #include <stdint.h>
 
 /* Values:
- * 1 = kvm go (version 1)
- * 2 = mini kvm (version 2)
+ * 1 = kvm go
+ * 2 = mini kvm (version 1.2)
  */
 #define version  1
 

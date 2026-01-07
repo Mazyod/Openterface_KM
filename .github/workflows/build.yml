@@ -60,27 +60,61 @@ jobs:
         echo "C:\\tools\\risc-none-embed-gcc\\bin" >> $GITHUB_PATH
         echo "RISC_COMPILER_PATH=C:\\tools\\risc-none-embed-gcc" >> $GITHUB_ENV
 
-    - name: Build the project
+    - name: Build KVMGo
       run: |
-        echo "Starting build process..."
-        echo "Compiler path: $env:RISC_COMPILER_PATH"
+        echo "Building KVMGo..."
+        
+        # Patch version file
+        $content = Get-Content "${{ github.workspace }}\APP\include\Version_selection.h"
+        $content = $content -replace '#define version  \d+', '#define version  1'
+        Set-Content "${{ github.workspace }}\APP\include\Version_selection.h" $content
+        
+        # Build
         cd build
         $env:PATH = "C:\tools\risc-none-embed-gcc\bin;" + $env:PATH
         $env:RISC_COMPILER_PATH = "C:\tools\risc-none-embed-gcc"
-        riscv-none-embed-gcc --version
         make clean
         make -j4 all
         if ($LASTEXITCODE -eq 0) {
-          Write-Host "✓ Build succeeded" -ForegroundColor Green
+          Write-Host "✓ KVMGo build succeeded" -ForegroundColor Green
         } else {
-          Write-Host "✗ Build failed with exit code $LASTEXITCODE" -ForegroundColor Red
+          Write-Host "✗ KVMGo build failed with exit code $LASTEXITCODE" -ForegroundColor Red
           exit 1
         }
+        
+        # Copy artifact with version suffix
+        Copy-Item "${{ env.BUILD_DIR }}\openterface-kvmgo-firmware.hex" "${{ env.BUILD_DIR }}\openterface-km-firmware-kvmgo.hex"
+
+    - name: Build Mini-KVM v1.2
+      run: |
+        echo "Building Mini-KVM v1.2..."
+        
+        # Patch version file
+        $content = Get-Content "${{ github.workspace }}\APP\include\Version_selection.h"
+        $content = $content -replace '#define version  \d+', '#define version  2'
+        Set-Content "${{ github.workspace }}\APP\include\Version_selection.h" $content
+        
+        # Build
+        cd build
+        $env:PATH = "C:\tools\risc-none-embed-gcc\bin;" + $env:PATH
+        $env:RISC_COMPILER_PATH = "C:\tools\risc-none-embed-gcc"
+        make clean
+        make -j4 all
+        if ($LASTEXITCODE -eq 0) {
+          Write-Host "✓ Mini-KVM v1.2 build succeeded" -ForegroundColor Green
+        } else {
+          Write-Host "✗ Mini-KVM v1.2 build failed with exit code $LASTEXITCODE" -ForegroundColor Red
+          exit 1
+        }
+        
+        # Copy artifact with version suffix
+        Copy-Item "${{ env.BUILD_DIR }}\openterface-minikvm-firmware.hex" "${{ env.BUILD_DIR }}\openterface-km-firmware-mini-kvm.hex"
 
     - name: Save build artifacts
       uses: actions/upload-artifact@v4
       with:
-        name: openterface-km-firmware.hex
+        name: openterface-km-firmware-artifacts
         if-no-files-found: error
         path: |
-          ${{ env.BUILD_DIR }}\openterface-km-firmware.hex
+          ${{ env.BUILD_DIR }}\openterface-km-firmware-kvmgo.hex
+          ${{ env.BUILD_DIR }}\openterface-km-firmware-mini-kvm.hex
