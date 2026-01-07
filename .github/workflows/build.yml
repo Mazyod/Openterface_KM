@@ -110,11 +110,16 @@ jobs:
         # Copy artifact with version suffix
         Copy-Item "${{ env.BUILD_DIR }}\openterface-km-firmware.hex" "${{ env.BUILD_DIR }}\openterface-km-firmware-mini-kvm.hex"
 
-    - name: Save build artifacts
+    - name: Upload KVMGo firmware
       uses: actions/upload-artifact@v4
       with:
-        name: openterface-km-firmware-artifacts
+        name: openterface-km-firmware-kvmgo
         if-no-files-found: error
-        path: |
-          ${{ env.BUILD_DIR }}\openterface-km-firmware-kvmgo.hex
-          ${{ env.BUILD_DIR }}\openterface-km-firmware-mini-kvm.hex
+        path: ${{ env.BUILD_DIR }}\openterface-km-firmware-kvmgo.hex
+
+    - name: Upload Mini-KVM v1.2 firmware
+      uses: actions/upload-artifact@v4
+      with:
+        name: openterface-km-firmware-mini-kvm-v1.2
+        if-no-files-found: error
+        path: ${{ env.BUILD_DIR }}\openterface-km-firmware-mini-kvm.hex
