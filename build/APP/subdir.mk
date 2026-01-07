@@ -12,6 +12,8 @@ C_SRCS += \
 ../APP/CH32_TEMP.c \
 ../APP/ch32v20x_it.c \
 ../APP/ch32v20x_usbfs_device.c \
+../APP/iwdg_auto.c \
+../APP/km_ring.c \
 ../APP/keyboard_handler.c \
 ../APP/mouse_handler.c \
 ../APP/peripheral.c \
@@ -28,6 +30,8 @@ C_DEPS += \
 ./APP/CH32_TEMP.d \
 ./APP/ch32v20x_it.d \
 ./APP/ch32v20x_usbfs_device.d \
+./APP/iwdg_auto.d \
+./APP/km_ring.d \
 ./APP/keyboard_handler.d \
 ./APP/mouse_handler.d \
 ./APP/peripheral.d \
@@ -44,6 +48,8 @@ OBJS += \
 ./APP/CH32_TEMP.o \
 ./APP/ch32v20x_it.o \
 ./APP/ch32v20x_usbfs_device.o \
+./APP/iwdg_auto.o \
+./APP/km_ring.o \
 ./APP/keyboard_handler.o \
 ./APP/mouse_handler.o \
 ./APP/peripheral.o \
