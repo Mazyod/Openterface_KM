@@ -115,7 +115,7 @@ void CH9329_Cmd_GetInfo_Reply(uint8_t addr)
     data[0] = 0x02;    // Product type 0x00, version 0x02
     }
     /* Device connection / enumeration status */
-    if (USBFS_DevConfig != 0 || USBFS_DevEnumStatus == 1) {
+    if (USBFS_Connect == 1) {
         data[1] = 0x01;   // Connected (enumerated)
     } else {
         data[1] = 0x00;   // Not connected

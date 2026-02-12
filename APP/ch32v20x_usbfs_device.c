@@ -37,7 +37,7 @@ volatile uint8_t  USBFS_DevConfig;
 volatile uint8_t  USBFS_DevAddr;
 volatile uint8_t  USBFS_DevSleepStatus;
 volatile uint8_t  USBFS_DevEnumStatus;
-
+volatile uint8_t  USBFS_Connect;
 /* HID Class Command */
 volatile uint8_t  USBFS_HidIdle[ 3 ];
 volatile uint8_t  USBFS_HidProtocol[ 3 ];
@@ -743,6 +743,7 @@ void USBFS_IRQHandler( void )
                         case USB_SET_CONFIGURATION:
                             USBFS_DevConfig = (uint8_t)( USBFS_SetupReqValue & 0xFF );
                             USBFS_DevEnumStatus = 0x01;
+                            USBFS_Connect = 0x01;
                             break;
 
                         /* Clear or disable one usb feature */
@@ -963,6 +964,7 @@ void USBFS_IRQHandler( void )
         USBFS_DevAddr = 0;
         USBFS_DevSleepStatus = 0;
         USBFS_DevEnumStatus = 0;
+        USBFS_Connect = 0;
 
         USBFSD->DEV_ADDR = 0;
         USBFS_Device_Endp_Init( );

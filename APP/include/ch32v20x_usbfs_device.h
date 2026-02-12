@@ -153,7 +153,7 @@ extern volatile uint8_t  USBFS_DevConfig;
 extern volatile uint8_t  USBFS_DevAddr;
 extern volatile uint8_t  USBFS_DevSleepStatus;
 extern volatile uint8_t  USBFS_DevEnumStatus;
-
+extern volatile uint8_t  USBFS_Connect;
 /* HID Class Command */
 extern volatile uint8_t  USBFS_HidIdle[ 3 ];
 extern volatile uint8_t  USBFS_HidProtocol[ 3 ];
