@@ -40,7 +40,7 @@ __attribute__((noinline))
 void Main_Circulation(void)
 {
     uint8_t selector_prev_state;
-        // Power-on three-color flashing
+    // Power-on three-color flashing
     if (version == 1) {
         selector_prev_state = GPIO_ReadInputDataBit(GPIOB, GPIO_Pin_8);
     }
@@ -75,35 +75,41 @@ void Main_Circulation(void)
     }
 }
 int main(void) {
-    
+
     NVIC_PriorityGroupConfig(NVIC_PriorityGroup_1);
-
-
     SystemCoreClockUpdate();
     Delay_Init();
-    USART_Printf_Init(115200);
     IWDG_Auto_Init(IWDG_Prescaler_32, 4000);
+    //ble_init
+    HAL_Init();
+    GAPRole_PeripheralInit();
+    Peripheral_Init();
+    //usbd_init
+    USART_Printf_Init(115200);
+    Set_USBConfig();
+    USB_Init();
+    USB_Interrupts_Config();
+    //usbfs_init
+    USBFS_RCC_Init();
+    USBFS_Device_Init(ENABLE);
+    USB_Sleep_Wakeup_CFG();
+    Keyboard_Init();
+    Mouse_Init();
+    
     if (version == 1)
     {    
     WCHBLE_Init();
     DS18B20_Init();
     }
-    HAL_Init();
-    GAPRole_PeripheralInit();
-    Peripheral_Init();
-    USBFS_RCC_Init();
-    USBFS_Device_Init(ENABLE);
-    USB_Sleep_Wakeup_CFG();
-    Set_USBConfig();
-    USB_Init();
-    USB_Interrupts_Config();
+    //km_ring
     Queue_Init();
-    Keyboard_Init();
-    Mouse_Init();
-    SD_Switch_Init();
-    ADC_Function_Init();
 
+    SD_Switch_Init();
+    //temp_init
+    ADC_Function_Init();
+    //rgb_init
     RGB_Init(); 
+
     Delay_Ms(1000);
     
     Main_Circulation();
