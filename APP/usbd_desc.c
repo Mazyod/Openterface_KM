@@ -41,8 +41,8 @@ const uint8_t MyCfgDescr[ ] =
     /* Configuration Descriptor */
     0x09,                                                   // bLength
     0x02,                                                   // bDescriptorType
-    0x54, 0x00,                                             // wTotalLength (84 bytes total)
-    0x03,                                                   // bNumInterfaces (changed from 2 to 3)
+    0x6D, 0x00,                                             // wTotalLength (109 bytes total: 84 + 25 for media interface)
+    0x04,                                                   // bNumInterfaces (4: keyboard, rel-mouse, abs-mouse, media)
     0x01,                                                   // bConfigurationValue
     0x00,                                                   // iConfiguration
     0xA0,                                                   // bmAttributes: Bus Powered; Remote Wakeup
@@ -130,7 +130,35 @@ const uint8_t MyCfgDescr[ ] =
     0x83,                                                   // bEndpointAddress: IN Endpoint 3
     0x03,                                                   // bmAttributes
     0x08, 0x00,                                             // wMaxPacketSize
-    0x01                                                    // bInterval: 1mS (125µs at HS, 1ms at FS)
+    0x01,                                                   // bInterval: 1mS (125µs at HS, 1ms at FS)
+
+    /* Interface Descriptor (Media/Consumer Control) */
+    0x09,                                                   // bLength
+    0x04,                                                   // bDescriptorType
+    0x03,                                                   // bInterfaceNumber
+    0x00,                                                   // bAlternateSetting
+    0x01,                                                   // bNumEndpoints
+    0x03,                                                   // bInterfaceClass (HID)
+    0x00,                                                   // bInterfaceSubClass
+    0x00,                                                   // bInterfaceProtocol
+    0x00,                                                   // iInterface
+
+    /* HID Descriptor (Media/Consumer Control) */
+    0x09,                                                   // bLength
+    0x21,                                                   // bDescriptorType
+    0x11, 0x01,                                             // bcdHID
+    0x00,                                                   // bCountryCode
+    0x01,                                                   // bNumDescriptors
+    0x22,                                                   // bDescriptorType
+    DEF_USBD_REPORT_DESC_LEN_MEDIA, 0x00,                  // wDescriptorLength
+
+    /* Endpoint Descriptor (Media/Consumer Control) */
+    0x07,                                                   // bLength
+    0x05,                                                   // bDescriptorType
+    0x84,                                                   // bEndpointAddress: IN Endpoint 4
+    0x03,                                                   // bmAttributes (Interrupt)
+    0x08, 0x00,                                             // wMaxPacketSize
+    0x0A                                                    // bInterval: 10mS
 };
 
 /* Keyboard Report Descriptor */
@@ -238,33 +266,63 @@ const uint8_t AbsMouseRepDesc[ ] =
     0xC0                                                    // End Collection
 };
 
+/* Media Key (Consumer Control) Report Descriptor - 26 bytes */
+const uint8_t MediaKeyRepDesc[ ] =
+{
+    0x05, 0x0C,        // Usage Page (Consumer Devices)
+    0x09, 0x01,        // Usage (Consumer Control)
+    0xA1, 0x01,        // Collection (Application)
+    0x15, 0x00,        // Logical Minimum (0)
+    0x25, 0x01,        // Logical Maximum (1)
+    0x75, 0x01,        // Report Size (1)
+    0x95, 0x10,        // Report Count (16) — 2 bytes / 16 bits
+    0x09, 0xE2,        // Usage (Mute)           bit0
+    0x09, 0xE9,        // Usage (Volume Up)      bit1
+    0x09, 0xEA,        // Usage (Volume Down)    bit2
+    0x09, 0xCD,        // Usage (Play/Pause)     bit3
+    0x09, 0xB5,        // Usage (Next Track)     bit4
+    0x09, 0xB6,        // Usage (Prev Track)     bit5
+    0x09, 0xB7,        // Usage (Stop)           bit6
+    0x09, 0xB3,        // Usage (Fast Forward)   bit7
+    0x09, 0xB4,        // Usage (Rewind)         bit8
+    0x09, 0xB1,        // Usage (Pause)          bit9
+    0x09, 0xB2,        // Usage (Record)         bit10
+    0x09, 0x83,        // Usage (AL Consumer Control Config) bit11
+    0x09, 0x8A,        // Usage (AL Email Reader) bit12
+    0x09, 0x92,        // Usage (AL Calculator)  bit13
+    0x09, 0x94,        // Usage (AL Local Browser) bit14
+    0x09, 0x21,        // Usage (AC Search)      bit15
+    0x81, 0x02,        // Input (Data, Variable, Absolute)
+    0xC0               // End Collection
+};
+
 /* Touch Screen Report Descriptor */
 const uint8_t TouchScreenRepDesc[] = {
-    0x05, 0x0D,                    // Usage Page (Digitizers)
-    0x09, 0x04,                    // Usage (Touch Screen)
-    0xA1, 0x01,                    // Collection (Application)
-      0x09, 0x22,                  //   Usage (Finger)
-      0xA1, 0x00,                  //   Collection (Physical)
-        0x09, 0x42,                //     Usage (Tip Switch)
-        0x15, 0x00,                //     Logical Minimum (0)
-        0x25, 0x01,                //     Logical Maximum (1)
-        0x75, 0x01,                //     Report Size (1)
-        0x95, 0x01,                //     Report Count (1)
-        0x81, 0x02,                //     Input (Data,Var,Abs)
-        0x95, 0x07,                //     Report Count (7) - padding
-        0x81, 0x03,                //     Input (Const,Var,Abs)
-        0x05, 0x01,                //     Usage Page (Generic Desktop)
-        0x09, 0x30,                //     Usage (X)
-        0x09, 0x31,                //     Usage (Y)
-        0x16, 0x00, 0x00,          //     Logical Min (0)
-        0x26, 0xFF, 0x7F,          //     Logical Max (32767)
-        0x36, 0x00, 0x00,          //     Physical Min (0)
-        0x46, 0xFF, 0x7F,          //     Physical Max (32767)
-        0x75, 0x10,                //     Report Size (16)
-        0x95, 0x02,                //     Report Count (2)
-        0x81, 0x02,                //     Input (Data,Var,Abs)
-      0xC0,                        //   End Collection
-    0xC0                           // End Collection
+    0x05, 0x0D,                // Usage Page (Digitizers)
+    0x09, 0x04,                // Usage (Touch Screen)
+    0xA1, 0x01,                // Collection (Application)
+    0x09, 0x22,                //   Usage (Finger)
+    0xA1, 0x00,                //   Collection (Physical)
+    0x09, 0x42,                //     Usage (Tip Switch)
+    0x15, 0x00,                //     Logical Minimum (0)
+    0x25, 0x01,                //     Logical Maximum (1)
+    0x75, 0x01,                //     Report Size (1)
+    0x95, 0x01,                //     Report Count (1)
+    0x81, 0x02,                //     Input (Data,Var,Abs)
+    0x95, 0x07,                //     Report Count (7) - padding
+    0x81, 0x03,                //     Input (Const,Var,Abs)
+    0x05, 0x01,                //     Usage Page (Generic Desktop)
+    0x09, 0x30,                //     Usage (X)
+    0x09, 0x31,                //     Usage (Y)
+    0x16, 0x00, 0x00,          //     Logical Min (0)
+    0x26, 0xFF, 0x7F,          //     Logical Max (32767)
+    0x36, 0x00, 0x00,          //     Physical Min (0)
+    0x46, 0xFF, 0x7F,          //     Physical Max (32767)
+    0x75, 0x10,                //     Report Size (16)
+    0x95, 0x02,                //     Report Count (2)
+    0x81, 0x02,                //     Input (Data,Var,Abs)
+    0xC0,                      //   End Collection
+    0xC0                       // End Collection
 };
 
 

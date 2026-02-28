@@ -7,7 +7,7 @@
  * 1 = kvm go
  * 2 = mini kvm (version 1.2)
  */
-#define version  1
+#define version  2
 
 
 
