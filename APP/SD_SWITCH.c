@@ -94,12 +94,6 @@ void SD_Switch_StateMachine(void)
 }
 
 #endif  // SD_SWITCH_VERSION == 1
-
-
-
-// =============================================================
-//  Version 2 й╣ож
-// =============================================================
 #if version == 2
 
 void SD_Switch_Init(void)
