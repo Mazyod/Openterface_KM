@@ -266,34 +266,84 @@ const uint8_t AbsMouseRepDesc[ ] =
     0xC0                                                    // End Collection
 };
 
-/* Media Key (Consumer Control) Report Descriptor - 26 bytes */
+/* Media Key (Consumer Control + ACPI) Report Descriptor
+ * Matches CH9329 CMD=0x03 protocol exactly:
+ *
+ * Report ID 0x01 (ACPI, 1 data byte):
+ *   Byte2: bit0=Power, bit1=Sleep, bit2=Wake-up, bit3-7=reserved
+ *
+ * Report ID 0x02 (Media, 3 data bytes):
+ *   Byte2: bit0=Volume+, bit1=Volume-, bit2=Mute,      bit3=Play/Pause,
+ *          bit4=Next,    bit5=Prev,   bit6=CD Stop,    bit7=Eject
+ *   Byte3: bit0=E-Mail,  bit1=Search, bit2=Favorites,  bit3=WWW Home,
+ *          bit4=Back,    bit5=Forward,bit6=WWW Stop,   bit7=Refresh
+ *   Byte4: bit0=Media,   bit1=Explorer,bit2=Calculator,bit3=ScreenSave,
+ *          bit4=MyPC,    bit5=Minimize,bit6=Record,    bit7=Rewind
+ */
 const uint8_t MediaKeyRepDesc[ ] =
 {
+    /* ---- Report ID 0x01: ACPI / System Control ---- */
+    /* Total: 20 bytes */
+    0x05, 0x01,        // Usage Page (Generic Desktop)
+    0x09, 0x80,        // Usage (System Control)
+    0xA1, 0x01,        // Collection (Application)
+    0x85, 0x01,        //   Report ID (1)
+    0x15, 0x00,        //   Logical Minimum (0)
+    0x25, 0x01,        //   Logical Maximum (1)
+    0x75, 0x01,        //   Report Size (1)
+    0x95, 0x03,        //   Report Count (3)
+    0x09, 0x81,        //   Usage (System Power Down) bit0
+    0x09, 0x82,        //   Usage (System Sleep)      bit1
+    0x09, 0x83,        //   Usage (System Wake Up)    bit2
+    0x81, 0x02,        //   Input (Data, Variable, Absolute)
+    0x95, 0x05,        //   Report Count (5) — padding
+    0x81, 0x01,        //   Input (Constant)
+    0xC0,              // End Collection
+
+    /* ---- Report ID 0x02: Consumer Control (3 data bytes) ---- */
+    /* Total: 82 bytes */
     0x05, 0x0C,        // Usage Page (Consumer Devices)
     0x09, 0x01,        // Usage (Consumer Control)
     0xA1, 0x01,        // Collection (Application)
-    0x15, 0x00,        // Logical Minimum (0)
-    0x25, 0x01,        // Logical Maximum (1)
-    0x75, 0x01,        // Report Size (1)
-    0x95, 0x10,        // Report Count (16) — 2 bytes / 16 bits
-    0x09, 0xE2,        // Usage (Mute)           bit0
-    0x09, 0xE9,        // Usage (Volume Up)      bit1
-    0x09, 0xEA,        // Usage (Volume Down)    bit2
-    0x09, 0xCD,        // Usage (Play/Pause)     bit3
-    0x09, 0xB5,        // Usage (Next Track)     bit4
-    0x09, 0xB6,        // Usage (Prev Track)     bit5
-    0x09, 0xB7,        // Usage (Stop)           bit6
-    0x09, 0xB3,        // Usage (Fast Forward)   bit7
-    0x09, 0xB4,        // Usage (Rewind)         bit8
-    0x09, 0xB1,        // Usage (Pause)          bit9
-    0x09, 0xB2,        // Usage (Record)         bit10
-    0x09, 0x83,        // Usage (AL Consumer Control Config) bit11
-    0x09, 0x8A,        // Usage (AL Email Reader) bit12
-    0x09, 0x92,        // Usage (AL Calculator)  bit13
-    0x09, 0x94,        // Usage (AL Local Browser) bit14
-    0x09, 0x21,        // Usage (AC Search)      bit15
-    0x81, 0x02,        // Input (Data, Variable, Absolute)
+    0x85, 0x02,        //   Report ID (2)
+    0x15, 0x00,        //   Logical Minimum (0)
+    0x25, 0x01,        //   Logical Maximum (1)
+    0x75, 0x01,        //   Report Size (1)
+    /* --- Byte2: 1-byte usages (all <= 0xFF, Consumer Page) --- */
+    0x95, 0x08,        //   Report Count (8)
+    0x09, 0xE9,        //   Usage (Volume Increment)   bit0  (Volume+)
+    0x09, 0xEA,        //   Usage (Volume Decrement)   bit1  (Volume-)
+    0x09, 0xE2,        //   Usage (Mute)               bit2
+    0x09, 0xCD,        //   Usage (Play/Pause)         bit3
+    0x09, 0xB5,        //   Usage (Scan Next Track)    bit4
+    0x09, 0xB6,        //   Usage (Scan Prev Track)    bit5
+    0x09, 0xB7,        //   Usage (Stop)               bit6  (CD Stop)
+    0x09, 0xB8,        //   Usage (Eject)              bit7
+    0x81, 0x02,        //   Input (Data, Variable, Absolute)
+    /* --- Byte3: AL/AC usages (2-byte usages, Consumer Page) --- */
+    0x95, 0x08,        //   Report Count (8)
+    0x0A, 0x8A, 0x01,  //   Usage (AL Email Reader)       bit0  (0x018A)
+    0x0A, 0x21, 0x02,  //   Usage (AC Search)             bit1  (0x0221)
+    0x0A, 0x2C, 0x02,  //   Usage (AC Bookmarks/Fav)      bit2  (0x022C)
+    0x0A, 0x23, 0x02,  //   Usage (AC Home)               bit3  (0x0223)
+    0x0A, 0x24, 0x02,  //   Usage (AC Back)               bit4  (0x0224)
+    0x0A, 0x25, 0x02,  //   Usage (AC Forward)            bit5  (0x0225)
+    0x0A, 0x26, 0x02,  //   Usage (AC Stop)               bit6  (0x0226) WWW Stop
+    0x0A, 0x27, 0x02,  //   Usage (AC Refresh)            bit7  (0x0227)
+    0x81, 0x02,        //   Input (Data, Variable, Absolute)
+    /* --- Byte4: AL/mixed usages (2-byte usages, Consumer Page) --- */
+    0x95, 0x08,        //   Report Count (8)
+    0x0A, 0x83, 0x01,  //   Usage (AL Consumer Control)   bit0  (0x0183) Media
+    0x0A, 0x94, 0x01,  //   Usage (AL Local Browser)      bit1  (0x0194) Explorer
+    0x0A, 0x92, 0x01,  //   Usage (AL Calculator)         bit2  (0x0192)
+    0x0A, 0x84, 0x01,  //   Usage (AL Screen Saver)       bit3  (0x0184)
+    0x0A, 0xC4, 0x01,  //   Usage (AL My Computer)        bit4  (0x01C4)
+    0x0A, 0x06, 0x02,  //   Usage (AC Minimize)           bit5  (0x0206)
+    0x09, 0xB2,        //   Usage (Record)                bit6  (0x00B2)
+    0x09, 0xB4,        //   Usage (Rewind)                bit7  (0x00B4)
+    0x81, 0x02,        //   Input (Data, Variable, Absolute)
     0xC0               // End Collection
+    /* Total MediaKeyRepDesc: 29 + 89 = 118 bytes = 0x76 */
 };
 
 /* Touch Screen Report Descriptor */

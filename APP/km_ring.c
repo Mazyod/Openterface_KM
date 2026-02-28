@@ -12,6 +12,7 @@ KB_Queue_t kb_queue;
 MS_Rel_Queue_t ms_rel_queue;
 MS_Abs_Queue_t ms_abs_queue;
 Resp_Queue_t resp_queue;
+Media_Queue_t media_queue;
 
 /* Initialize queues */
 void Queue_Init(void) {
@@ -19,6 +20,7 @@ void Queue_Init(void) {
     ms_rel_queue.head = ms_rel_queue.tail = 0;
     ms_abs_queue.head = ms_abs_queue.tail = 0;
     resp_queue.head = resp_queue.tail = 0;
+    media_queue.head = media_queue.tail = 0;
 }
 //Keyboard message queue
 void Queue_Push_Keyboard(uint8_t *data) {
@@ -48,6 +50,13 @@ void Queue_Push_Response(uint8_t *data, uint8_t len) {
     memcpy(resp_queue.buf[resp_queue.tail].data, data, len);
     resp_queue.buf[resp_queue.tail].len = len;
     resp_queue.tail = next;
+}
+//Media key message queue
+void Queue_Push_Media(uint8_t *data) {
+    int next = (media_queue.tail + 1) % MEDIA_QUEUE_SIZE;
+    if (next == media_queue.head) media_queue.head = (media_queue.head + 1) % MEDIA_QUEUE_SIZE;
+    memcpy(media_queue.buf[media_queue.tail].data, data, sizeof(media_queue.buf[media_queue.tail].data));
+    media_queue.tail = next;
 }
 
 /* Pop functions */
@@ -80,6 +89,13 @@ bool Queue_Pop_Response(Resp_Report_t *out) {
     return true;
 }
 
+bool Queue_Pop_Media(Media_Report_t *out) {
+    if (media_queue.head == media_queue.tail) return false;
+    memcpy(out->data, media_queue.buf[media_queue.head].data, sizeof(out->data));
+    media_queue.head = (media_queue.head + 1) % MEDIA_QUEUE_SIZE;
+    return true;
+}
+
 /* Try to send all queued packets until the endpoint is busy or queue is empty */
 void USB_SendFromQueues(void) {
     while (kb_queue.head != kb_queue.tail && USBFS_Endp_Busy[DEF_UEP1] == 0) {
@@ -100,6 +116,16 @@ void USB_SendFromQueues(void) {
         MS_Abs_Report_t *pkt = &ms_abs_queue.buf[ms_abs_queue.head];
         if (USBFS_Endp_DataUp(DEF_UEP3, pkt->data, sizeof(pkt->data), DEF_UEP_CPY_LOAD) == READY)
             ms_abs_queue.head = (ms_abs_queue.head + 1) % MS_ABS_QUEUE_SIZE;
+        else break;
+    }
+
+    while (media_queue.head != media_queue.tail && USBFS_Endp_Busy[DEF_UEP4] == 0) {
+        Media_Report_t *pkt = &media_queue.buf[media_queue.head];
+        /* Report ID 0x01 = ACPI: 2 bytes (ID + 1 data)
+         * Report ID 0x02 = Consumer: 4 bytes (ID + 3 data) */
+        uint16_t send_len = (pkt->data[0] == 0x01) ? 2 : 4;
+        if (USBFS_Endp_DataUp(DEF_UEP4, pkt->data, send_len, DEF_UEP_CPY_LOAD) == READY)
+            media_queue.head = (media_queue.head + 1) % MEDIA_QUEUE_SIZE;
         else break;
     }
 
