@@ -10,7 +10,6 @@
 
 // Keyboard Commands
 #define CMD_SEND_KB_GENERAL_DATA 0x02
-#define CMD_SEND_KB_GAME_DATA    0x12
 
 // Modifier Keys
 #define MOD_LCTRL   0x01

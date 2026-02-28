@@ -86,11 +86,6 @@ int main(void) {
     NVIC_PriorityGroupConfig(NVIC_PriorityGroup_1);
     SystemCoreClockUpdate();
     Delay_Init();
-    IWDG_Auto_Init(IWDG_Prescaler_32, 4000);
-    //ble_init
-    HAL_Init();
-    GAPRole_PeripheralInit();
-    Peripheral_Init();
     //usbd_init
     USART_Printf_Init(115200);
     Set_USBConfig();
@@ -102,6 +97,10 @@ int main(void) {
     USB_Sleep_Wakeup_CFG();
     Keyboard_Init();
     Mouse_Init();
+    //ble_init(Must be placed after USB initialization)
+    HAL_Init();
+    GAPRole_PeripheralInit();
+    Peripheral_Init();
     //minikvm havent ble & ds18b20
     if (version == 1)
     {    
@@ -116,9 +115,8 @@ int main(void) {
     ADC_Function_Init();
     //rgb_init
     RGB_Init(); 
-
     Delay_Ms(1000);
-    
+    IWDG_Auto_Init(IWDG_Prescaler_32, 4000);
     Main_Circulation();
 }
 

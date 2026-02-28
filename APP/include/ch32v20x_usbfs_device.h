@@ -155,8 +155,8 @@ extern volatile uint8_t  USBFS_DevSleepStatus;
 extern volatile uint8_t  USBFS_DevEnumStatus;
 extern volatile uint8_t  USBFS_Connect;
 /* HID Class Command */
-extern volatile uint8_t  USBFS_HidIdle[ 3 ];
-extern volatile uint8_t  USBFS_HidProtocol[ 3 ];
+extern volatile uint8_t  USBFS_HidIdle[ 4 ];
+extern volatile uint8_t  USBFS_HidProtocol[ 4 ];
 
 /* Endpoint Buffer */
 extern __attribute__ ((aligned(4))) uint8_t USBFS_EP0_Buf[ DEF_USBD_UEP0_SIZE ];     //ep0(64)
