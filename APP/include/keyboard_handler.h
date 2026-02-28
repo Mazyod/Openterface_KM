@@ -9,7 +9,8 @@
 /* Definitions */
 
 // Keyboard Commands
-#define CMD_SEND_KB_GENERAL_DATA 0x02
+#define CMD_SEND_KB_GENERAL_DATA  0x02
+#define CMD_SEND_KB_MEDIA_DATA    0x03
 
 // Modifier Keys
 #define MOD_LCTRL   0x01
@@ -101,6 +102,21 @@ void Keyboard_ResetAutoDetection(void);
  * @return  none
  */
 void Keyboard_HandleData(uint8_t addr, uint8_t cmd_code, uint8_t* data, uint8_t data_len);
+
+/*********************************************************************
+ * @fn      Keyboard_HandleMediaData
+ *
+ * @brief   Handle media key data from CH9329 (CMD=0x03)
+ *          data[0..1]: 2-byte bit-map matching MediaKeyRepDesc bit order
+ *
+ * @param   addr - Device address
+ * @param   cmd_code - Command code (0x03)
+ * @param   data - 2-byte media key bitmap
+ * @param   data_len - Length of data (should be 2)
+ *
+ * @return  none
+ */
+void Keyboard_HandleMediaData(uint8_t addr, uint8_t cmd_code, uint8_t* data, uint8_t data_len);
 
 /*********************************************************************
  * @fn      Keyboard_SendDataToUSB

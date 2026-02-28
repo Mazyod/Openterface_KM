@@ -24,6 +24,7 @@ uint8_t normal_keys[6] = {0};
 /* Private Variables */
 
 static uint8_t kb_last_data[8] = {0};
+static uint8_t media_last_data[4] = {0};
 
 /*******************************************************************************/
 /* External Functions */
@@ -169,4 +170,71 @@ uint8_t Keyboard_GetLEDStatus(void) {
  */
 uint8_t Keyboard_GetLastLEDStatus(void) {
     return KB_LED_Last_Status;
+}
+
+/*********************************************************************
+ * @fn      Keyboard_HandleMediaData
+ *
+ * @brief   Handle media key data from CH9329 (CMD=0x03)
+ *
+ * @param   addr     - Device address
+ * @param   cmd_code - Command code (0x03)
+ * @param   data     - 2-byte media key bitmap
+ * @param   data_len - Length of data
+ *
+ * @return  none
+ */
+/*********************************************************************
+ * @fn      Keyboard_HandleMediaData
+ *
+ * @brief   Handle media key data from CH9329 (CMD=0x03)
+ *          CH9329 protocol format:
+ *            ACPI keys:  data[0]=0x01, data[1]=acpi_code (Power/Sleep/Wake)
+ *            Media keys: data[0]=0x02, data[1..3]=24-bit bitmap
+ *
+ * @param   addr     - Device address
+ * @param   cmd_code - Command code (0x03)
+ * @param   data     - data bytes from CH9329 frame (Report ID + payload)
+ * @param   data_len - Length of data (2 for ACPI, 4 for media)
+ *
+ * @return  none
+ */
+void Keyboard_HandleMediaData(uint8_t addr, uint8_t cmd_code, uint8_t* data, uint8_t data_len)
+{
+    if (data_len < 2) return;
+
+    uint8_t report_id = data[0];
+    if (report_id != 0x01 && report_id != 0x02) return;
+
+    uint8_t req_len = (report_id == 0x01) ? 2 : 4;
+    if (data_len < req_len) return;
+
+    /* Skip if identical to last report */
+    if (report_id == media_last_data[0] &&
+        data[1] == media_last_data[1] &&
+        (report_id == 0x01 || (data[2] == media_last_data[2] && data[3] == media_last_data[3]))) {
+        return;
+    }
+
+    /* Build report: [Report_ID, byte1, byte2, byte3] */
+    uint8_t report[4] = {0};
+    report[0] = report_id;
+    report[1] = data[1];
+    if (report_id == 0x02) {
+        report[2] = (data_len > 2) ? data[2] : 0;
+        report[3] = (data_len > 3) ? data[3] : 0;
+    }
+
+    Queue_Push_Media(report);
+
+    /* Update last state */
+    media_last_data[0] = report[0];
+    media_last_data[1] = report[1];
+    media_last_data[2] = report[2];
+    media_last_data[3] = report[3];
+
+    /* Clear tracking on release */
+    if (report[1] == 0 && report[2] == 0 && report[3] == 0) {
+        media_last_data[0] = 0;
+    }
 }

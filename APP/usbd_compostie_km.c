@@ -110,7 +110,7 @@ void CH9329_Cmd_GetInfo_Reply(uint8_t addr)
         data[1] = 0x00;   // Not connected
     }
     data[2] = Keyboard_GetLEDStatus() & 0x07; // bit2-bit0: LED status
-    data[3] = 0x03; // bit6 placeholder
+    data[3] = 0x04; // bit6 placeholder
     data[4] = 0x00; // bit5 placeholder
     data[5] = 0x00; // bit4 placeholder
     data[6] = 0x00; // bit3 placeholder
@@ -149,6 +149,20 @@ void CH9329_DispatchCommand(uint8_t addr, uint8_t cmd_code, uint8_t* pdata, uint
                 CH9329_SendResponse(addr, cmd_code, &st, 1, 0);
             } else {
                 Keyboard_HandleData(addr, cmd_code, pdata, data_len);
+                st = STATUS_SUCCESS;
+                CH9329_SendResponse(addr, cmd_code, &st, 1, 1);
+            }
+        }
+        break;
+        //cmd=03,Send USB media keyboard data
+        case CMD_SEND_KB_MEDIA_DATA:
+        {
+            uint8_t st;
+            if (data_len < 2) {
+                st = STATUS_ERR_PARAM;
+                CH9329_SendResponse(addr, cmd_code, &st, 1, 0);
+            } else {
+                Keyboard_HandleMediaData(addr, cmd_code, pdata, data_len);
                 st = STATUS_SUCCESS;
                 CH9329_SendResponse(addr, cmd_code, &st, 1, 1);
             }
@@ -227,7 +241,7 @@ int CH9329_DataParser(uint8_t* buf, uint16_t len)
 
     // Verify frame header
     if (buf[0] != CH9329_FRAME_HEAD1 || buf[1] != CH9329_FRAME_HEAD2) {
-        // Not a valid frame header ¡ª skip one byte and try again
+        // Not a valid frame header ï¿½ï¿½ skip one byte and try again
         return 1;
     }
 
@@ -249,11 +263,11 @@ int CH9329_DataParser(uint8_t* buf, uint16_t len)
     }
 
     if (sum != recv_sum) {
-        // Checksum mismatch ¡ª treat as invalid frame, skip full length
+        // Checksum mismatch ï¿½ï¿½ treat as invalid frame, skip full length
         return frame_total_len;
     }
 
-    // Valid frame ¡ª dispatch command
+    // Valid frame ï¿½ï¿½ dispatch command
     CH9329_DispatchCommand(addr, cmd_code, pdata, data_len);
     return frame_total_len;
 }
@@ -280,11 +294,11 @@ void CH9329_RxBuffer_Add(uint8_t *data, uint16_t len) {
     while (rx_len > 0) {
         int consumed = CH9329_DataParser(rx_buf, rx_len);
         if (consumed < 0) {
-            // Parsing error ¡ª clear buffer
+            // Parsing error ï¿½ï¿½ clear buffer
             rx_len = 0;
             break;
         } else if (consumed == 0) {
-            // Incomplete frame ¡ª wait for more data
+            // Incomplete frame ï¿½ï¿½ wait for more data
             break;
         } else {
             // Remove consumed bytes from buffer

@@ -9,6 +9,7 @@
 #define MS_REL_QUEUE_SIZE  28     // Relative mouse report queue size
 #define MS_ABS_QUEUE_SIZE  28     // Absolute mouse report queue size
 #define RESP_QUEUE_SIZE    28     // Response packet queue size
+#define MEDIA_QUEUE_SIZE   16     // Media key report queue size
 
 /* Keyboard report structure */
 typedef struct {
@@ -30,6 +31,21 @@ typedef struct {
     uint8_t data[64];   // Maximum 64 bytes per response frame
     uint8_t len;        // Actual valid length
 } Resp_Report_t;
+
+/* Media key report structure
+ * data[0] = Report ID (0x01=ACPI, 0x02=Consumer)
+ * data[1..3] = payload (1 byte for ACPI, 3 bytes for Consumer)
+ */
+typedef struct {
+    uint8_t data[4];
+} Media_Report_t;
+
+/* Media key queue structure */
+typedef struct {
+    Media_Report_t buf[MEDIA_QUEUE_SIZE];
+    volatile int head;
+    volatile int tail;
+} Media_Queue_t;
 
 /* Keyboard queue structure */
 typedef struct {
@@ -64,6 +80,7 @@ extern KB_Queue_t kb_queue;
 extern MS_Rel_Queue_t ms_rel_queue;
 extern MS_Abs_Queue_t ms_abs_queue;
 extern Resp_Queue_t resp_queue;
+extern Media_Queue_t media_queue;
 
 /* Queue initialization */
 void Queue_Init(void);
@@ -73,12 +90,14 @@ void Queue_Push_Keyboard(uint8_t *data);
 void Queue_Push_MouseRel(uint8_t *data);
 void Queue_Push_MouseAbs(uint8_t *data);
 void Queue_Push_Response(uint8_t *data, uint8_t len);
+void Queue_Push_Media(uint8_t *data);
 
 /* Pop functions */
 bool Queue_Pop_Keyboard(KB_Report_t *out);
 bool Queue_Pop_MouseRel(MS_Rel_Report_t *out);
 bool Queue_Pop_MouseAbs(MS_Abs_Report_t *out);
 bool Queue_Pop_Response(Resp_Report_t *out);
+bool Queue_Pop_Media(Media_Report_t *out);
 
 /* Send functions */
 void USB_SendFromQueues(void);        // Send keyboard/mouse reports via USBFS
