@@ -1,18 +1,8 @@
 #include "km_ring.h"
 #include "ch32v20x_usbfs_device.h"
-#include "usbd_composite_km.h"
-#include "UART.h"
 #include "usb_lib.h"
 #include "usb_desc.h"
 #include "usb_prop.h"
-#include "CONFIG.h"
-#include "HAL.h"
-#include "gattprofile.h"
-#include "peripheral.h"
-#include "include/keyboard_handler.h"
-#include "include/mouse_handler.h"
-#include "SD_SWITCH.h"
-#include "DS18B20.h"
 
 #include <string.h>
 
@@ -30,29 +20,28 @@ void Queue_Init(void) {
     ms_abs_queue.head = ms_abs_queue.tail = 0;
     resp_queue.head = resp_queue.tail = 0;
 }
-
-/* Push functions ¡ª overwrite oldest when full */
+//Keyboard message queue
 void Queue_Push_Keyboard(uint8_t *data) {
     int next = (kb_queue.tail + 1) % KB_QUEUE_SIZE;
     if (next == kb_queue.head) kb_queue.head = (kb_queue.head + 1) % KB_QUEUE_SIZE;
     memcpy(kb_queue.buf[kb_queue.tail].data, data, sizeof(kb_queue.buf[kb_queue.tail].data));
     kb_queue.tail = next;
 }
-
+//MouseRel message queue
 void Queue_Push_MouseRel(uint8_t *data) {
     int next = (ms_rel_queue.tail + 1) % MS_REL_QUEUE_SIZE;
     if (next == ms_rel_queue.head) ms_rel_queue.head = (ms_rel_queue.head + 1) % MS_REL_QUEUE_SIZE;
     memcpy(ms_rel_queue.buf[ms_rel_queue.tail].data, data, sizeof(ms_rel_queue.buf[ms_rel_queue.tail].data));
     ms_rel_queue.tail = next;
 }
-
+//MouseAbs message queue
 void Queue_Push_MouseAbs(uint8_t *data) {
     int next = (ms_abs_queue.tail + 1) % MS_ABS_QUEUE_SIZE;
     if (next == ms_abs_queue.head) ms_abs_queue.head = (ms_abs_queue.head + 1) % MS_ABS_QUEUE_SIZE;
     memcpy(ms_abs_queue.buf[ms_abs_queue.tail].data, data, sizeof(ms_abs_queue.buf[ms_abs_queue.tail].data));
     ms_abs_queue.tail = next;
 }
-
+//Response message queue (Message length varies)
 void Queue_Push_Response(uint8_t *data, uint8_t len) {
     int next = (resp_queue.tail + 1) % RESP_QUEUE_SIZE;
     if (next == resp_queue.head) resp_queue.head = (resp_queue.head + 1) % RESP_QUEUE_SIZE;
@@ -114,7 +103,6 @@ void USB_SendFromQueues(void) {
         else break;
     }
 
-    /* Attempt to send response packets (USBD endpoint). Keep head if endpoint busy. */
     while (resp_queue.head != resp_queue.tail) {
         Resp_Report_t *pkt = &resp_queue.buf[resp_queue.head];
         if (USBD_ENDPx_DataUp(ENDP3, pkt->data, pkt->len) == 0)

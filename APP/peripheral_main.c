@@ -40,28 +40,33 @@ __attribute__((noinline))
 void Main_Circulation(void)
 {
     uint8_t selector_prev_state;
-    // Power-on three-color flashing
+    // SD card switching status reading
     if (version == 1) {
         selector_prev_state = GPIO_ReadInputDataBit(GPIOB, GPIO_Pin_8);
     }
     else if (version == 2) {
         selector_prev_state = GPIO_ReadInputDataBit(GPIOA, GPIO_Pin_4);
     }
-    // Switch to breathing mode after 3 seconds
     uint32_t t0 = systick_ms;
     CH9329_Cmd_GetInfo_Reply(00);
     while(1)
     {   
+        //rgb_state
         RGB_Update();
+        //SDcard_state
         Update_SDcard();
+        //Enable Bluetooth broadcasting
         if (version == 1) {
         TMOS_SystemProcess();
         }
+        //Instruction code receiving protocol
         USB_DataRx_To_KMHandle();
-
+        //Keyboard and mouse control code sending loop
         USB_SendFromQueues();
+        //Different devices have different control pin
+        //version == 1
         if (version == 1) {
-        if(systick_ms - t0 > 10000)
+        if(systick_ms - t0 > 20000)
         {
             SD_Switch_StateMachine();
         }
@@ -69,8 +74,10 @@ void Main_Circulation(void)
         GPIO_WriteBit(GPIOA, GPIO_Pin_1, Bit_RESET);
         }
         }
+        //version == 2
         else
         {SD_Switch_StateMachine();}
+        //watchdog
         IWDG_Auto_Handler();
     }
 }
@@ -95,7 +102,7 @@ int main(void) {
     USB_Sleep_Wakeup_CFG();
     Keyboard_Init();
     Mouse_Init();
-    
+    //minikvm havent ble & ds18b20
     if (version == 1)
     {    
     WCHBLE_Init();
@@ -103,7 +110,7 @@ int main(void) {
     }
     //km_ring
     Queue_Init();
-
+    //SDcontrol_init
     SD_Switch_Init();
     //temp_init
     ADC_Function_Init();

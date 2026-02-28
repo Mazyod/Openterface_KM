@@ -4,9 +4,6 @@
 #include "usb_lib.h"
 #include "usb_desc.h"
 #include "usb_prop.h"
-#include "CONFIG.h"
-#include "HAL.h"
-#include "gattprofile.h"
 #include "peripheral.h"
 #include "include/keyboard_handler.h"
 #include "include/mouse_handler.h"
@@ -14,10 +11,6 @@
 #include "CH32_TEMP.h"
 #include "km_ring.h"
 #include "Version_selection.h"
-#include <stdbool.h>
-#include <string.h>
-#include <stdint.h>
-
 /*******************************************************************************/
 /* Global Variable Definition */
 
@@ -97,11 +90,7 @@ void CH9329_SendResponse(uint8_t addr, uint8_t cmd_code, uint8_t* pdata,
 
     Queue_Push_Response(packet, index);
 }
-
-
-// ------------------------------------------------------------
 //      Dedicated "Get Info" Command Response
-// ------------------------------------------------------------
 void CH9329_Cmd_GetInfo_Reply(uint8_t addr)
 {
     uint8_t data[8] = {0};
@@ -146,11 +135,12 @@ void CH9329_Cmd_GetInfo_Reply(uint8_t addr)
 void CH9329_DispatchCommand(uint8_t addr, uint8_t cmd_code, uint8_t* pdata, uint8_t data_len)
 {
     switch (cmd_code)
-    {
+    {   
+        //cmd=01,Obtain information such as chip version
         case CMD_GET_INFO:
             CH9329_Cmd_GetInfo_Reply(addr);
             break;
-
+        //cmd=02,Send USB keyboard regular data
         case CMD_SEND_KB_GENERAL_DATA:
         {
             uint8_t st;
@@ -164,7 +154,7 @@ void CH9329_DispatchCommand(uint8_t addr, uint8_t cmd_code, uint8_t* pdata, uint
             }
         }
         break;
-
+        //cmd=04,Send USB absolute mouse data
         case CMD_SEND_MS_ABS_DATA:
         {
             uint8_t st;
@@ -178,7 +168,7 @@ void CH9329_DispatchCommand(uint8_t addr, uint8_t cmd_code, uint8_t* pdata, uint
             }
         }
         break;
-
+        //cmd=05,Send USB relative mouse data
         case CMD_SEND_MS_REL_DATA:
         {
             uint8_t st;
@@ -192,16 +182,16 @@ void CH9329_DispatchCommand(uint8_t addr, uint8_t cmd_code, uint8_t* pdata, uint
             }
         }
         break;
-
+        //cmd=17,Switch and return SD card status
         case CMD_SD_SWITCH:
             SD_USB_Switch(addr, cmd_code, pdata, data_len);
             break;
-
+        //cmd=18,Return temperture
         case CMD_DS18B20_GET_TEMP:
             // Always pass length = 5 to DS18B20 command handler
             Temp_Command(addr, cmd_code, pdata, 5);
             break;
-
+        //cmd=08,Get parameter configuration(Only used for matching with ch9329)
         case CMD_GET_PARA_CFG:
         {
             uint8_t response[] = {
