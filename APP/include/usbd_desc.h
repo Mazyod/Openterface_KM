@@ -18,6 +18,8 @@
 /* Header File */
 #include "stdint.h"
 
+#include "Version_selection.h"
+
 /*******************************************************************************/
 /* Macro Definition */
 
@@ -67,8 +69,14 @@
 #define DEF_USBD_CONFIG_DESC_LEN   ( (uint16_t)MyCfgDescr[ 2 ] + ( (uint16_t)MyCfgDescr[ 3 ] << 8 ) )
 #define DEF_USBD_REPORT_DESC_LEN_KB       0x3E
 #define DEF_USBD_REPORT_DESC_LEN_REL_MS   0x34
-#define DEF_USBD_REPORT_DESC_LEN_ABS_MS   0x3F
-#define DEF_USBD_REPORT_DESC_LEN_MEDIA    0x76  /* 118 bytes: ACPI (ReportID=1, 29B) + Consumer Control (ReportID=2, 89B) */
+#define DEF_USBD_REPORT_DESC_LEN_MEDIA    0x76  /* 118 bytes: ACPI (ReportID=1) + Consumer Control (ReportID=2) */
+
+/* EP3 report descriptor length — automatically follows EP3_USE_STYLUS */
+#ifdef EP3_USE_STYLUS
+  #define DEF_USBD_REPORT_DESC_LEN_ABS_MS   0x36  /* 54 bytes: Digitizer Pen/Stylus  */
+#else
+  #define DEF_USBD_REPORT_DESC_LEN_ABS_MS   0x3F  /* 63 bytes: Generic Desktop Mouse + Absolute */
+#endif
 #define DEF_USBD_LANG_DESC_LEN        ( (uint16_t)MyLangDescr[ 0 ] )
 #define DEF_USBD_MANU_DESC_LEN        ( (uint16_t)MyManuInfo[ 0 ] )
 #define DEF_USBD_PROD_DESC_LEN        ( (uint16_t)MyProdInfo[ 0 ] )
@@ -85,7 +93,7 @@ extern const uint8_t MyDevDescr[ ];
 extern const uint8_t MyCfgDescr[ ];
 extern const uint8_t KeyRepDesc[ ];
 extern const uint8_t MouseRepDesc[ ];
-extern const uint8_t AbsMouseRepDesc[ ];
+extern const uint8_t AbsMouseRepDesc[ ];   /* EP3 descriptor — content depends on EP3_USE_STYLUS */
 extern const uint8_t MediaKeyRepDesc[ ];
 extern const uint8_t MyQuaDesc[ ];
 extern const uint8_t MyLangDescr[ ];

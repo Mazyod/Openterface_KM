@@ -3,6 +3,7 @@
 
 #include <stdint.h>
 #include <stdbool.h>
+#include "Version_selection.h"
 
 /* Queue size definitions */
 #define KB_QUEUE_SIZE      2048   // Keyboard report queue size
@@ -21,9 +22,19 @@ typedef struct {
     uint8_t data[4];
 } MS_Rel_Report_t;
 
-/* Mouse absolute movement report */
+/* Mouse absolute movement report
+ * Size is determined at compile time by EP3_USE_STYLUS:
+ *   EP3_USE_STYLUS not defined  →  6 bytes  (abs mouse)
+ *   EP3_USE_STYLUS defined      →  5 bytes  (stylus)
+ */
+#ifdef EP3_USE_STYLUS
+  #define MS_ABS_DATA_LEN  5
+#else
+  #define MS_ABS_DATA_LEN  6
+#endif
+
 typedef struct {
-    uint8_t data[6];
+    uint8_t data[MS_ABS_DATA_LEN];
 } MS_Abs_Report_t;
 
 /* Response packet structure */
