@@ -164,7 +164,8 @@
 							"BLE_BUFF_MAX_LEN=516",
 							"CH32V20x_D8W",
 							"BLE_MEMHEAP_SIZE=10240",
-							"BLE_TX_NUM_EVENT=5"
+							"BLE_TX_NUM_EVENT=5",
+							"CLK_OSC32K=0"
 						],
 						"undefined_symbols": []
 					},
