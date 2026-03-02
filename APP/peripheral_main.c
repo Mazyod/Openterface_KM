@@ -50,25 +50,6 @@ void Main_Circulation(void)
     uint32_t t0 = systick_ms;
     CH9329_Cmd_GetInfo_Reply(00);
 
-    /* ---- Square movement test ----
-     * Each corner: move → click-down (50ms) → click-up → wait → next corner
-     *   Step 0: Q1 top-right    (24575, 8191)
-     *   Step 1: Q2 top-left     (8191,  8191)
-     *   Step 2: Q3 bottom-left  (8191,  24575)
-     *   Step 3: Q4 bottom-right (24575, 24575)
-     *
-     * Sub-step timing per corner (total ~1200ms):
-     *   phase 0 (0ms):    move to corner   (In Range=1, Tip=0)
-     *   phase 1 (+100ms): press            (In Range=1, Tip=1)
-     *   phase 2 (+150ms): release          (In Range=1, Tip=0)
-     *   phase 3 (+1200ms): advance to next corner
-     */
-    static const uint16_t square_x[4] = { 24575, 8191,  8191,  24575 };
-    static const uint16_t square_y[4] = { 8191,  8191,  24575, 24575 };
-    uint8_t  square_step     = 0;
-    uint8_t  square_phase    = 0;   // 0=move 1=press 2=release
-    uint32_t square_last_ms  = 0;
-    /* ---- End test variables ---- */
 
     while(1)
     {   
@@ -114,6 +95,12 @@ int main(void) {
     Set_USBConfig();
     USB_Init();
     USB_Interrupts_Config();
+    //minikvm havent ble & ds18b20
+    if (version == 1)
+    {    
+    WCHBLE_Init();
+    DS18B20_Init();
+    }
     //usbfs_init
     USBFS_RCC_Init();
     USBFS_Device_Init(ENABLE);
@@ -124,12 +111,6 @@ int main(void) {
     HAL_Init();
     GAPRole_PeripheralInit();
     Peripheral_Init();
-    //minikvm havent ble & ds18b20
-    if (version == 1)
-    {    
-    WCHBLE_Init();
-    DS18B20_Init();
-    }
     //km_ring
     Queue_Init();
     //SDcontrol_init
