@@ -18,6 +18,7 @@
 #include "peripheral.h"
 #include "RingMem.h"
 #include "include/keyboard_handler.h"
+#include "include/usbd_desc.h"
 /*******************************************************************************/
 /* Variable Definition */
 

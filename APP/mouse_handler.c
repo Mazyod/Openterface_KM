@@ -11,8 +11,8 @@
 volatile uint8_t  MS_Scan_Done = 0x00;
 volatile uint16_t MS_Scan_Result = 0x00F0;
 
-uint8_t MS_Data_Pack[4];    // Relative mouse data
-uint8_t ABS_MS_Data_Pack[6]; // Absolute mouse data
+uint8_t MS_Data_Pack[4];                   // Relative mouse data
+uint8_t ABS_MS_Data_Pack[ABS_MS_REPORT_LEN]; // Absolute mouse data buffer
 
 /*******************************************************************************/
 /* External Functions */
@@ -65,17 +65,10 @@ void Mouse_SendRelativeDataToUSB(uint8_t* data) {
 
 /*********************************************************************
  * @fn      Mouse_SendAbsoluteDataToUSB
- *
- * @brief   Send absolute mouse report to USB
- *
- * @param   data - 6-byte mouse report [buttons, x_low, x_high, y_low, y_high, wheel]
- *
- * @return  none
- */
+ *********************************************************************/
 void Mouse_SendAbsoluteDataToUSB(uint8_t* data) {
     Queue_Push_MouseAbs(data);
 }
-
 /*********************************************************************
  * @fn      Mouse_HandleRelativeData
  *
@@ -99,37 +92,50 @@ void Mouse_HandleRelativeData(uint8_t addr, uint8_t cmd_code, uint8_t* data, uin
 
     Mouse_SendRelativeDataToUSB(report);
 }
-
 /*********************************************************************
  * @fn      Mouse_HandleAbsoluteData
  *
- * @brief   Handle absolute mouse input from CH9329
+ * @brief   Builds an EP3 HID report and queues it for USB transmission.
+ *          The report format is selected at compile time via EP3_USE_STYLUS:
  *
- * @param   addr - Device address
- * @param   cmd_code - Command code
- * @param   data - Raw mouse data
- * @param   data_len - Length of data (should be >=7)
+ *   Without EP3_USE_STYLUS  →  6-byte Generic Desktop Mouse (absolute):
+ *     Byte 0: buttons (bit0=L, bit1=R, bit2=M)
+ *     Byte 1-2: X uint16 LE  (0~32767)
+ *     Byte 3-4: Y uint16 LE  (0~32767)
+ *     Byte 5:   wheel int8
  *
- * @return  none
- */
+ *   With EP3_USE_STYLUS  →  5-byte Digitizer Pen / Stylus:
+ *     Byte 0: bit0=Tip Switch (left btn→click), bit1=In Range (always 1)
+ *     Byte 1-2: X uint16 LE  (0~32767)
+ *     Byte 3-4: Y uint16 LE  (0~32767)
+ *
+ * @param   data - Raw CH9329 data: [reserved, buttons, x_low, x_high, y_low, y_high, wheel]
+ *********************************************************************/
 void Mouse_HandleAbsoluteData(uint8_t addr, uint8_t cmd_code, uint8_t* data, uint8_t data_len) {
-    if (data_len < 7) return; // Invalid data length
+    if (data_len < 7) return;
 
-    uint8_t report[6];
-    report[0] = data[1]; // Buttons
+    uint8_t report[ABS_MS_REPORT_LEN];
 
-    // Convert 16-bit coordinates from CH9329 to HID
-    uint16_t x = (data[3] << 8) | data[2];
-    uint16_t y = (data[5] << 8) | data[4];
-    uint16_t x_hid = Mouse_ProcessCoordinateMapping(x, 3); // Scale by 8
-    uint16_t y_hid = Mouse_ProcessCoordinateMapping(y, 3);
+    uint16_t x_hid = Mouse_ProcessCoordinateMapping((data[3] << 8) | data[2], 3);
+    uint16_t y_hid = Mouse_ProcessCoordinateMapping((data[5] << 8) | data[4], 3);
 
+#ifdef EP3_USE_STYLUS
+    /* 5-byte Digitizer Pen/Stylus report */
+    report[0] = 0x02;                        // In Range = 1, Tip = 0 (hover)
+    if (data[1] & 0x01) report[0] |= 0x01;  // left button → Tip = 1 (click)
     report[1] = x_hid & 0xFF;
     report[2] = (x_hid >> 8) & 0xFF;
     report[3] = y_hid & 0xFF;
     report[4] = (y_hid >> 8) & 0xFF;
-
-    report[5] = (int8_t)data[6]; // Wheel
+#else
+    /* 6-byte Generic Desktop Mouse absolute report */
+    report[0] = data[1] & 0x07;             // buttons: L/R/M only
+    report[1] = x_hid & 0xFF;
+    report[2] = (x_hid >> 8) & 0xFF;
+    report[3] = y_hid & 0xFF;
+    report[4] = (y_hid >> 8) & 0xFF;
+    report[5] = (int8_t)data[6];            // wheel
+#endif
 
     Mouse_SendAbsoluteDataToUSB(report);
 }
