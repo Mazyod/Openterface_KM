@@ -141,33 +141,11 @@ const uint8_t  USBD_ConfigDescriptor[] = {
     0x03,                           // baInterfaceNr(1): IF3 (AudioStreaming IN)
     0x04,                           // baInterfaceNr(2): IF4 (AudioStreaming OUT)
 
-    /* CS Interface: Input Terminal 1 — USB streaming (Host audio IN) */
+    /* CS Interface: Input Terminal 1 — Microphone (physical input on Target side) */
     0x0C,                           // bLength
     USB_DESC_TYPE_CS_INTERFACE,     // bDescriptorType
     UAC_AC_INPUT_TERMINAL,          // bDescriptorSubtype
     0x01,                           // bTerminalID 1
-    UAC_SR_B0(UAC_TERMINAL_USB_STREAMING), UAC_SR_B1(UAC_TERMINAL_USB_STREAMING),
-    0x00,                           // bAssocTerminal
-    UAC_CHANNELS,                   // bNrChannels
-    0x03, 0x00,                     // wChannelConfig: L+R
-    0x00,                           // iChannelNames
-    0x00,                           // iTerminal
-
-    /* CS Interface: Output Terminal 2 — Speaker */
-    0x09,                           // bLength
-    USB_DESC_TYPE_CS_INTERFACE,     // bDescriptorType
-    UAC_AC_OUTPUT_TERMINAL,         // bDescriptorSubtype
-    0x02,                           // bTerminalID 2
-    UAC_SR_B0(UAC_TERMINAL_SPEAKER), UAC_SR_B1(UAC_TERMINAL_SPEAKER),
-    0x00,                           // bAssocTerminal
-    0x01,                           // bSourceID (IT1)
-    0x00,                           // iTerminal
-
-    /* CS Interface: Input Terminal 3 — Microphone (stub, required by UAC topology) */
-    0x0C,                           // bLength
-    USB_DESC_TYPE_CS_INTERFACE,     // bDescriptorType
-    UAC_AC_INPUT_TERMINAL,          // bDescriptorSubtype
-    0x03,                           // bTerminalID 3
     UAC_SR_B0(UAC_TERMINAL_MICROPHONE), UAC_SR_B1(UAC_TERMINAL_MICROPHONE),
     0x00,                           // bAssocTerminal
     UAC_CHANNELS,                   // bNrChannels
@@ -175,14 +153,40 @@ const uint8_t  USBD_ConfigDescriptor[] = {
     0x00,                           // iChannelNames
     0x00,                           // iTerminal
 
-    /* CS Interface: Output Terminal 4 — USB streaming (stub) */
+    /* CS Interface: Output Terminal 2 — USB Streaming OUT (mic → Host PC capture)
+     * This terminal drives EP4 ISO IN (device→host).
+     * bTerminalLink in IF3 CS AS General points here (0x02). */
+    0x09,                           // bLength
+    USB_DESC_TYPE_CS_INTERFACE,     // bDescriptorType
+    UAC_AC_OUTPUT_TERMINAL,         // bDescriptorSubtype
+    0x02,                           // bTerminalID 2
+    UAC_SR_B0(UAC_TERMINAL_USB_STREAMING), UAC_SR_B1(UAC_TERMINAL_USB_STREAMING),
+    0x00,                           // bAssocTerminal
+    0x01,                           // bSourceID (IT1 — Microphone)
+    0x00,                           // iTerminal
+
+    /* CS Interface: Input Terminal 3 — USB Streaming IN (Host PC playback → Target spk)
+     * This terminal feeds EP5 ISO OUT (host→device).
+     * bTerminalLink in IF4 CS AS General points here (0x03). */
+    0x0C,                           // bLength
+    USB_DESC_TYPE_CS_INTERFACE,     // bDescriptorType
+    UAC_AC_INPUT_TERMINAL,          // bDescriptorSubtype
+    0x03,                           // bTerminalID 3
+    UAC_SR_B0(UAC_TERMINAL_USB_STREAMING), UAC_SR_B1(UAC_TERMINAL_USB_STREAMING),
+    0x00,                           // bAssocTerminal
+    UAC_CHANNELS,                   // bNrChannels
+    0x03, 0x00,                     // wChannelConfig: L+R
+    0x00,                           // iChannelNames
+    0x00,                           // iTerminal
+
+    /* CS Interface: Output Terminal 4 — Speaker (physical output on Target side) */
     0x09,                           // bLength
     USB_DESC_TYPE_CS_INTERFACE,     // bDescriptorType
     UAC_AC_OUTPUT_TERMINAL,         // bDescriptorSubtype
     0x04,                           // bTerminalID 4
-    UAC_SR_B0(UAC_TERMINAL_USB_STREAMING), UAC_SR_B1(UAC_TERMINAL_USB_STREAMING),
+    UAC_SR_B0(UAC_TERMINAL_SPEAKER), UAC_SR_B1(UAC_TERMINAL_SPEAKER),
     0x00,                           // bAssocTerminal
-    0x03,                           // bSourceID (IT3)
+    0x03,                           // bSourceID (IT3 — USB Streaming IN)
     0x00,                           // iTerminal
 
     /* --- IF3 AudioStreaming IN — alt0, zero-bandwidth --- */
@@ -191,9 +195,10 @@ const uint8_t  USBD_ConfigDescriptor[] = {
     /* --- IF3 AudioStreaming IN — alt1, active (EP4, 64 bytes/ms) --- */
     0x09, 0x04, 0x03, 0x01, 0x01, 0x01, 0x02, 0x00, 0x00,
 
-    /* CS Interface: AS General (linked to IT1 — USB streaming IN) */
+    /* CS Interface: AS General — linked to OT2 (USB Streaming OUT = Capture path)
+     * EP4 ISO IN sends mic audio from Target to Host PC. */
     0x07, USB_DESC_TYPE_CS_INTERFACE, UAC_AS_GENERAL,
-    0x01,                           // bTerminalLink (IT1)
+    0x02,                           // bTerminalLink (OT2 — USB Streaming OUT)
     0x00,
     UAC_SR_B0(UAC_FORMAT_PCM), UAC_SR_B1(UAC_FORMAT_PCM),
 
@@ -238,11 +243,12 @@ const uint8_t  USBD_ConfigDescriptor[] = {
     0x02,                           // bInterfaceSubClass: AudioStreaming
     0x00, 0x00,                     // bInterfaceProtocol, iInterface
 
-    /* CS Interface: AS General (linked to OT4 — USB streaming output terminal, mic→Host) */
+    /* CS Interface: AS General — linked to IT3 (USB Streaming IN = Render path)
+     * EP5 ISO OUT receives playback audio from Host PC to play on Target. */
     0x07,                           // bLength
     USB_DESC_TYPE_CS_INTERFACE,     // bDescriptorType
     UAC_AS_GENERAL,                 // bDescriptorSubtype
-    0x04,                           // bTerminalLink: OT4 (USB Streaming OUT = CAPTURE path)
+    0x03,                           // bTerminalLink: IT3 (USB Streaming IN → speaker)
     0x00,                           // bDelay
     UAC_SR_B0(UAC_FORMAT_PCM), UAC_SR_B1(UAC_FORMAT_PCM), // wFormatTag: PCM
 
