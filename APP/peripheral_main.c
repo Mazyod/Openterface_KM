@@ -18,6 +18,7 @@
 #include "ch32_temp.h"
 #include "km_ring.h"
 #include "Version_selection.h"
+#include "include/uac_handler.h"
 
 /*********************************************************************
  * GLOBAL TYPEDEFS
@@ -105,6 +106,7 @@ int main(void) {
     USBFS_RCC_Init();
     USBFS_Device_Init(ENABLE);
     USB_Sleep_Wakeup_CFG();
+    UAC_Init();
     Keyboard_Init();
     Mouse_Init();
     //ble_init(Must be placed after USB initialization)
