@@ -30,7 +30,7 @@
 #define DEF_USBD_MAX_PACK_SIZE      64                              
        
 #define USBD_SIZE_DEVICE_DESC        18
-#define USBD_SIZE_CONFIG_DESC        67
+#define USBD_SIZE_CONFIG_DESC        248  /* 232(prev)+8(CDC IAD)+8(UAC IAD) */
 #define USBD_SIZE_STRING_LANGID      4
 #define USBD_SIZE_STRING_VENDOR      14
 #define USBD_SIZE_STRING_PRODUCT     22
