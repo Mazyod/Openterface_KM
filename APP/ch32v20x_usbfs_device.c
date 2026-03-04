@@ -52,9 +52,11 @@ __attribute__ ((aligned(4))) uint8_t USBFS_EP2_Buf[ DEF_USB_EP2_FS_SIZE ];    //
 __attribute__ ((aligned(4))) uint8_t USBFS_EP3_Buf[ DEF_USB_EP3_FS_SIZE ];    //ep3_in(64)
 __attribute__ ((aligned(4))) uint8_t USBFS_EP4_Buf[ DEF_USB_EP4_FS_SIZE ];    //ep4_in(64) - Media keys
 
-/* UAC ISO endpoint buffers: ping-pong double-buffering (2 × 192 bytes each) */
-__attribute__ ((aligned(4))) uint8_t USBFS_EP5_Buf[ UAC_ISO_PACKET_SIZE * 2 ]; //ep5_in ISO (Target→Host)
-__attribute__ ((aligned(4))) uint8_t USBFS_EP6_Buf[ UAC_ISO_PACKET_SIZE * 2 ]; //ep6_out ISO (Host→Target)
+/* UAC ISO endpoint buffers: single buffer (BUF_MOD=0), 192 bytes each.
+ * NOTE: WCH USBFS BUF_MOD ping-pong hard-wires the second-half offset to
+ * 64 bytes, not TX_LEN. For 192-byte ISO packets BUF_MOD must NOT be used. */
+__attribute__ ((aligned(4))) uint8_t USBFS_EP5_Buf[ UAC_ISO_PACKET_SIZE ];     //ep5_in  ISO TX (Target→Host spk)
+__attribute__ ((aligned(4))) uint8_t USBFS_EP6_Buf[ UAC_ISO_PACKET_SIZE ];     //ep6_out ISO RX (Host mic→Target)
 
 /* USB IN Endpoint Busy Flag */
 volatile uint8_t  USBFS_Endp_Busy[ DEF_UEP_NUM ];
@@ -205,19 +207,23 @@ void USBFS_Device_Endp_Init( void )
     USBFSD->UEP4_1_MOD = USBFS_UEP1_TX_EN | USBFS_UEP4_TX_EN;
     USBFSD->UEP2_3_MOD = USBFS_UEP2_TX_EN | USBFS_UEP3_TX_EN;
 
-    /* EP5: ISO IN (Host←Target audio), EP6: ISO OUT (Host→Target audio)
-     * BUF_MOD=1: ping-pong double buffer, TX_EN for EP5, RX_EN for EP6 */
-    USBFSD->UEP5_6_MOD = USBFS_UEP5_TX_EN | USBFS_UEP5_BUF_MOD |
-                          USBFS_UEP6_RX_EN | USBFS_UEP6_BUF_MOD;
+    /* EP5: ISO IN  (Target→Host audio).  Single buffer (BUF_MOD=0).
+     * EP6: ISO OUT (Host→Target audio).  Single buffer (BUF_MOD=0).
+     *
+     * NOTE: WCH USBFS BUF_MOD ping-pong hard-wires the second-half offset to
+     * 64 bytes regardless of TX_LEN.  For 192-byte ISO packets this would alias
+     * into the wrong memory, so we must NOT use BUF_MOD for large ISO packets.
+     * Software double-buffering is handled in uac_handler.c instead. */
+    USBFSD->UEP5_6_MOD = USBFS_UEP5_TX_EN | USBFS_UEP6_RX_EN;
 
     USBFSD->UEP0_DMA = (uint32_t)USBFS_EP0_Buf;
     USBFSD->UEP1_DMA = (uint32_t)USBFS_EP1_Buf;
     USBFSD->UEP2_DMA = (uint32_t)USBFS_EP2_Buf;
     USBFSD->UEP3_DMA = (uint32_t)USBFS_EP3_Buf;
     USBFSD->UEP4_DMA = (uint32_t)USBFS_EP4_Buf;
-    /* EP5/EP6 DMA: ping-pong base address; hardware alternates between
-     * [base] and [base+UAC_ISO_PACKET_SIZE] each frame */
+    /* EP5 DMA: single 192-byte TX buffer; software swaps DMA pointer each frame */
     USBFSD->UEP5_DMA = (uint32_t)USBFS_EP5_Buf;
+    /* EP6 DMA: single 192-byte RX buffer; copied out in UAC_USBFS_EP6_RxDone  */
     USBFSD->UEP6_DMA = (uint32_t)USBFS_EP6_Buf;
 
     USBFSD->UEP0_RX_CTRL = USBFS_UEP_R_RES_ACK;
@@ -229,8 +235,8 @@ void USBFS_Device_Endp_Init( void )
     /* EP5 ISO IN: NAK until alt-setting 1 activated; TX_LEN=0 initially */
     USBFSD->UEP5_TX_LEN  = 0;
     USBFSD->UEP5_TX_CTRL = USBFS_UEP_T_RES_NAK;
-    /* EP6 ISO OUT: ACK to receive frames once alt-setting 1 activated */
-    USBFSD->UEP6_RX_CTRL = USBFS_UEP_R_RES_ACK;
+    /* EP6 ISO OUT: NAK until host selects alt-setting 1 (USBFS IF6 alt=1) */
+    USBFSD->UEP6_RX_CTRL = USBFS_UEP_R_RES_NAK;
 
     /* Clear End-points Busy Status */
     for(uint8_t i=0; i<DEF_UEP_NUM; i++ )
@@ -482,7 +488,8 @@ void USBFS_IRQHandler( void )
                         USBFS_Endp_Busy[ DEF_UEP4 ] = 0;
                         break;
 
-                    /* end-point 5 ISO IN complete: load next audio frame */
+                    /* end-point 5 ISO IN complete.
+                     * WCH USBFS reports ISO IN completion as TOKEN_IN. */
                     case USBFS_UIS_TOKEN_IN | DEF_UEP5:
                         UAC_USBFS_EP5_TxDone();
                         break;
@@ -956,8 +963,12 @@ void USBFS_IRQHandler( void )
                                 g_uac_state.usbfs_as_in_alt = (uint8_t)(USBFS_SetupReqValue & 0xFF);
                                 if( g_uac_state.usbfs_as_in_alt == 1 )
                                 {
+                                    /* Pre-fill both ping-pong halves so the very first
+                                     * SOF fires a valid frame, not silence/garbage. */
+                                    UAC_USBFS_EP5_Preload();
                                     USBFSD->UEP5_TX_LEN  = UAC_ISO_PACKET_SIZE;
-                                    USBFSD->UEP5_TX_CTRL = ( USBFSD->UEP5_TX_CTRL & ~USBFS_UEP_T_RES_MASK ) | USBFS_UEP_T_RES_ACK;
+                                    /* ISO IN: T_RES_NONE — host never sends ACK for isochronous */
+                                    USBFSD->UEP5_TX_CTRL = ( USBFSD->UEP5_TX_CTRL & ~USBFS_UEP_T_RES_MASK ) | USBFS_UEP_T_RES_NONE;
                                 }
                                 else
                                 {
@@ -971,7 +982,8 @@ void USBFS_IRQHandler( void )
                                 g_uac_state.usbfs_as_out_alt = (uint8_t)(USBFS_SetupReqValue & 0xFF);
                                 if( g_uac_state.usbfs_as_out_alt == 1 )
                                 {
-                                    USBFSD->UEP6_RX_CTRL = ( USBFSD->UEP6_RX_CTRL & ~USBFS_UEP_R_RES_MASK ) | USBFS_UEP_R_RES_ACK;
+                                    /* ISO OUT: R_RES_NONE — device never sends NAK/ACK for isochronous */
+                                    USBFSD->UEP6_RX_CTRL = ( USBFSD->UEP6_RX_CTRL & ~USBFS_UEP_R_RES_MASK ) | USBFS_UEP_R_RES_NONE;
                                 }
                                 else
                                 {

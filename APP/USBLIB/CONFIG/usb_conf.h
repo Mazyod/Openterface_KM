@@ -33,8 +33,8 @@
  *   EP1 TX:  0x0C0~0x0DF  (32B)  CDC interrupt IN
  *   EP2 RX:  0x0E0~0x0FF  (32B)  CDC bulk OUT  [max packet 32B]
  *   EP3 TX:  0x100~0x11F  (32B)  CDC bulk IN   [max packet 32B]
- *   EP4 TX:  0x120~0x15F  (64B)  UAC ISO IN  (Host→Target audio)
- *   EP5 RX:  0x160~0x19F  (64B)  UAC ISO OUT (Target→Host audio)
+ *   EP4 TX:  0x120~0x15F  (64B)  UAC ISO IN  (MCU→Host, mic path)
+ *   EP5 RX:  0x160~0x19F  (64B)  UAC ISO OUT (Host→MCU, spk path)
  *   Total:   0x1A0 = 416B < 512B ✓
  * CDC bulk bandwidth: 32B/packet × 1000 pkt/s = 32 KB/s > 115200bps (11.5 KB/s) ✓ */
 #define ENDP1_TXADDR        (0xC0)                          /* 32B, CDC int   */

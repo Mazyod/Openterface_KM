@@ -18,6 +18,7 @@
 #include "UART.h"
 #include "ch32v20x_usb.h"
 #include "../../include/uac_desc.h"
+#include "../../include/uac_handler.h"
 
 uint8_t Request = 0;
 
@@ -208,7 +209,8 @@ void USBD_SetInterface_Impl(void)
     uint8_t iface = pInformation->USBwIndex0;
     uint8_t alt   = pInformation->USBwValue0;
 
-    /* IF3 = AudioStreaming IN  (EP4 ISO IN, single-buffer, 64 B)  */
+    /* IF3 = AudioStreaming IN (EP4 ISO IN, 0x84 — Target mic → Host PC)
+     * Host opens this interface to receive microphone audio.           */
     if (iface == 3)
     {
         if (alt == 1)
@@ -216,7 +218,7 @@ void USBD_SetInterface_Impl(void)
             /* Prime EP4 with a silence frame so the first ISO IN token
              * from Windows gets a valid (zero) payload immediately.
              * Without this the endpoint never produces its first packet
-             * and Windows does not register the device in the audio mixer. */
+             * and Windows does not show the device in the audio mixer.  */
             static const uint8_t silence[64] = {0};
             UserToPMABufferCopy((uint8_t*)silence, ENDP4_ISO_TXADDR, 64);
             SetEPTxCount(ENDP4, 64);
@@ -229,7 +231,8 @@ void USBD_SetInterface_Impl(void)
         }
         g_uac_state.usbd_as_in_alt = alt;
     }
-    /* IF4 = AudioStreaming OUT (EP5 ISO OUT, single-buffer, 64 B) */
+    /* IF4 = AudioStreaming OUT (EP5 ISO OUT, 0x05 — Host PC → Target spk)
+     * Host opens this interface to send playback audio.               */
     else if (iface == 4)
     {
         if (alt == 1)
@@ -310,7 +313,11 @@ void USBD_Reset(void)
   _ClearDTOG_TX(ENDP5);
   SetEPRxStatus(ENDP5, EP_RX_DIS);  /* disabled until host selects alt=1 */
   SetEPTxStatus(ENDP5, EP_TX_DIS);
-  
+
+  /* Clear UAC bridge buffers and state flags so stale audio data from a
+   * previous session cannot be forwarded after re-enumeration.          */
+  UAC_Init();
+
   SetDeviceAddress(0);
 
   USBD_Endp3_Busy = 0;
@@ -382,17 +389,21 @@ uint8_t *USBD_GetStringDescriptor(uint16_t Length)
  */
 RESULT USBD_Get_Interface_Setting(uint8_t Interface, uint8_t AlternateSetting)
 {
-  /* AudioStreaming interfaces (IF2=AC, IF3=AS_IN, IF4=AS_OUT) support alt 0 and 1.
-   * CDC interfaces (IF0=comm, IF1=data) support alt 0 only. */
-  if (Interface <= 1)
+  /* Interface layout (5 interfaces, IF0-IF4):
+   *   IF0: CDC Control    — alt 0 only
+   *   IF1: CDC Data       — alt 0 only
+   *   IF2: AudioControl   — alt 0 only (no bandwidth variant)
+   *   IF3: AS IN  (EP4 ISO IN)  — alt 0 (zero-bw) and alt 1 (active)
+   *   IF4: AS OUT (EP5 ISO OUT) — alt 0 (zero-bw) and alt 1 (active) */
+  if (Interface <= 2)
   {
-    /* CDC interfaces: only alt 0 */
+    /* CDC + AudioControl: only alt 0 */
     if (AlternateSetting > 0)
       return USB_UNSUPPORT;
   }
   else if (Interface <= 4)
   {
-    /* UAC interfaces: alt 0 (zero-bandwidth) and alt 1 (active) */
+    /* AudioStreaming: alt 0 (zero-bandwidth) and alt 1 (active) */
     if (AlternateSetting > 1)
       return USB_UNSUPPORT;
   }
