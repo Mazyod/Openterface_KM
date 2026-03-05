@@ -231,19 +231,26 @@ void USBD_SetInterface_Impl(void)
         }
         g_uac_state.usbd_as_in_alt = alt;
     }
-    /* IF4 = AudioStreaming OUT (EP5 ISO OUT, 0x05 — Host PC → Target spk)
-     * Host opens this interface to send playback audio.               */
+    /* IF4 = AudioStreaming OUT (EP5 ISO OUT, 0x05 — Host PC mic → MCU bridge)
+     * Host opens this interface to send microphone audio for forwarding to
+     * the Target PC speaker via USBFS EP5 IN.                           */
     else if (iface == 4)
     {
         if (alt == 1)
         {
-            /* Activate EP5 ISO OUT: arm for reception */
-            SetEPRxCount(ENDP5, 64);
-            SetEPRxStatus(ENDP5, EP_RX_VALID);
+            /* For ISO OUT endpoints the STAT_RX field acts as SW_BUF, not as
+             * a NAK/VALID control.  The endpoint was left VALID in USBD_Reset.
+             * All we need here is to ensure DTOG_RX=0 so every packet lands at
+             * the known single-buffer address ENDP5_ISO_RXADDR.
+             * Do NOT call SetEPRxStatus here — that would toggle SW_BUF and
+             * make alternating packets land at an uninitialised PMA address. */
+            _ClearDTOG_RX(ENDP5);
         }
         else
         {
-            SetEPRxStatus(ENDP5, EP_RX_DIS);
+            /* alt=0: host stops streaming.  Reset DTOG so the next activation
+             * always starts clean at ENDP5_ISO_RXADDR. */
+            _ClearDTOG_RX(ENDP5);
         }
         g_uac_state.usbd_as_out_alt = alt;
     }
@@ -305,13 +312,21 @@ void USBD_Reset(void)
   SetEPTxStatus(ENDP4, EP_TX_DIS);
   SetEPRxStatus(ENDP4, EP_RX_DIS);
 
-  /* EP5: UAC ISO OUT (Target PC mic → Host), single-buffer 64 B, disabled until alt=1 */
+  /* EP5: UAC ISO OUT (Host PC mic → MCU bridge).
+   * ISO OUT endpoints on CH32/STM32-compatible USBD *always* use double-buffer
+   * hardware: DTOG_RX=0 → packet lands at buf0 (EPTxAddr slot in BTABLE),
+   *           DTOG_RX=1 → packet lands at buf1 (EPRxAddr slot in BTABLE).
+   * We allocate both PMA buffers and read from the correct one in the callback
+   * by checking EP_DTOG_RX at the time of the CTR interrupt.               */
   SetEPType(ENDP5, EP_ISOCHRONOUS);
-  SetEPRxAddr(ENDP5, ENDP5_ISO_RXADDR);
-  SetEPRxCount(ENDP5, 64);
+  /* buf0 address goes into the TX-addr BTABLE slot (DTOG_RX=0 path) */
+  SetEPTxAddr(ENDP5, ENDP5_ISO_RXADDR0);
+  /* buf1 address goes into the RX-addr BTABLE slot (DTOG_RX=1 path) */
+  SetEPRxAddr(ENDP5, ENDP5_ISO_RXADDR1);
+  SetEPRxCount(ENDP5, UAC_USBD_ISO_PACKET_SIZE);
   _ClearDTOG_RX(ENDP5);
   _ClearDTOG_TX(ENDP5);
-  SetEPRxStatus(ENDP5, EP_RX_DIS);  /* disabled until host selects alt=1 */
+  SetEPRxStatus(ENDP5, EP_RX_VALID);
   SetEPTxStatus(ENDP5, EP_TX_DIS);
 
   /* Clear UAC bridge buffers and state flags so stale audio data from a
