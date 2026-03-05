@@ -34,14 +34,21 @@
  *   EP2 RX:  0x0E0~0x0FF  (32B)  CDC bulk OUT  [max packet 32B]
  *   EP3 TX:  0x100~0x11F  (32B)  CDC bulk IN   [max packet 32B]
  *   EP4 TX:  0x120~0x15F  (64B)  UAC ISO IN  (MCU→Host, mic path)
- *   EP5 RX:  0x160~0x19F  (64B)  UAC ISO OUT (Host→MCU, spk path)
- *   Total:   0x1A0 = 416B < 512B ✓
- * CDC bulk bandwidth: 32B/packet × 1000 pkt/s = 32 KB/s > 115200bps (11.5 KB/s) ✓ */
+ *   EP5 RX0: 0x160~0x19F  (64B)  UAC ISO OUT buf0 (DTOG_RX=0)
+ *   EP5 RX1: 0x1A0~0x1DF  (64B)  UAC ISO OUT buf1 (DTOG_RX=1)
+ *   Total:   0x1E0 = 480B < 512B ✓
+ * CDC bulk bandwidth: 32B/packet × 1000 pkt/s = 32 KB/s > 115200bps (11.5 KB/s) ✓
+ * ISO OUT must use double-buffer (hardware requirement for EP_ISOCHRONOUS):
+ *   DTOG_RX=0 → packet lands at ENDP5_ISO_RXADDR0 (buf0, via EPTxAddr slot)
+ *   DTOG_RX=1 → packet lands at ENDP5_ISO_RXADDR1 (buf1, via EPRxAddr slot) */
 #define ENDP1_TXADDR        (0xC0)                          /* 32B, CDC int   */
 #define ENDP2_RXADDR        (0xE0)                          /* 32B, CDC bulk  */
 #define ENDP3_TXADDR        (0x100)                         /* 32B, CDC bulk  */
 #define ENDP4_ISO_TXADDR    (0x120)                         /* 64B, UAC IN    */
-#define ENDP5_ISO_RXADDR    (0x160)                         /* 64B, UAC OUT   */
+#define ENDP5_ISO_RXADDR0   (0x160)                         /* 64B, UAC OUT buf0 (DTOG_RX=0) */
+#define ENDP5_ISO_RXADDR1   (0x1A0)                         /* 64B, UAC OUT buf1 (DTOG_RX=1) */
+/* keep the old name pointing at buf1 so existing references still compile */
+#define ENDP5_ISO_RXADDR    ENDP5_ISO_RXADDR1
 
 
 /* ISTR events */
