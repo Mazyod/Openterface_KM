@@ -21,8 +21,7 @@
 #define USBD_GetConfiguration          NOP_Process
 // #define USBD_SetConfiguration          NOP_Process
 #define USBD_GetInterface              NOP_Process
-// #define USBD_SetInterface              NOP_Process  /* implemented as USBD_SetInterface_Impl */
-#define USBD_SetInterface              USBD_SetInterface_Impl
+#define USBD_SetInterface              NOP_Process
 #define USBD_GetStatus                 NOP_Process
 // #define USBD_ClearFeature              NOP_Process
 #define USBD_SetEndPointFeature        NOP_Process
@@ -39,7 +38,6 @@ void USBD_SetDeviceFeature (void);
 void USBD_ClearFeature (void);
 void USBD_Status_In (void);
 void USBD_Status_Out (void);
-void USBD_SetInterface_Impl(void);
 RESULT USBD_Data_Setup(uint8_t);
 RESULT USBD_NoData_Setup(uint8_t);
 RESULT USBD_Get_Interface_Setting(uint8_t Interface, uint8_t AlternateSetting);

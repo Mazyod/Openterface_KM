@@ -57,19 +57,14 @@ void PMAToUserBufferCopy(uint8_t *pbUsrBuf, uint16_t wPMABufAddr, uint16_t wNByt
   uint32_t n = (wNBytes + 1) >> 1;
   uint32_t i;
   uint32_t *pdwVal;
-
-  /* PMA is 16-bit wide, mapped into 32-bit address space:
-   * each 16-bit PMA word occupies one 32-bit slot (upper 16 bits unused).
-   * wPMABufAddr is a byte offset into PMA; multiply by 2 to get the
-   * 32-bit-spaced address.  Read the low 16 bits of each 32-bit slot.   */
+	
   pdwVal = (uint32_t *)(wPMABufAddr * 2 + PMAAddr);
-
+	
   for (i = n; i != 0; i--)
   {
-    uint16_t val = (uint16_t)(*pdwVal++);  /* read 16-bit PMA word from 32-bit slot */
-    *pbUsrBuf++ = (uint8_t)(val & 0xFFu);  /* low byte  */
-    *pbUsrBuf++ = (uint8_t)(val >> 8u);    /* high byte */
-  }
+    *(uint16_t*)pbUsrBuf++ = *pdwVal++;
+    pbUsrBuf++;
+  } 
 }
 
 
