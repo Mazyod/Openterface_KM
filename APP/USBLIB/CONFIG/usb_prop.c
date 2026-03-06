@@ -17,8 +17,6 @@
 #include "hw_config.h"
 #include "UART.h"
 #include "ch32v20x_usb.h"
-#include "../../include/uac_desc.h"
-#include "../../include/uac_handler.h"
 
 uint8_t Request = 0;
 
@@ -194,69 +192,6 @@ void USBD_init(void)
 }
 
 /*******************************************************************************
- * @fn      USBD_SetInterface_Impl
- *
- * @brief   Called by the USB stack when a SET_INTERFACE request completes.
- *          Enables or disables EP3 (ISO IN) and EP4 (ISO OUT) depending on
- *          whether the host selected alternate setting 1 (active) or 0 (idle).
- *          pInformation->USBwIndex0  = interface number
- *          pInformation->USBwValue0  = alternate setting
- *
- * @return  None.
- */
-void USBD_SetInterface_Impl(void)
-{
-    uint8_t iface = pInformation->USBwIndex0;
-    uint8_t alt   = pInformation->USBwValue0;
-
-    /* IF3 = AudioStreaming IN (EP4 ISO IN, 0x84 — Target mic → Host PC)
-     * Host opens this interface to receive microphone audio.           */
-    if (iface == 3)
-    {
-        if (alt == 1)
-        {
-            /* Prime EP4 with a silence frame so the first ISO IN token
-             * from Windows gets a valid (zero) payload immediately.
-             * Without this the endpoint never produces its first packet
-             * and Windows does not show the device in the audio mixer.  */
-            static const uint8_t silence[64] = {0};
-            UserToPMABufferCopy((uint8_t*)silence, ENDP4_ISO_TXADDR, 64);
-            SetEPTxCount(ENDP4, 64);
-            SetEPTxStatus(ENDP4, EP_TX_VALID);
-        }
-        else
-        {
-            SetEPTxCount(ENDP4, 0);
-            SetEPTxStatus(ENDP4, EP_TX_DIS);
-        }
-        g_uac_state.usbd_as_in_alt = alt;
-    }
-    /* IF4 = AudioStreaming OUT (EP5 ISO OUT, 0x05 — Host PC mic → MCU bridge)
-     * Host opens this interface to send microphone audio for forwarding to
-     * the Target PC speaker via USBFS EP5 IN.                           */
-    else if (iface == 4)
-    {
-        if (alt == 1)
-        {
-            /* For ISO OUT endpoints the STAT_RX field acts as SW_BUF, not as
-             * a NAK/VALID control.  The endpoint was left VALID in USBD_Reset.
-             * All we need here is to ensure DTOG_RX=0 so every packet lands at
-             * the known single-buffer address ENDP5_ISO_RXADDR.
-             * Do NOT call SetEPRxStatus here — that would toggle SW_BUF and
-             * make alternating packets land at an uninitialised PMA address. */
-            _ClearDTOG_RX(ENDP5);
-        }
-        else
-        {
-            /* alt=0: host stops streaming.  Reset DTOG so the next activation
-             * always starts clean at ENDP5_ISO_RXADDR. */
-            _ClearDTOG_RX(ENDP5);
-        }
-        g_uac_state.usbd_as_out_alt = alt;
-    }
-}
-
-/*******************************************************************************
  * @fn      USBD_Reset
  *
  * @brief   USBD reset routine
@@ -291,7 +226,7 @@ void USBD_Reset(void)
   SetEPType(ENDP2, EP_BULK);
   SetEPTxStatus(ENDP2, EP_TX_DIS);
   SetEPRxAddr(ENDP2, ENDP2_RXADDR);
-  SetEPRxCount(ENDP2, 32);          /* reduced from 64 to free PMA for EP5 UAC OUT */
+  SetEPRxCount(ENDP2, DEF_USBD_MAX_PACK_SIZE);
   SetEPRxStatus(ENDP2,EP_RX_VALID);
   _ClearDTOG_RX(ENDP2);
   _ClearDTOG_TX(ENDP2);
@@ -302,37 +237,7 @@ void USBD_Reset(void)
   SetEPRxStatus(ENDP3, EP_RX_DIS);
   _ClearDTOG_TX(ENDP3);
   _ClearDTOG_RX(ENDP3);
-
-  /* EP4: UAC ISO IN (Host audio → Target PC), single-buffer 64 B, disabled until alt=1 */
-  SetEPType(ENDP4, EP_ISOCHRONOUS);
-  SetEPTxAddr(ENDP4, ENDP4_ISO_TXADDR);
-  SetEPTxCount(ENDP4, 0);
-  _ClearDTOG_RX(ENDP4);
-  _ClearDTOG_TX(ENDP4);
-  SetEPTxStatus(ENDP4, EP_TX_DIS);
-  SetEPRxStatus(ENDP4, EP_RX_DIS);
-
-  /* EP5: UAC ISO OUT (Host PC mic → MCU bridge).
-   * ISO OUT endpoints on CH32/STM32-compatible USBD *always* use double-buffer
-   * hardware: DTOG_RX=0 → packet lands at buf0 (EPTxAddr slot in BTABLE),
-   *           DTOG_RX=1 → packet lands at buf1 (EPRxAddr slot in BTABLE).
-   * We allocate both PMA buffers and read from the correct one in the callback
-   * by checking EP_DTOG_RX at the time of the CTR interrupt.               */
-  SetEPType(ENDP5, EP_ISOCHRONOUS);
-  /* buf0 address goes into the TX-addr BTABLE slot (DTOG_RX=0 path) */
-  SetEPTxAddr(ENDP5, ENDP5_ISO_RXADDR0);
-  /* buf1 address goes into the RX-addr BTABLE slot (DTOG_RX=1 path) */
-  SetEPRxAddr(ENDP5, ENDP5_ISO_RXADDR1);
-  SetEPRxCount(ENDP5, UAC_USBD_ISO_PACKET_SIZE);
-  _ClearDTOG_RX(ENDP5);
-  _ClearDTOG_TX(ENDP5);
-  SetEPRxStatus(ENDP5, EP_RX_VALID);
-  SetEPTxStatus(ENDP5, EP_TX_DIS);
-
-  /* Clear UAC bridge buffers and state flags so stale audio data from a
-   * previous session cannot be forwarded after re-enumeration.          */
-  UAC_Init();
-
+  
   SetDeviceAddress(0);
 
   USBD_Endp3_Busy = 0;
@@ -404,29 +309,15 @@ uint8_t *USBD_GetStringDescriptor(uint16_t Length)
  */
 RESULT USBD_Get_Interface_Setting(uint8_t Interface, uint8_t AlternateSetting)
 {
-  /* Interface layout (5 interfaces, IF0-IF4):
-   *   IF0: CDC Control    — alt 0 only
-   *   IF1: CDC Data       — alt 0 only
-   *   IF2: AudioControl   — alt 0 only (no bandwidth variant)
-   *   IF3: AS IN  (EP4 ISO IN)  — alt 0 (zero-bw) and alt 1 (active)
-   *   IF4: AS OUT (EP5 ISO OUT) — alt 0 (zero-bw) and alt 1 (active) */
-  if (Interface <= 2)
-  {
-    /* CDC + AudioControl: only alt 0 */
-    if (AlternateSetting > 0)
-      return USB_UNSUPPORT;
-  }
-  else if (Interface <= 4)
-  {
-    /* AudioStreaming: alt 0 (zero-bandwidth) and alt 1 (active) */
-    if (AlternateSetting > 1)
-      return USB_UNSUPPORT;
-  }
-  else
+  if (AlternateSetting > 0)
   {
     return USB_UNSUPPORT;
   }
-
+  else if (Interface > 1)
+  {
+    return USB_UNSUPPORT;
+  }
+	
   return USB_SUCCESS;
 }
 

@@ -13,7 +13,6 @@
 #include "usb_prop.h"
 #include "usb_desc.h"
 #include "usb_istr.h"
-#include "usb_int.h"
 #include "hw_config.h"
 #include "usb_pwr.h"  
 #include "string.h"	
@@ -22,7 +21,6 @@
 
 void USBWakeUp_IRQHandler(void) __attribute__((interrupt("WCH-Interrupt-fast")));
 void USB_LP_CAN1_RX0_IRQHandler(void) __attribute__((interrupt("WCH-Interrupt-fast")));
-void USB_HP_CAN1_TX_IRQHandler(void) __attribute__((interrupt("WCH-Interrupt-fast")));
 
 /*******************************************************************************
  * @fn        USBWakeUp_IRQHandler
@@ -47,20 +45,6 @@ void USB_LP_CAN1_RX0_IRQHandler(void)
 {
 	USB_Istr();
 } 
-
-/*******************************************************************************
- * @fn           USB_HP_CAN1_TX_IRQHandler
- *
- * @brief        USB high-priority interrupt — services ISO endpoints (EP4, EP5).
- *               ISO OUT (EP5) and ISO IN (EP4) generate high-priority CTR events
- *               that must be handled here via CTR_HP(), not in the LP handler.
- *
- * @return None
- */
-void USB_HP_CAN1_TX_IRQHandler(void)
-{
-    CTR_HP();
-}
 
 /*******************************************************************************
  * @fn        Set_USBConfig
@@ -143,14 +127,6 @@ void USB_Interrupts_Config(void)
 
 	NVIC_InitStructure.NVIC_IRQChannel = USB_LP_CAN1_RX0_IRQn;	
 	NVIC_InitStructure.NVIC_IRQChannelPreemptionPriority = 1;
-	NVIC_InitStructure.NVIC_IRQChannelSubPriority = 0;
-	NVIC_InitStructure.NVIC_IRQChannelCmd = ENABLE;
-	NVIC_Init(&NVIC_InitStructure);
-
-	/* High-priority USB interrupt: services ISO endpoints (EP4 IN, EP5 OUT).
-	 * Must be higher priority than LP so ISO CTR events are not delayed.   */
-	NVIC_InitStructure.NVIC_IRQChannel = USB_HP_CAN1_TX_IRQn;
-	NVIC_InitStructure.NVIC_IRQChannelPreemptionPriority = 0;
 	NVIC_InitStructure.NVIC_IRQChannelSubPriority = 0;
 	NVIC_InitStructure.NVIC_IRQChannelCmd = ENABLE;
 	NVIC_Init(&NVIC_InitStructure);

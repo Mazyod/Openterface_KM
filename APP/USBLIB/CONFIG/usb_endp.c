@@ -17,7 +17,6 @@
 #include "usb_pwr.h"
 #include "usb_prop.h"
 #include "UART.h"
-#include "../../include/uac_handler.h"
 
 uint8_t USBD_Endp3_Busy;
 uint16_t USB_Rx_Cnt=0; 
@@ -77,38 +76,6 @@ void EP3_IN_Callback (void)
 	USBD_Endp3_Busy = 0;
 	Uart.USB_Up_IngFlag = 0x00;
 }
-
-/*********************************************************************
- * @fn      EP4_IN_Callback
- *
- * @brief  Endpoint 4 IN (UAC ISO IN — Host audio → Target PC).
- *         Called when the Target PC consumed one ISO frame.
- *
- * @return  none
- */
-void EP4_IN_Callback(void)
-{
-    UAC_USBD_EP3_TxDone();   /* loads next H→T frame into EP4 PMA buffer */
-}
-
-/*********************************************************************
- * @fn      EP5_OUT_Callback
- *
- * @brief   Endpoint 5 OUT — ISO OUT packet received from host.
- *          Called by the USB interrupt when a 1 ms ISO OUT token completes
- *          on EP5 (Target PC microphone → Host PC path).
- *          Reads the received byte-count from the EP5 status register and
- *          forwards it to UAC_USBD_EP4_RxDone() which copies the audio data
- *          from PMA into the ping-pong buffer and re-arms EP5.
- *
- * @return  none
- */
-void EP5_OUT_Callback(void)
-{
-    uint16_t len = GetEPRxCount(ENDP5);
-    UAC_USBD_EP4_RxDone(len);
-}
-
 
 /*********************************************************************
  * @fn      USBD_ENDPx_DataUp
