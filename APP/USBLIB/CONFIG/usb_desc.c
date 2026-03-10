@@ -9,15 +9,16 @@
 *******************************************************************************/
 #include "usb_lib.h"
 #include "usb_desc.h"
+#include "../../include/uac_desc.h"
 
 /* USB Device Descriptors */
 const uint8_t  USBD_DeviceDescriptor[] = { 
     USBD_SIZE_DEVICE_DESC,           // bLength
     0x01,                           // bDescriptorType
     0x10, 0x01,                     // bcdUSB
-    0x02,                           // bDeviceClass (CDC)
-    0x00,                           // bDeviceSubClass
-    0x00,                           // bDeviceProtocol
+    0xEF,                           // bDeviceClass: Miscellaneous (required for IAD)
+    0x02,                           // bDeviceSubClass: Common Class
+    0x01,                           // bDeviceProtocol: Interface Association Descriptor
     DEF_USBD_UEP0_SIZE,             // bMaxPacketSize0
     0x86, 0x1A,                     // idVendor
     0x0C, 0xFE,                     // idProduct
@@ -34,11 +35,21 @@ const uint8_t  USBD_ConfigDescriptor[] = {
     0x09,                           // bLength
     0x02,                           // bDescriptorType
     USBD_SIZE_CONFIG_DESC & 0xFF, USBD_SIZE_CONFIG_DESC >> 8, // wTotalLength
-    0x02,                           // bNumInterfaces
+    0x05,                           // bNumInterfaces: 2(CDC) + 1(AC) + 2(AS) = 5
     0x01,                           // bConfigurationValue
     0x00,                           // iConfiguration
     0x80,                           // bmAttributes: Bus Powered; Remote Wakeup
     0x32,                           // MaxPower: 100mA
+
+    /* IAD: CDC (IF0=comm + IF1=data) */
+    0x08,                           // bLength
+    0x0B,                           // bDescriptorType (IAD)
+    0x00,                           // bFirstInterface: 0
+    0x02,                           // bInterfaceCount: 2 (IF0+IF1)
+    0x02,                           // bFunctionClass: Communications
+    0x02,                           // bFunctionSubClass: Abstract Control Model
+    0x01,                           // bFunctionProtocol: AT Commands
+    0x00,                           // iFunction
 
     /* Interface 0 (CDC) descriptor */
     0x09,                           // bLength
@@ -76,21 +87,192 @@ const uint8_t  USBD_ConfigDescriptor[] = {
     0x00,                           // bInterfaceProtocol
     0x00,                           // iInterface (String Index)
 
-    /* Endpoint descriptor */
+    /* Endpoint descriptor — CDC bulk OUT */
     0x07,                           // bLength
     0x05,                           // bDescriptorType (Endpoint)
     0x02,                           // bEndpointAddress (OUT/H2D)
     0x02,                           // bmAttributes (Bulk)
-    0x40, 0x00,                     // wMaxPacketSize 64
-    0x00,                           // bInterval 0 (unit depends on device speed)
+    0x20, 0x00,                     // wMaxPacketSize 32 (reduced to free PMA for UAC EP5)
+    0x00,                           // bInterval 0
 
-    /* Endpoint descriptor */
+    /* Endpoint descriptor — CDC bulk IN */
     0x07,                           // bLength
     0x05,                           // bDescriptorType (Endpoint)
     0x83,                           // bEndpointAddress (IN/D2H)
     0x02,                           // bmAttributes (Bulk)
-    0x40, 0x00,                     // wMaxPacketSize 64
-    0x00,                           // bInterval 0 (unit depends on device speed)
+    0x20, 0x00,                     // wMaxPacketSize 32 (reduced to free PMA for UAC EP5)
+    0x00,                           // bInterval 0
+
+    /* ====== UAC 1.0 — USBD (Target) side ================================
+     * IF2: AudioControl (1 streaming interface: IF3 only)
+     * IF3: AudioStreaming IN — EP4 ISO IN (Host audio → Target, 64 B/ms)
+     *   Single-buffer ISO, 64 bytes = max packet at FS, ~2ch@16kHz or 1ch@32kHz
+     *   Constrained by USBD PMA: 512 B total, 448 B already used by EP0-3
+     * =================================================================== */
+
+    /* IAD: UAC (IF2=AC + IF3=AS_IN + IF4=AS_OUT) */
+    0x08,                           // bLength
+    0x0B,                           // bDescriptorType (IAD)
+    0x02,                           // bFirstInterface: 2
+    0x03,                           // bInterfaceCount: 3 (IF2+IF3+IF4)
+    0x01,                           // bFunctionClass: Audio
+    0x00,                           // bFunctionSubClass
+    0x00,                           // bFunctionProtocol
+    0x00,                           // iFunction
+
+    /* --- Interface Descriptor: AudioControl (IF2) --- */
+    0x09,                           // bLength
+    0x04,                           // bDescriptorType (Interface)
+    0x02,                           // bInterfaceNumber 2
+    0x00,                           // bAlternateSetting 0
+    0x00,                           // bNumEndpoints 0
+    0x01,                           // bInterfaceClass (Audio)
+    0x01,                           // bInterfaceSubClass (AudioControl)
+    0x00,                           // bInterfaceProtocol
+    0x00,                           // iInterface
+
+    /* CS Interface: AC Header — 2 streaming interfaces (IF3 IN, IF4 OUT) */
+    0x0A,                           // bLength (8 fixed + 2 baInterfaceNr = 10)
+    USB_DESC_TYPE_CS_INTERFACE,     // bDescriptorType
+    UAC_AC_HEADER,                  // bDescriptorSubtype
+    0x00, 0x01,                     // bcdADC 1.00
+    0x34, 0x00,                     // wTotalLength: 10+12+9+12+9 = 52 = 0x34
+    0x02,                           // bInCollection: 2 streaming interfaces
+    0x03,                           // baInterfaceNr(1): IF3 (AudioStreaming IN)
+    0x04,                           // baInterfaceNr(2): IF4 (AudioStreaming OUT)
+
+    /* CS Interface: Input Terminal 1 — Microphone (physical input on Target side) */
+    0x0C,                           // bLength
+    USB_DESC_TYPE_CS_INTERFACE,     // bDescriptorType
+    UAC_AC_INPUT_TERMINAL,          // bDescriptorSubtype
+    0x01,                           // bTerminalID 1
+    UAC_SR_B0(UAC_TERMINAL_MICROPHONE), UAC_SR_B1(UAC_TERMINAL_MICROPHONE),
+    0x00,                           // bAssocTerminal
+    UAC_CHANNELS,                   // bNrChannels
+    0x03, 0x00,                     // wChannelConfig: L+R
+    0x00,                           // iChannelNames
+    0x00,                           // iTerminal
+
+    /* CS Interface: Output Terminal 2 — USB Streaming OUT (mic → Host PC capture)
+     * This terminal drives EP4 ISO IN (device→host).
+     * bTerminalLink in IF3 CS AS General points here (0x02). */
+    0x09,                           // bLength
+    USB_DESC_TYPE_CS_INTERFACE,     // bDescriptorType
+    UAC_AC_OUTPUT_TERMINAL,         // bDescriptorSubtype
+    0x02,                           // bTerminalID 2
+    UAC_SR_B0(UAC_TERMINAL_USB_STREAMING), UAC_SR_B1(UAC_TERMINAL_USB_STREAMING),
+    0x00,                           // bAssocTerminal
+    0x01,                           // bSourceID (IT1 — Microphone)
+    0x00,                           // iTerminal
+
+    /* CS Interface: Input Terminal 3 — USB Streaming IN (Host PC playback → Target spk)
+     * This terminal feeds EP5 ISO OUT (host→device).
+     * bTerminalLink in IF4 CS AS General points here (0x03). */
+    0x0C,                           // bLength
+    USB_DESC_TYPE_CS_INTERFACE,     // bDescriptorType
+    UAC_AC_INPUT_TERMINAL,          // bDescriptorSubtype
+    0x03,                           // bTerminalID 3
+    UAC_SR_B0(UAC_TERMINAL_USB_STREAMING), UAC_SR_B1(UAC_TERMINAL_USB_STREAMING),
+    0x00,                           // bAssocTerminal
+    UAC_CHANNELS,                   // bNrChannels
+    0x03, 0x00,                     // wChannelConfig: L+R
+    0x00,                           // iChannelNames
+    0x00,                           // iTerminal
+
+    /* CS Interface: Output Terminal 4 — Speaker (physical output on Target side) */
+    0x09,                           // bLength
+    USB_DESC_TYPE_CS_INTERFACE,     // bDescriptorType
+    UAC_AC_OUTPUT_TERMINAL,         // bDescriptorSubtype
+    0x04,                           // bTerminalID 4
+    UAC_SR_B0(UAC_TERMINAL_SPEAKER), UAC_SR_B1(UAC_TERMINAL_SPEAKER),
+    0x00,                           // bAssocTerminal
+    0x03,                           // bSourceID (IT3 — USB Streaming IN)
+    0x00,                           // iTerminal
+
+    /* --- IF3 AudioStreaming IN — alt0, zero-bandwidth --- */
+    0x09, 0x04, 0x03, 0x00, 0x00, 0x01, 0x02, 0x00, 0x00,
+
+    /* --- IF3 AudioStreaming IN — alt1, active (EP4, 64 bytes/ms) --- */
+    0x09, 0x04, 0x03, 0x01, 0x01, 0x01, 0x02, 0x00, 0x00,
+
+    /* CS Interface: AS General — linked to OT2 (USB Streaming OUT = Capture path)
+     * EP4 ISO IN sends mic audio from Target to Host PC. */
+    0x07, USB_DESC_TYPE_CS_INTERFACE, UAC_AS_GENERAL,
+    0x02,                           // bTerminalLink (OT2 — USB Streaming OUT)
+    0x00,
+    UAC_SR_B0(UAC_FORMAT_PCM), UAC_SR_B1(UAC_FORMAT_PCM),
+
+    /* CS Interface: Format Type I — 64 B/ms = stereo 16kHz or mono 32kHz */
+    0x0B, USB_DESC_TYPE_CS_INTERFACE, UAC_AS_FORMAT_TYPE,
+    0x01,                           // bFormatType: Type I
+    UAC_CHANNELS,                   // bNrChannels: 2
+    UAC_BYTES_PER_SAMPLE,           // bSubFrameSize: 2
+    UAC_BIT_RESOLUTION,             // bBitResolution: 16
+    0x01,                           // bSamFreqType: 1 frequency
+    UAC_SR_B0(UAC_USBD_SAMPLE_RATE), UAC_SR_B1(UAC_USBD_SAMPLE_RATE), UAC_SR_B2(UAC_USBD_SAMPLE_RATE),
+
+    /* Endpoint: EP4 ISO IN — single buffer, 64 bytes */
+    0x09, 0x05, UAC_USBD_EP_IN_ADDR, 0x01,
+    0x40, 0x00,                     // wMaxPacketSize: 64
+    0x01, 0x00, 0x00,               // bInterval=1ms, bRefresh=0, bSynchAddr=0
+
+    /* CS Endpoint */
+    0x07, USB_DESC_TYPE_CS_ENDPOINT, UAC_EP_GENERAL, 0x00, 0x00, 0x00, 0x00,
+
+    /* ================================================================
+     * IF4: AudioStreaming OUT — Target→Host (microphone capture)
+     *   alt0 = zero-bandwidth (no EP)
+     *   alt1 = active, EP5 ISO OUT 64 bytes/ms (16kHz stereo 16-bit)
+     * ================================================================ */
+
+    /* IF4 alt0 — zero-bandwidth */
+    0x09, 0x04,                     // bLength, bDescriptorType (Interface)
+    0x04,                           // bInterfaceNumber: 4
+    0x00,                           // bAlternateSetting: 0
+    0x00,                           // bNumEndpoints: 0
+    0x01,                           // bInterfaceClass: Audio
+    0x02,                           // bInterfaceSubClass: AudioStreaming
+    0x00, 0x00,                     // bInterfaceProtocol, iInterface
+
+    /* IF4 alt1 — active streaming */
+    0x09, 0x04,                     // bLength, bDescriptorType (Interface)
+    0x04,                           // bInterfaceNumber: 4
+    0x01,                           // bAlternateSetting: 1
+    0x01,                           // bNumEndpoints: 1
+    0x01,                           // bInterfaceClass: Audio
+    0x02,                           // bInterfaceSubClass: AudioStreaming
+    0x00, 0x00,                     // bInterfaceProtocol, iInterface
+
+    /* CS Interface: AS General — linked to IT3 (USB Streaming IN = Render path)
+     * EP5 ISO OUT receives playback audio from Host PC to play on Target. */
+    0x07,                           // bLength
+    USB_DESC_TYPE_CS_INTERFACE,     // bDescriptorType
+    UAC_AS_GENERAL,                 // bDescriptorSubtype
+    0x03,                           // bTerminalLink: IT3 (USB Streaming IN → speaker)
+    0x00,                           // bDelay
+    UAC_SR_B0(UAC_FORMAT_PCM), UAC_SR_B1(UAC_FORMAT_PCM), // wFormatTag: PCM
+
+    /* CS Interface: Format Type I — 16kHz stereo 16-bit */
+    0x0B,                           // bLength
+    USB_DESC_TYPE_CS_INTERFACE,     // bDescriptorType
+    UAC_AS_FORMAT_TYPE,             // bDescriptorSubtype
+    0x01,                           // bFormatType: Type I
+    UAC_CHANNELS,                   // bNrChannels
+    UAC_BYTES_PER_SAMPLE,           // bSubFrameSize
+    UAC_BIT_RESOLUTION,             // bBitResolution
+    0x01,                           // bSamFreqType: 1 frequency
+    UAC_SR_B0(UAC_USBD_SAMPLE_RATE), UAC_SR_B1(UAC_USBD_SAMPLE_RATE), UAC_SR_B2(UAC_USBD_SAMPLE_RATE),
+
+    /* Endpoint: EP5 ISO OUT — single buffer, 64 bytes/ms */
+    0x09,                           // bLength
+    0x05,                           // bDescriptorType (Endpoint)
+    UAC_USBD_EP_OUT_ADDR,           // bEndpointAddress: EP5 OUT (0x05)
+    0x01,                           // bmAttributes: Isochronous
+    0x40, 0x00,                     // wMaxPacketSize: 64
+    0x01, 0x00, 0x00,               // bInterval=1ms, bRefresh=0, bSynchAddr=0
+
+    /* CS Endpoint */
+    0x07, USB_DESC_TYPE_CS_ENDPOINT, UAC_EP_GENERAL, 0x00, 0x00, 0x00, 0x00,
 };
 
 
