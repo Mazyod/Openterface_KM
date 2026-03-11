@@ -34,7 +34,7 @@ CH32V208 芯片上的两个 USB 接口均为 USB Full-Speed（12 Mbps），但�
   ISO 大包支持        ✅ 支持（本项目用 192 B/ms）   ❌ 最多 64 B/ms
   驱动代码            APP/ch32v20x_usbfs_device.c  APP/USBLIB/ 全库
   时钟来源            RCC_AHBPeriph_USBFS           RCC_APB1Periph_USB
-  连接对象（本项目）  主机 PC（Host-facing）         目标 PC（Target-facing）
+  连接对象（本项目）   HOST                          TARGET
 
   代码证据：
     // APP/include/ch32v20x_usbfs_device.h
