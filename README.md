@@ -98,120 +98,124 @@ This firmware implements the **CH9329 communication protocol**, which is compati
 
 ## Prerequisites
 
-Before compiling and flashing, ensure you have the following tools installed:
+Before compiling, ensure you have the following:
 
-- **WCH MounRiver Studio**: Integrated development environment for CH32V series microcontrollers
-- **WCH Flash Uploader**: Tool for flashing firmware to the device
-- **Git**: Version control (optional, for cloning)
+- **WCH MounRiver Studio** (Windows, recommended): includes the RISC-V toolchain and one-click flash support.
+- **xpack riscv-none-elf-gcc** (macOS / Linux): see [macOS build guide](docs/build-on-mac.md).
+- **GNU Make** (`brew install make` on macOS).
+- **Git** (for cloning the repository).
 
-### Installation
-
-#### Windows (Recommended)
-
-1. **Download and Install WCH MounRiver Studio**:
-   - Visit [WCH's official website](https://www.mounriver.com/download)
-   - Download MounRiver Studio for Windows
-   - Follow the installation instructions
-   - The toolchain and build tools are included with MounRiver Studio
-
-2. **Download and Install WCH Flash Uploader**:
-   - Download from [WCH's official website](https://www.wch.cn/downloads/WCHISPTool_Setup_exe.html)
-   - Follow the installation instructions
-   - This tool will be used to flash the compiled firmware to the device
-
-3. **Verify Installation**:
-   - Open MounRiver Studio
-   - The project should be recognized and ready to build
-
-#### macOS/Linux (Alternative)
-
-For development on macOS or Linux systems:
-
-```bash
-# macOS - Install RISC-V toolchain via Homebrew
-brew tap xpack-dev-tools/riscv-embedded-gcc
-brew install riscv-embedded-gcc
-brew install make
-
-# Linux (Ubuntu/Debian)
-sudo apt-get install build-essential
-sudo apt-get install gcc-riscv64-unknown-elf
-```
-
-**Note**: WCH MounRiver Studio is the recommended development environment. Command-line compilation is supported but may require additional configuration.
+> The build system uses the `riscv-none-embed-gcc` wrapper name.  
+> On macOS the [xpack toolchain](docs/build-on-mac.md) provides wrapper scripts that translate the WCH-specific `-march=rv32imacxw` flag to the standard `-march=rv32imac_zicsr_zifencei` automatically.
 
 ## How to Compile
 
-### Using WCH MounRiver Studio (Recommended)
+### Using WCH MounRiver Studio (Windows, recommended)
 
-1. **Open the project**:
-   - Launch WCH MounRiver Studio
-   - Click `File` → `Open Projects from File System`
-   - Navigate to the `Openterface_KM` directory and select it
-   - The project will be imported automatically
+1. **Open the project**: `File` → `Open Projects from File System` → select the `Openterface_KM` directory.
+2. **Build**: right-click the project → `Build Project`.  
+   The binary is placed in `build/openterface-km-firmware.elf`.
 
-2. **Build the project**:
-   - Right-click on the project in the Project Explorer
-   - Select `Build Project` or use the keyboard shortcut
-   - Alternatively, click the Build button in the toolbar
-   - The build progress will be shown in the Console panel
+### Command Line (macOS / Linux)
 
-3. **View build output**:
-   - Check the Console tab for build messages
-   - If successful, you should see "Build Finished" message
-
-### Quick Build (Command Line)
-
-For command-line compilation:
+See [docs/build-on-mac.md](docs/build-on-mac.md) for full toolchain setup.
 
 ```bash
-cd /path/to/Openterface_KM
+export PATH="$HOME/tools/xpack-riscv/wrappers:$PATH"
 cd build
-make clean
-make
+make clean && make all
 ```
 
-### Build Output
+Build output:
 
-After successful compilation, the executable will be generated as:
 ```
-build/obj/BLE_USB.elf
-```
-
-An additional binary file may also be created:
-```
-build/obj/BLE_USB.hex
+build/openterface-km-firmware.elf   ← flash this
+build/openterface-km-firmware.hex   ← binary image
 ```
 
-### Build Targets
+### Build Flags
+
+All flags are set via `make` variables and default to **on**.  
+Pass them on the command line to override, e.g. `make ENABLE_BLE=0`.
+
+#### `ENABLE_UAC` — USB Audio Class
 
 ```bash
-# Clean build artifacts
-make clean
-
-# Build the project
-make
-
-# Rebuild everything
-make clean && make
+make all ENABLE_UAC=0   # strip UAC, frees EP5 + EP6 on the USB controller
 ```
+
+| Value | Effect |
+|---|---|
+| `1` (default) | UAC microphone/speaker interface included |
+| `0` | UAC descriptors and endpoints removed; USB device re-enumerates without audio |
+
+#### `ENABLE_BLE` — Bluetooth Low Energy
+
+```bash
+make all ENABLE_BLE=0   # strip BLE entirely, frees ~7 KB static RAM (BSS)
+```
+
+| Value | Effect |
+|---|---|
+| `1` (default) | BLE stack linked, BLE task runs alongside USB HID |
+| `0` | BLE source files excluded, `-lwchble` not linked; FLASH drops from ~43% to ~8% |
+
+When `ENABLE_BLE=1` the following BLE parameters can also be tuned:
+
+| Variable | Default | Minimum | Description |
+|---|---|---|---|
+| `BLE_MEMHEAP_SIZE` | `6144` | `6144` | Bytes of static RAM given to the BLE stack heap |
+| `BLE_BUFF_MAX_LEN` | `64` | `27` | Max HCI packet payload (ATT_MTU = value − 4) |
+| `BLE_TX_NUM_EVENT` | `1` | `1` | Max TX packets per connection event |
+
+Examples:
+
+```bash
+# Larger MTU for faster BLE throughput (costs more heap RAM)
+make all BLE_MEMHEAP_SIZE=8192 BLE_BUFF_MAX_LEN=128
+
+# Minimal BLE — keyboard/mouse only, minimum RAM
+make all BLE_MEMHEAP_SIZE=6144 BLE_BUFF_MAX_LEN=64 BLE_TX_NUM_EVENT=1
+```
+
+#### Combining flags
+
+```bash
+# USB-only build (no BLE, no UAC) — smallest image
+make all ENABLE_BLE=0 ENABLE_UAC=0
+```
+
+### Memory Usage Summary
+
+| Build configuration | FLASH | Static RAM (BSS+DATA) |
+|---|---|---|
+| BLE=1, UAC=1 (default) | 42.65% | 38 KB |
+| BLE=1, UAC=0 | ~42% | 38 KB |
+| BLE=0, UAC=1 | 8.05% | 29 KB |
+| BLE=0, UAC=0 | ~7.7% | 29 KB |
+
+> **RAM note**: the linker script fills remaining RAM with the stack region, so the linker always reports 100%. The relevant numbers are the BSS+DATA figures in the table above. With BLE=1 default settings there is ~27 KB available for stack at runtime.
 
 ### Troubleshooting Build Issues
 
-1. **Compiler not found**: Ensure RISC-V cross compiler is in your PATH
+1. **Compiler not found**
    ```bash
    which riscv-none-embed-gcc
    ```
+   If missing, follow [docs/build-on-mac.md](docs/build-on-mac.md).
 
-2. **Permission errors**: Make sure you have write permissions in the build directory
+2. **Permission errors in the build directory**
    ```bash
-   chmod +x build/
+   chmod -R u+w build/
    ```
 
-3. **Stale object files**: Clean and rebuild
+3. **Stale object files**
    ```bash
-   make clean && make
+   make clean && make all
    ```
+
+4. **`BLE_LibInit` fails at runtime** (BLE=1, device hangs on boot)
+   Increase the heap: `make all BLE_MEMHEAP_SIZE=8192`.
 
 ## How to Flash to Device
 
@@ -267,22 +271,18 @@ After flashing:
 
 ## Configuration
 
-### Build Configuration
+### Feature flags
 
-Key configuration files:
+See the [Build Flags](#build-flags) section above for `ENABLE_BLE` and `ENABLE_UAC`.
 
-- `HAL/include/config.h`: Hardware and BLE configuration options
-- `.cproject`: Eclipse/MCUEclipse project settings
-- `build/sources.mk`: Source files inclusion
-
-### Common Configuration Options (in `config.h`)
+For compile-time BLE tuning that is not exposed as a `make` variable, edit `HAL/include/config.h`:
 
 ```c
-#define BLE_MAC                     FALSE    // Use chip MAC or custom
-#define HAL_SLEEP                   FALSE    // Enable sleep mode
-#define TEM_SAMPLE                  TRUE     // Temperature sampling
-#define BLE_CALIBRATION_ENABLE      TRUE     // BLE calibration
-#define PERIPHERAL_MAX_CONNECTION   1        // Max BLE connections
+#define HAL_SLEEP          FALSE   // Enable BLE sleep/low-power mode
+#define TEM_SAMPLE         TRUE    // RF calibration via temperature sensor
+#define BLE_CALIBRATION_ENABLE TRUE // Periodic BLE clock calibration (every 120 s)
+#define PERIPHERAL_MAX_CONNECTION 1 // Max simultaneous BLE peripheral connections
+#define CENTRAL_MAX_CONNECTION    0 // Central role disabled (saves heap RAM)
 ```
 
 ## Development Environment

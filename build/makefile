@@ -11,6 +11,10 @@ SRC_DIR := $(abspath $(dir $(CURDIR)))
 
 RM := rm -rf
 
+# Feature flags — define BEFORE includes so subdir.mk files can use them
+# BLE support: build with 'make ENABLE_BLE=0' to omit BLE (frees ~14 KB RAM)
+ENABLE_BLE ?= 1
+
 # All of the sources participating in the build are defined here
 -include sources.mk
 -include SRC/Startup/subdir.mk
@@ -70,6 +74,26 @@ CFLAGS += -include stdint.h -include stddef.h
 ENABLE_UAC ?= 1
 ifeq ($(ENABLE_UAC),1)
 CFLAGS += -DENABLE_UAC
+endif
+
+ifeq ($(ENABLE_BLE),1)
+CFLAGS += -DENABLE_BLE
+# BLE heap size in bytes — WCH minimum is 6144 (6 KB); default was 10240.
+# Smaller values save static RAM. Increase only if BLE_LibInit fails at boot.
+BLE_MEMHEAP_SIZE ?= 6144
+CFLAGS += -DBLE_MEMHEAP_SIZE=$(BLE_MEMHEAP_SIZE)
+# Max BLE packet length (ATT_MTU = BLE_BUFF_MAX_LEN - 4).
+# 64 is the WCH default; fully adequate for HID keyboard/mouse reports.
+BLE_BUFF_MAX_LEN ?= 64
+CFLAGS += -DBLE_BUFF_MAX_LEN=$(BLE_BUFF_MAX_LEN)
+# Max TX packets per connection event (1 is sufficient for HID traffic).
+BLE_TX_NUM_EVENT ?= 1
+CFLAGS += -DBLE_TX_NUM_EVENT=$(BLE_TX_NUM_EVENT)
+# We only use peripheral role, no central connections needed.
+CFLAGS += -DCENTRAL_MAX_CONNECTION=0
+else
+# Strip -lwchble from LIBS (defined in objects.mk) when BLE is disabled
+LIBS := -lm
 endif
 
 # Tool invocations
