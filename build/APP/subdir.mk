@@ -61,6 +61,18 @@ OBJS += \
 ./APP/usbd_compostie_km.o \
 ./APP/usbd_desc.o
 
+ifeq ($(ENABLE_ETH),1)
+C_SRCS += \
+../APP/eth_handler.c 
+
+C_DEPS += \
+./APP/eth_handler.d 
+
+OBJS += \
+./APP/eth_handler.o 
+
+endif # ENABLE_ETH
+
 # Each subdirectory must supply rules for building sources it contributes
 APP/%.o: ../APP/%.c
 	@echo 'Building file: $<'

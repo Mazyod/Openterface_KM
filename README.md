@@ -14,6 +14,7 @@ A firmware project running on a CH32V20x microcontroller that enables the Opente
 - **Dual Connectivity**:
   - **USB Connection**: Direct USB composite device with keyboard and mouse HID interfaces
   - **Bluetooth Low Energy (BLE)**: Wireless connectivity option for flexible deployment
+  - **USB Ethernet (CDC-ECM)**: USB Ethernet dongle mode on the legacy USBD controller (separate USB port from HID). Includes CDC-ACM serial alongside ECM. Build with `ENABLE_ETH=1` — UAC is automatically disabled. See [Ethernet Support](#ethernet-support).
 - **Hardware Features**:
   - Efficient input processing with ring buffer support for smooth keyboard and mouse handling
   - RGB LED status indication for connection and mode visualization
@@ -138,6 +139,32 @@ build/openterface-km-firmware.hex   ← binary image
 All flags are set via `make` variables and default to **on**.  
 Pass them on the command line to override, e.g. `make ENABLE_BLE=0`.
 
+#### `ENABLE_ETH` — USB Ethernet (CDC-ECM)
+
+```bash
+make all ENABLE_ETH=1   # CDC-ECM Ethernet + CDC-ACM serial on the legacy USBD controller
+```
+
+| Value | Effect |
+|---|---|
+| `0` (default) | Standard CDC-ACM serial + UAC included |
+| `1` | CDC-ECM Ethernet (IF0/IF1) + CDC-ACM serial (IF5/IF6) on the legacy USBD controller. **UAC is automatically forced off** to save RAM and free EP4/EP5. BLE is unaffected. |
+
+When `ENABLE_ETH=1` the legacy USBD controller (separate physical USB port from HID) exposes:
+
+| Endpoint | Direction | Function |
+|---|---|---|
+| EP1 IN | Interrupt | CDC-ECM NETWORK_CONNECTION notification |
+| EP2 OUT | Bulk | Ethernet frames host → device (32 B/packet) |
+| EP3 IN | Bulk | Ethernet frames device → host (32 B/packet) |
+| EP6 IN | Interrupt | CDC-ACM serial notification |
+| EP7 OUT | Bulk | Serial data host → device |
+| EP7 IN | Bulk | Serial data device → host |
+
+The HID, BLE, and (if enabled) UAC endpoints on the USBFS OTG controller are **not affected**.
+
+> **Note**: The firmware provides only the USB transport layer (CDC-ECM bulk framing). A network stack (lwIP or similar) must be integrated separately to use the Ethernet interface.
+
 #### `ENABLE_UAC` — USB Audio Class
 
 ```bash
@@ -181,8 +208,14 @@ make all BLE_MEMHEAP_SIZE=6144 BLE_BUFF_MAX_LEN=64 BLE_TX_NUM_EVENT=1
 #### Combining flags
 
 ```bash
-# USB-only build (no BLE, no UAC) — smallest image
+# USB-only build (no BLE, no UAC) — smallest image, maximum free RAM
 make all ENABLE_BLE=0 ENABLE_UAC=0
+
+# Ethernet build — CDC-ECM + CDC-ACM serial, BLE still active, UAC auto-disabled
+make all ENABLE_ETH=1
+
+# Ethernet build, also disable BLE for minimum RAM
+make all ENABLE_ETH=1 ENABLE_BLE=0
 ```
 
 ### Memory Usage Summary
@@ -193,6 +226,8 @@ make all ENABLE_BLE=0 ENABLE_UAC=0
 | BLE=1, UAC=0 | ~42% | 38 KB |
 | BLE=0, UAC=1 | 8.05% | 29 KB |
 | BLE=0, UAC=0 | ~7.7% | 29 KB |
+| ETH=1, BLE=1 (UAC auto-off) | ~48% | 37 KB |
+| ETH=1, BLE=0 (UAC auto-off) | ~13% | 28 KB |
 
 > **RAM note**: the linker script fills remaining RAM with the stack region, so the linker always reports 100%. The relevant numbers are the BSS+DATA figures in the table above. With BLE=1 default settings there is ~27 KB available for stack at runtime.
 
@@ -268,6 +303,80 @@ After flashing:
    - Startup sequence animation
    - Steady light for normal operation
    - Different patterns for BLE/USB modes
+
+## Ethernet Support
+
+The CH32V208 has **two independent USB controllers**:
+
+| Controller | Base address | IRQ | Current use |
+|---|---|---|---|
+| Legacy USB Device (USBD) | `0x40005C00` | IRQ 36 | CDC-ACM serial → **CDC-ECM + CDC-ACM** with `ENABLE_ETH=1` |
+| USBFS OTG | `0x50000000` | IRQ 59 | HID keyboard + mouse (always) |
+
+When `ENABLE_ETH=1`, the **legacy USBD controller** switches from CDC-ACM-only to a composite device with:
+- **CDC-ECM** (IF0/IF1, EP1/EP2/EP3) — USB Ethernet framing
+- **CDC-ACM** (IF5/IF6, EP6/EP7) — serial port retained alongside ECM
+
+The HID controller (USBFS OTG) and BLE are completely unaffected. UAC is forced off because the UAC ping-pong buffers plus the 1514-byte ECM frame reassembly buffer would exceed available RAM.
+
+### Dual USB port layout
+
+```
+Host PC
+ │
+ ├── USB port A (USBD, legacy)   ──► [ENABLE_ETH=0] CDC-ACM serial + UAC audio
+ │                                   [ENABLE_ETH=1] CDC-ECM Ethernet + CDC-ACM serial
+ │
+ └── USB port B (USBFS OTG)      ──► HID keyboard + mouse (always)
+                                     BLE → USBFS bridge (if ENABLE_BLE=1)
+```
+
+### Build
+
+```bash
+# CDC-ECM Ethernet + CDC-ACM serial, BLE still active
+make all ENABLE_ETH=1
+
+# Same without BLE (minimum RAM)
+make all ENABLE_ETH=1 ENABLE_BLE=0
+```
+
+### CDC-ECM PMA endpoint layout (ENABLE_ETH=1)
+
+```
+EP0           Control                0x040 / 0x080  (64B each)
+EP1 IN  INT   ECM notifications      0x0C0  (32B)
+EP2 OUT BULK  Ethernet host→device   0x0E0  (32B, max packet)
+EP3 IN  BULK  Ethernet device→host   0x100  (32B, max packet)
+EP6 IN  INT   ACM serial notif.      0x1A0  (32B)
+EP7 OUT BULK  Serial  host→device    0x1C0  (32B)
+EP7 IN  BULK  Serial  device→host    0x1E0  (32B)
+Total PMA: 512 B (exactly full)
+```
+
+Bulk max packet size is 32 bytes (constrained by PMA). Frame reassembly uses a 1514-byte buffer in RAM; large Ethernet frames are fragmented automatically.
+
+### Application API
+
+Override the weak callback in your application to receive frames, and call `ETH_TxFrame()` to transmit:
+
+```c
+/* Called from USB ISR when a complete Ethernet frame arrives from the host */
+void ETH_OnRxFrame(const uint8_t *buf, uint16_t len)
+{
+    /* process buf[0..len-1] */
+}
+
+/* Transmit an Ethernet frame to the host (returns 0 if EP3 busy or link down) */
+uint8_t ETH_TxFrame(const uint8_t *buf, uint16_t len);
+
+/* Tell host link is up/down after SET_INTERFACE activates the data interface */
+void ETH_SendNotification(uint8_t connected);
+```
+
+`g_eth_data_alt` is set to `1` by the USB stack when the host selects the active alternate setting on IF1 (CDC-ECM data interface). `ETH_TxFrame()` will return `0` until this happens.
+
+> **Note**: the firmware provides only the USB transport layer. A network stack (lwIP or similar) must be integrated separately.
 
 ## Configuration
 
