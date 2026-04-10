@@ -52,11 +52,13 @@ __attribute__ ((aligned(4))) uint8_t USBFS_EP2_Buf[ DEF_USB_EP2_FS_SIZE ];    //
 __attribute__ ((aligned(4))) uint8_t USBFS_EP3_Buf[ DEF_USB_EP3_FS_SIZE ];    //ep3_in(64)
 __attribute__ ((aligned(4))) uint8_t USBFS_EP4_Buf[ DEF_USB_EP4_FS_SIZE ];    //ep4_in(64) - Media keys
 
+#ifdef ENABLE_UAC
 /* UAC ISO endpoint buffers: single buffer (BUF_MOD=0), 192 bytes each.
  * NOTE: WCH USBFS BUF_MOD ping-pong hard-wires the second-half offset to
  * 64 bytes, not TX_LEN. For 192-byte ISO packets BUF_MOD must NOT be used. */
 __attribute__ ((aligned(4))) uint8_t USBFS_EP5_Buf[ UAC_ISO_PACKET_SIZE ];     //ep5_in  ISO TX (Target→Host spk)
 __attribute__ ((aligned(4))) uint8_t USBFS_EP6_Buf[ UAC_ISO_PACKET_SIZE ];     //ep6_out ISO RX (Host mic→Target)
+#endif /* ENABLE_UAC */
 
 /* USB IN Endpoint Busy Flag */
 volatile uint8_t  USBFS_Endp_Busy[ DEF_UEP_NUM ];
@@ -207,6 +209,7 @@ void USBFS_Device_Endp_Init( void )
     USBFSD->UEP4_1_MOD = USBFS_UEP1_TX_EN | USBFS_UEP4_TX_EN;
     USBFSD->UEP2_3_MOD = USBFS_UEP2_TX_EN | USBFS_UEP3_TX_EN;
 
+#ifdef ENABLE_UAC
     /* EP5: ISO IN  (Target→Host audio).  Single buffer (BUF_MOD=0).
      * EP6: ISO OUT (Host→Target audio).  Single buffer (BUF_MOD=0).
      *
@@ -215,16 +218,19 @@ void USBFS_Device_Endp_Init( void )
      * into the wrong memory, so we must NOT use BUF_MOD for large ISO packets.
      * Software double-buffering is handled in uac_handler.c instead. */
     USBFSD->UEP5_6_MOD = USBFS_UEP5_TX_EN | USBFS_UEP6_RX_EN;
+#endif /* ENABLE_UAC */
 
     USBFSD->UEP0_DMA = (uint32_t)USBFS_EP0_Buf;
     USBFSD->UEP1_DMA = (uint32_t)USBFS_EP1_Buf;
     USBFSD->UEP2_DMA = (uint32_t)USBFS_EP2_Buf;
     USBFSD->UEP3_DMA = (uint32_t)USBFS_EP3_Buf;
     USBFSD->UEP4_DMA = (uint32_t)USBFS_EP4_Buf;
+#ifdef ENABLE_UAC
     /* EP5 DMA: single 192-byte TX buffer; software swaps DMA pointer each frame */
     USBFSD->UEP5_DMA = (uint32_t)USBFS_EP5_Buf;
     /* EP6 DMA: single 192-byte RX buffer; copied out in UAC_USBFS_EP6_RxDone  */
     USBFSD->UEP6_DMA = (uint32_t)USBFS_EP6_Buf;
+#endif /* ENABLE_UAC */
 
     USBFSD->UEP0_RX_CTRL = USBFS_UEP_R_RES_ACK;
     USBFSD->UEP0_TX_CTRL = USBFS_UEP_T_RES_NAK;
@@ -232,11 +238,13 @@ void USBFS_Device_Endp_Init( void )
     USBFSD->UEP2_TX_CTRL = USBFS_UEP_T_RES_NAK;
     USBFSD->UEP3_TX_CTRL = USBFS_UEP_T_RES_NAK;
     USBFSD->UEP4_TX_CTRL = USBFS_UEP_T_RES_NAK;
+#ifdef ENABLE_UAC
     /* EP5 ISO IN: NAK until alt-setting 1 activated; TX_LEN=0 initially */
     USBFSD->UEP5_TX_LEN  = 0;
     USBFSD->UEP5_TX_CTRL = USBFS_UEP_T_RES_NAK;
     /* EP6 ISO OUT: NAK until host selects alt-setting 1 (USBFS IF6 alt=1) */
     USBFSD->UEP6_RX_CTRL = USBFS_UEP_R_RES_NAK;
+#endif /* ENABLE_UAC */
 
     /* Clear End-points Busy Status */
     for(uint8_t i=0; i<DEF_UEP_NUM; i++ )
@@ -488,11 +496,13 @@ void USBFS_IRQHandler( void )
                         USBFS_Endp_Busy[ DEF_UEP4 ] = 0;
                         break;
 
+#ifdef ENABLE_UAC
                     /* end-point 5 ISO IN complete.
                      * WCH USBFS reports ISO IN completion as TOKEN_IN. */
                     case USBFS_UIS_TOKEN_IN | DEF_UEP5:
                         UAC_USBFS_EP5_TxDone();
                         break;
+#endif /* ENABLE_UAC */
 
                     default :
                         break;
@@ -535,10 +545,12 @@ void USBFS_IRQHandler( void )
                         }
                         break;
 
+#ifdef ENABLE_UAC
                     /* end-point 6 ISO OUT complete: consume received audio frame */
                     case USBFS_UIS_TOKEN_OUT | DEF_UEP6:
                         UAC_USBFS_EP6_RxDone( USBFSD->RX_LEN );
                         break;
+#endif /* ENABLE_UAC */
 
                     default:
                         break;
@@ -943,11 +955,13 @@ void USBFS_IRQHandler( void )
 
                         /* This request allows the host to select another setting for the specified interface  */
                         case USB_GET_INTERFACE:
+#ifdef ENABLE_UAC
                             if( USBFS_SetupReqIndex == 5 )
                                 USBFS_EP0_Buf[ 0 ] = g_uac_state.usbfs_as_in_alt;
                             else if( USBFS_SetupReqIndex == 6 )
                                 USBFS_EP0_Buf[ 0 ] = g_uac_state.usbfs_as_out_alt;
                             else
+#endif /* ENABLE_UAC */
                                 USBFS_EP0_Buf[ 0 ] = 0x00;
                             if( USBFS_SetupReqLen > 1 )
                             {
@@ -956,6 +970,7 @@ void USBFS_IRQHandler( void )
                             break;
 
                         case USB_SET_INTERFACE:
+#ifdef ENABLE_UAC
                             /* UAC AudioStreaming interfaces: IF5=AS_IN (EP5), IF6=AS_OUT (EP6) */
                             if( USBFS_SetupReqIndex == 5 )
                             {
@@ -990,6 +1005,7 @@ void USBFS_IRQHandler( void )
                                     USBFSD->UEP6_RX_CTRL = ( USBFSD->UEP6_RX_CTRL & ~USBFS_UEP_R_RES_MASK ) | USBFS_UEP_R_RES_NAK;
                                 }
                             }
+#endif /* ENABLE_UAC */
                             break;
 
                         /* host get status of specified device/interface/end-points */

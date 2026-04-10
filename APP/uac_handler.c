@@ -25,6 +25,10 @@
  * If no fresh frame is available, silence (zero) is sent instead.
  *****************************************************************************/
 #include "include/uac_handler.h"
+#include "include/Version_selection.h"
+
+#ifdef ENABLE_UAC
+
 #include "ch32v20x_usbfs_device.h"   /* USBFS_EP5_Buf, USBFS_EP6_Buf, USBFSD */
 #include "usb_lib.h"                  /* USBD SetEP helpers                    */
 #include "usb_conf.h"                 /* ENDP4_ISO_TXADDR, ENDP5_ISO_RXADDR    */
@@ -244,4 +248,6 @@ void UAC_USBD_EP4_RxDone(uint16_t len)
      * On EP_ISOCHRONOUS endpoints the STAT_RX field is a SW_BUF toggle,
      * not a NAK/VALID control.  The hardware re-arms ISO OUT automatically. */
 }
+
+#endif /* ENABLE_UAC */
 

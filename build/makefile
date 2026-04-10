@@ -66,6 +66,12 @@ main-build: openterface-km-firmware.elf secondary-outputs
 
 CFLAGS += -include stdint.h -include stddef.h
 
+# UAC support: build with 'make ENABLE_UAC=0' to omit USB Audio Class (frees EP5+EP6)
+ENABLE_UAC ?= 1
+ifeq ($(ENABLE_UAC),1)
+CFLAGS += -DENABLE_UAC
+endif
+
 # Tool invocations
 openterface-km-firmware.elf: $(OBJS) $(USER_OBJS)
 	@echo 'Building target: $@'
