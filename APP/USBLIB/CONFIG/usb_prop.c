@@ -13,6 +13,7 @@
 #include "usb_conf.h"
 #include "usb_prop.h"
 #include "usb_desc.h"
+#include "../../include/Version_selection.h"
 #include "usb_pwr.h"
 #include "hw_config.h"
 #include "UART.h"
@@ -206,6 +207,7 @@ void USBD_init(void)
  */
 void USBD_SetInterface_Impl(void)
 {
+#ifdef ENABLE_UAC
     uint8_t iface = pInformation->USBwIndex0;
     uint8_t alt   = pInformation->USBwValue0;
 
@@ -247,6 +249,7 @@ void USBD_SetInterface_Impl(void)
         }
         g_uac_state.usbd_as_out_alt = alt;
     }
+#endif /* ENABLE_UAC */
 }
 
 /*******************************************************************************
@@ -296,6 +299,7 @@ void USBD_Reset(void)
   _ClearDTOG_TX(ENDP3);
   _ClearDTOG_RX(ENDP3);
 
+#ifdef ENABLE_UAC
   /* EP4: UAC ISO IN (Host audio → Target PC), single-buffer 64 B, disabled until alt=1 */
   SetEPType(ENDP4, EP_ISOCHRONOUS);
   SetEPTxAddr(ENDP4, ENDP4_ISO_TXADDR);
@@ -317,6 +321,7 @@ void USBD_Reset(void)
   /* Clear UAC bridge buffers and state flags so stale audio data from a
    * previous session cannot be forwarded after re-enumeration.          */
   UAC_Init();
+#endif /* ENABLE_UAC */
 
   SetDeviceAddress(0);
 

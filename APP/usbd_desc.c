@@ -43,8 +43,13 @@ const uint8_t MyCfgDescr[ ] =
     /* Configuration Descriptor */
     0x09,                                                   // bLength
     0x02,                                                   // bDescriptorType
+#ifdef ENABLE_UAC
     0x12, 0x01,                                             // wTotalLength: 274 = 0x0112 (100 HID + 9 cfg + 165 UAC)
     0x07,                                                   // bNumInterfaces: 4 HID + 1 AC + 2 AS = 7
+#else
+    0x6D, 0x00,                                             // wTotalLength: 109 = 0x006D (9 cfg + 4*25 HID)
+    0x04,                                                   // bNumInterfaces: 4 HID only
+#endif
     0x01,                                                   // bConfigurationValue
     0x00,                                                   // iConfiguration
     0xA0,                                                   // bmAttributes: Bus Powered; Remote Wakeup
@@ -162,6 +167,7 @@ const uint8_t MyCfgDescr[ ] =
     0x08, 0x00,                                             // wMaxPacketSize
     0x0A,                                                   // bInterval: 10mS
 
+#ifdef ENABLE_UAC
     /* ====== UAC 1.0 — USBFS (Target PC) side ============================
      * IF4: AudioControl
      * IF5: AudioStreaming IN  (EP5 ISO IN  0x85 — Target PC gets mic audio)
@@ -361,6 +367,7 @@ const uint8_t MyCfgDescr[ ] =
     0x00,                                                   // bmAttributes: none
     0x00,                                                   // bLockDelayUnits
     0x00, 0x00                                              // wLockDelay
+#endif /* ENABLE_UAC */
 };
 
 /* Keyboard Report Descriptor */

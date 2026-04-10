@@ -16,6 +16,8 @@
 #ifndef __UAC_HANDLER_H
 #define __UAC_HANDLER_H
 
+#ifdef ENABLE_UAC
+
 #include "uac_desc.h"
 
 #ifdef __cplusplus
@@ -70,5 +72,7 @@ void UAC_USBD_EP4_RxDone(uint16_t len);
 #ifdef __cplusplus
 }
 #endif
+
+#endif /* ENABLE_UAC */
 
 #endif /* __UAC_HANDLER_H */

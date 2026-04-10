@@ -88,7 +88,9 @@ void EP3_IN_Callback (void)
  */
 void EP4_IN_Callback(void)
 {
+#ifdef ENABLE_UAC
     UAC_USBD_EP3_TxDone();   /* loads next H→T frame into EP4 PMA buffer */
+#endif
 }
 
 /*********************************************************************
@@ -105,8 +107,10 @@ void EP4_IN_Callback(void)
  */
 void EP5_OUT_Callback(void)
 {
+#ifdef ENABLE_UAC
     uint16_t len = GetEPRxCount(ENDP5);
     UAC_USBD_EP4_RxDone(len);
+#endif
 }
 
 

@@ -106,7 +106,9 @@ int main(void) {
     USBFS_RCC_Init();
     USBFS_Device_Init(ENABLE);
     USB_Sleep_Wakeup_CFG();
+#ifdef ENABLE_UAC
     UAC_Init();
+#endif
     Keyboard_Init();
     Mouse_Init();
     //ble_init(Must be placed after USB initialization)
