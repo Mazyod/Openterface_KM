@@ -16,6 +16,7 @@
 /*********************************************************************
  * INCLUDES
  */
+#ifdef ENABLE_BLE
 #include <ch32v20x_usbfs_device.h>
 #include "CONFIG.h"
 #include "devinfoservice.h"
@@ -132,9 +133,9 @@ static peripheralConnItem_t peripheralConnList;
 static uint16_t peripheralMTU = ATT_MTU_SIZE;
 
 RingMemParm_t RingMemUSB;
-uint8_t       RingMemUSBBuf[2048];
+uint8_t       RingMemUSBBuf[512];
 RingMemParm_t RingMemBLE;
-uint8_t       RingMemBLEBuf[2048];
+uint8_t       RingMemBLEBuf[512];
 /*********************************************************************
  * LOCAL FUNCTIONS
  */
@@ -275,8 +276,8 @@ void Peripheral_Init()
     // Setup a delayed profile startup
     tmos_set_event(Peripheral_TaskID, SBP_START_DEVICE_EVT);
 
-    RingMemInit(&RingMemUSB, RingMemUSBBuf, 2048, RingMem_Protection);
-    RingMemInit(&RingMemBLE, RingMemBLEBuf, 2048, RingMem_Protection);
+    RingMemInit(&RingMemUSB, RingMemUSBBuf, 512, RingMem_Protection);
+    RingMemInit(&RingMemBLE, RingMemBLEBuf, 512, RingMem_Protection);
 }
 
 /*********************************************************************
@@ -854,6 +855,8 @@ int RingMem_Protection(uint8_t enable)
         __enable_irq();
     }
 }
+
+#endif /* ENABLE_BLE */
 
 /*********************************************************************
 *********************************************************************/

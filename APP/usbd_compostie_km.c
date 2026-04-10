@@ -316,6 +316,7 @@ void CH9329_RxBuffer_Add(uint8_t *data, uint16_t len) {
 
 void USB_DataRx_To_KMHandle(void) {
     // Step 1: Handle data from BLE ring buffer
+#ifdef ENABLE_BLE
     while (RingMemBLE.CurrentLen > 0) {
         uint8_t temp[64];
         uint8_t len = (RingMemBLE.CurrentLen > sizeof(temp)) ? sizeof(temp) : (uint8_t)RingMemBLE.CurrentLen;
@@ -325,6 +326,7 @@ void USB_DataRx_To_KMHandle(void) {
             break;
         }
     }
+#endif /* ENABLE_BLE */
 
     // Step 2: Handle data from UART2 transmit buffer
     while (Uart.Tx_RemainNum) {
