@@ -21,6 +21,9 @@
 #include "km_ring.h"
 #include "Version_selection.h"
 #include "include/uac_handler.h"
+#ifdef ENABLE_ETH
+#include "include/eth_handler.h"
+#endif /* ENABLE_ETH */
 
 /*********************************************************************
  * GLOBAL TYPEDEFS
@@ -116,6 +119,9 @@ int main(void) {
     USB_Sleep_Wakeup_CFG();
 #ifdef ENABLE_UAC
     UAC_Init();
+#endif
+#ifdef ENABLE_ETH
+    ETH_Init();
 #endif
     Keyboard_Init();
     Mouse_Init();
