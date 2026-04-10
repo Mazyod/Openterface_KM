@@ -6,6 +6,8 @@
 /* Values:
  * 1 = kvm go
  * 2 = mini kvm (version 1.2)
+ * 3 = keymod v1.0 (BLE only)
+ * 4 = keymod v1.0 (CDC-ECM only)
  */
 #define version  1
 // Use this definition to set endpoint 3 as a touchscreen device,or an absolute mouse device
