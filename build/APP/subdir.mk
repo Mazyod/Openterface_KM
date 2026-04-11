@@ -7,7 +7,7 @@
 C_SRCS += \
 ../APP/RingMem.c \
 ../APP/RGB.c \
-../APP/SD_SWITCH.c \
+../APP/sd_switch.c \
 ../APP/DS18B20.c \
 ../APP/CH32_TEMP.c \
 ../APP/ch32v20x_it.c \
@@ -26,7 +26,7 @@ C_SRCS += \
 C_DEPS += \
 ./APP/RingMem.d \
 ./APP/RGB.d \
-./APP/SD_SWITCH.d \
+./APP/sd_switch.d \
 ./APP/DS18B20.d \
 ./APP/CH32_TEMP.d \
 ./APP/ch32v20x_it.d \
@@ -45,7 +45,7 @@ C_DEPS += \
 OBJS += \
 ./APP/RingMem.o \
 ./APP/RGB.o \
-./APP/SD_SWITCH.o \
+./APP/sd_switch.o \
 ./APP/DS18B20.o \
 ./APP/CH32_TEMP.o \
 ./APP/ch32v20x_it.o \
