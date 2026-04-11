@@ -7,7 +7,7 @@
 #include "debug.h"
 #include "usb_lib.h"
 #ifdef ENABLE_BLE
-#include "CONFIG.h"
+#include "config.h"
 #include "HAL.h"
 #include "gattprofile.h"
 #include "peripheral.h"
