@@ -18,7 +18,7 @@
  */
 #ifdef ENABLE_BLE
 #include <ch32v20x_usbfs_device.h>
-#include "CONFIG.h"
+#include "config.h"
 #include "devinfoservice.h"
 #include "gattprofile.h"
 #include "peripheral.h"

@@ -1,7 +1,7 @@
 #include "include/keyboard_handler.h"
 #include "ch32v20x_usbfs_device.h"
 #include "usbd_composite_km.h"
-#include "CONFIG.h"
+#include "config.h"
 #include "HAL.h"
 #include "km_ring.h"
 #include <string.h>

@@ -15,7 +15,7 @@
  */
 #include "ch32v20x_it.h"
 #ifdef ENABLE_BLE
-#include "CONFIG.h"
+#include "config.h"
 #endif
 
 /*********************************************************************
