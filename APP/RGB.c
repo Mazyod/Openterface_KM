@@ -1,5 +1,5 @@
 #include "RGB.h"
-#include "SD_SWITCH.h"
+#include "sd_switch.h"
 #include <math.h>
 
 /* Millisecond counter */
