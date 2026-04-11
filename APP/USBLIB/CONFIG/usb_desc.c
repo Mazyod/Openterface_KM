@@ -373,7 +373,7 @@ const uint8_t  USBD_ConfigDescriptor[] = {
 #endif /* !ENABLE_ETH — UAC section ends here */
 
 #ifdef ENABLE_ETH
-    /* ===== CDC-ACM serial port — IF5 (comm) + IF6 (data) =================
+    /* ===== CDC-ACM serial port — IF2 (comm) + IF3 (data) =================
      * Runs alongside CDC-ECM (IF0/IF1) on the same legacy USBD controller.
      * EP6 IN interrupt (0x86): ACM notifications   (8 bytes, PMA 0x1A0)
      * EP7 OUT bulk    (0x07): Serial data host->device (32 B, PMA 0x1C0)
@@ -381,35 +381,35 @@ const uint8_t  USBD_ConfigDescriptor[] = {
      * Total PMA used: 416 + 96 = 512B (exactly full).
      * ===================================================================== */
 
-    /* IAD: CDC-ACM (IF5=comm + IF6=data) */
+    /* IAD: CDC-ACM (IF2=comm + IF3=data) */
     0x08,                           // bLength
     0x0B,                           // bDescriptorType (IAD)
-    0x05,                           // bFirstInterface: 5
-    0x02,                           // bInterfaceCount: 2 (IF5+IF6)
+    0x02,                           // bFirstInterface: 2
+    0x02,                           // bInterfaceCount: 2 (IF2+IF3)
     0x02,                           // bFunctionClass: Communications
     0x02,                           // bFunctionSubClass: Abstract Control Model
     0x01,                           // bFunctionProtocol: AT Commands
     0x00,                           // iFunction
 
-    /* Interface 5: CDC Communications (ACM) */
+    /* Interface 2: CDC Communications (ACM) */
     0x09,                           // bLength
     0x04,                           // bDescriptorType (Interface)
-    0x05,                           // bInterfaceNumber 5
+    0x02,                           // bInterfaceNumber 2
     0x00,                           // bAlternateSetting
     0x01,                           // bNumEndpoints 1 (EP6 INT IN)
     0x02,                           // bInterfaceClass (Communications)
     0x02,                           // bInterfaceSubClass (Abstract Control Model)
-    0x01,                           // bInterfaceProtocol (AT Commands)
+    0x01,                           // bFunctionProtocol: AT Commands
     0x00,                           // iInterface
 
     /* CS Header */
     0x05, 0x24, 0x00, 0x10, 0x01,
-    /* CS Call Management: bCapabilities=0, bDataInterface=IF6 */
-    0x05, 0x24, 0x01, 0x00, 0x06,
+    /* CS Call Management: bCapabilities=0, bDataInterface=IF3 */
+    0x05, 0x24, 0x01, 0x00, 0x03,
     /* CS ACM: bCapabilities=0x02 (Set_Line_Coding supported) */
     0x04, 0x24, 0x02, 0x02,
-    /* CS Union: master=IF5, slave=IF6 */
-    0x05, 0x24, 0x06, 0x05, 0x06,
+    /* CS Union: master=IF2, slave=IF3 */
+    0x05, 0x24, 0x06, 0x02, 0x03,
 
     /* EP6 IN interrupt — ACM notifications */
     0x07,                           // bLength
@@ -419,10 +419,10 @@ const uint8_t  USBD_ConfigDescriptor[] = {
     0x08, 0x00,                     // wMaxPacketSize 8
     0x01,                           // bInterval 1 ms
 
-    /* Interface 6: CDC Data */
+    /* Interface 3: CDC Data */
     0x09,                           // bLength
     0x04,                           // bDescriptorType (Interface)
-    0x06,                           // bInterfaceNumber 6
+    0x03,                           // bInterfaceNumber 3
     0x00,                           // bAlternateSetting
     0x02,                           // bNumEndpoints 2
     0x0A,                           // bInterfaceClass (Data)

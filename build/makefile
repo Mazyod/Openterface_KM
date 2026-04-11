@@ -115,7 +115,7 @@ openterface-km-firmware.elf: $(OBJS) $(USER_OBJS)
 	@
 openterface-km-firmware.hex: openterface-km-firmware.elf
 	@echo 'Invoking: GNU RISC-V Cross Create Binary Image'
-	@	riscv-none-embed-objcopy -O binary "openterface-km-firmware.elf" "openterface-km-firmware.hex"
+	@	riscv-none-embed-objcopy -O ihex "openterface-km-firmware.elf" "openterface-km-firmware.hex"
 	@echo 'Finished building $@'
 	@
 openterface-km-firmware.lst: openterface-km-firmware.elf

@@ -163,7 +163,7 @@ void USBD_Status_In(void)
         if (Request_No == CDC_SET_LINE_CODING)
         {
 #ifdef ENABLE_ETH
-            if (pInformation->USBwIndex0 == 5) /* ACM comm interface (IF5) */
+            if (pInformation->USBwIndex0 == 2) /* ACM comm interface (IF2) */
 #endif
             UART2_USB_Init();
         }
@@ -453,11 +453,9 @@ RESULT USBD_Get_Interface_Setting(uint8_t Interface, uint8_t AlternateSetting)
   /* Interface layout:
    *   IF0: CDC Control/ECM Comm  — alt 0 only
    *   IF1: CDC Data / ECM Data   — alt 0 only (ACM) or alt 0+1 (ECM)
-   *   IF2: AudioControl          — alt 0 only
-   *   IF3: AS IN  (EP4 ISO IN)   — alt 0+1
-   *   IF4: AS OUT (EP5 ISO OUT)  — alt 0+1
-   *   IF5: ACM Comm (ENABLE_ETH) — alt 0 only
-   *   IF6: ACM Data (ENABLE_ETH) — alt 0 only */
+   *   IF2: AudioControl / ACM Comm (ENABLE_ETH) — alt 0 only
+   *   IF3: AS IN  (EP4 ISO IN) / ACM Data (ENABLE_ETH) — alt 0+1 / alt 0 only
+   *   IF4: AS OUT (EP5 ISO OUT) — alt 0+1 (non-ETH only) */
   if (Interface == 0 || Interface == 2)
   {
     if (AlternateSetting > 0)
@@ -479,9 +477,9 @@ RESULT USBD_Get_Interface_Setting(uint8_t Interface, uint8_t AlternateSetting)
       return USB_UNSUPPORT;
   }
 #ifdef ENABLE_ETH
-  else if (Interface <= 6)
+  else if (Interface <= 3)
   {
-    /* IF5 (ACM comm) and IF6 (ACM data): no alternate settings */
+    /* IF2 (ACM comm) and IF3 (ACM data): no alternate settings */
     if (AlternateSetting > 0)
       return USB_UNSUPPORT;
   }
@@ -556,16 +554,16 @@ RESULT USBD_Data_Setup(uint8_t RequestNo)
     if (Request_No == CDC_GET_LINE_CODING)
     {
 #ifdef ENABLE_ETH
-      /* With ETH, only serve GET_LINE_CODING for ACM serial interface (IF5) */
-      if (pInformation->USBwIndex0 != 5) return USB_UNSUPPORT;
+      /* With ETH, only serve GET_LINE_CODING for ACM serial interface (IF2) */
+      if (pInformation->USBwIndex0 != 2) return USB_UNSUPPORT;
 #endif
       CopyRoutine = &USB_CDC_GetLineCoding;
     }
     else if (Request_No == CDC_SET_LINE_CODING)
     {
 #ifdef ENABLE_ETH
-      /* With ETH, only serve SET_LINE_CODING for ACM serial interface (IF5) */
-      if (pInformation->USBwIndex0 != 5) return USB_UNSUPPORT;
+      /* With ETH, only serve SET_LINE_CODING for ACM serial interface (IF2) */
+      if (pInformation->USBwIndex0 != 2) return USB_UNSUPPORT;
 #endif
       CopyRoutine = &USB_CDC_SetLineCoding;
     }
