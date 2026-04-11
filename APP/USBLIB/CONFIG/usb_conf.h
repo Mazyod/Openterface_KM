@@ -38,10 +38,15 @@
  *   Total:   0x1A0 = 416B < 512B ✓
  * CDC bulk bandwidth: 32B/packet × 1000 pkt/s = 32 KB/s > 115200bps (11.5 KB/s) ✓ */
 #define ENDP1_TXADDR        (0xC0)                          /* 32B, CDC int   */
-#define ENDP2_RXADDR        (0xE0)                          /* 32B, CDC bulk  */
-#define ENDP3_TXADDR        (0x100)                         /* 32B, CDC bulk  */
-#define ENDP4_ISO_TXADDR    (0x120)                         /* 64B, UAC IN    */
-#define ENDP5_ISO_RXADDR    (0x160)                         /* 64B, UAC OUT   */
+#define ENDP2_RXADDR        (0xE0)                          /* 64B ECM/32B ACM bulk OUT */
+#ifdef ENABLE_ETH
+/* ECM build: EP2 RX is 64B (0xE0-0x11F), so EP3 TX starts at 0x120 */
+#define ENDP3_TXADDR        (0x120)                         /* 64B, ECM bulk IN  */
+#else
+#define ENDP3_TXADDR        (0x100)                         /* 32B, ACM bulk IN  */
+#define ENDP4_ISO_TXADDR    (0x120)                         /* 64B, UAC ISO IN   */
+#define ENDP5_ISO_RXADDR    (0x160)                         /* 64B, UAC ISO OUT  */
+#endif
 
 /* When ENABLE_ETH=1, EP6/EP7 carry CDC-ACM serial (separate from ECM on EP1-3).
  *   EP6 TX:  0x1A0 (32B) -- ACM interrupt IN (notifications)

@@ -315,10 +315,11 @@ void USBD_Reset(void)
   SetEPType(ENDP2, EP_BULK);
   SetEPTxStatus(ENDP2, EP_TX_DIS);
   SetEPRxAddr(ENDP2, ENDP2_RXADDR);
-  SetEPRxCount(ENDP2, 32);          /* reduced from 64 to free PMA for EP5 UAC OUT */
 #ifdef ENABLE_ETH
-  SetEPRxStatus(ENDP2, EP_RX_DIS);   /* CDC-ECM: disabled until SET_INTERFACE IF1 alt=1 */
+  SetEPRxCount(ENDP2, 64);          /* ECM: 64B max-packet bulk OUT */
+  SetEPRxStatus(ENDP2, EP_RX_DIS);  /* CDC-ECM: disabled until SET_INTERFACE IF1 alt=1 */
 #else
+  SetEPRxCount(ENDP2, 32);          /* ACM: 32B (PMA space shared with UAC EPs) */
   SetEPRxStatus(ENDP2, EP_RX_VALID); /* CDC-ACM: always active */
 #endif
   _ClearDTOG_RX(ENDP2);

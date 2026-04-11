@@ -24,7 +24,7 @@
 #define ETH_MAX_FRAME_SIZE   1514
 
 /* USBD legacy controller bulk max packet size (constrained by PMA layout) */
-#define ETH_USB_BULK_PKT     32
+#define ETH_USB_BULK_PKT     64
 
 /* Current alternate-setting of CDC-ECM Data interface IF1 (0=idle, 1=active).
  * Updated by SET_INTERFACE handler; read by GET_INTERFACE / usb_prop.c. */

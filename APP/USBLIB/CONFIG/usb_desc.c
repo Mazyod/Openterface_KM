@@ -112,20 +112,20 @@ const uint8_t  USBD_ConfigDescriptor[] = {
     0x0A,                           // bInterfaceClass (Data)
     0x00, 0x00, 0x00,               // SubClass, Protocol, iInterface
 
-    /* EP2 OUT Bulk — Ethernet frames host->device (32B PMA buffer) */
+    /* EP2 OUT Bulk — Ethernet frames host->device (64B PMA buffer) */
     0x07,                           // bLength
     0x05,                           // bDescriptorType (Endpoint)
     0x02,                           // bEndpointAddress (EP2 OUT)
     0x02,                           // bmAttributes (Bulk)
-    0x20, 0x00,                     // wMaxPacketSize 32
+    0x40, 0x00,                     // wMaxPacketSize 64
     0x00,                           // bInterval
 
-    /* EP3 IN Bulk — Ethernet frames device->host (32B PMA buffer) */
+    /* EP3 IN Bulk — Ethernet frames device->host (64B PMA buffer) */
     0x07,                           // bLength
     0x05,                           // bDescriptorType (Endpoint)
     0x83,                           // bEndpointAddress (EP3 IN)
     0x02,                           // bmAttributes (Bulk)
-    0x20, 0x00,                     // wMaxPacketSize 32
+    0x40, 0x00,                     // wMaxPacketSize 64
     0x00,                           // bInterval
 
 #else /* CDC-ACM (default) */
