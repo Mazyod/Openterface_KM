@@ -34,7 +34,7 @@
  *   ETH (UAC disabled): 9(cfg) + 79(CDC-ECM) + 66(CDC-ACM) = 154
  *   default (ACM+UAC):  9(cfg) + 66(CDC-ACM) + 173(UAC)    = 248 */
 #ifdef ENABLE_ETH
-#define USBD_SIZE_CONFIG_DESC        154  /* CDC-ECM + CDC-ACM, no UAC */
+#define USBD_SIZE_CONFIG_DESC        80   /* pure CDC-ECM: 9+9+5+5+13+7+9+9+7+7 */
 #else
 #define USBD_SIZE_CONFIG_DESC        248  /* CDC-ACM + UAC */
 #endif

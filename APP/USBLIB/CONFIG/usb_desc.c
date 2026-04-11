@@ -15,10 +15,16 @@
 const uint8_t  USBD_DeviceDescriptor[] = { 
     USBD_SIZE_DEVICE_DESC,           // bLength
     0x01,                           // bDescriptorType
-    0x10, 0x01,                     // bcdUSB
+    0x00, 0x02,                     // bcdUSB 2.00
+#ifdef ENABLE_ETH
+    0x02,                           // bDeviceClass: Communications Device Class (CDC-ECM, no IAD)
+    0x00,                           // bDeviceSubClass
+    0x00,                           // bDeviceProtocol
+#else
     0xEF,                           // bDeviceClass: Miscellaneous (required for IAD)
     0x02,                           // bDeviceSubClass: Common Class
     0x01,                           // bDeviceProtocol: Interface Association Descriptor
+#endif
     DEF_USBD_UEP0_SIZE,             // bMaxPacketSize0
     0x86, 0x1A,                     // idVendor
     0x0C, 0xFE,                     // idProduct
@@ -36,7 +42,7 @@ const uint8_t  USBD_ConfigDescriptor[] = {
     0x02,                           // bDescriptorType
     USBD_SIZE_CONFIG_DESC & 0xFF, USBD_SIZE_CONFIG_DESC >> 8, // wTotalLength
 #ifdef ENABLE_ETH
-    0x04,                           // bNumInterfaces: ECM(2) + ACM(2) = 4  (UAC disabled)
+    0x02,                           // bNumInterfaces: ECM comm (IF0) + ECM data (IF1)
 #else
     0x05,                           // bNumInterfaces: ACM(2) + UAC(3) = 5
 #endif
@@ -46,22 +52,12 @@ const uint8_t  USBD_ConfigDescriptor[] = {
     0x32,                           // MaxPower: 100mA
 
 #ifdef ENABLE_ETH
-    /* ===== CDC-ECM 1.2 — USB Ethernet on the legacy USBD controller =========
+    /* ===== Pure CDC-ECM — USB Ethernet on the legacy USBD controller =========
+     * bDeviceClass=0x02 (CDC) so NO IAD needed — single-function device.
      * EP1 IN interrupt (0x81): CDC NETWORK_CONNECTION notifications (8 bytes)
-     * EP2 OUT bulk    (0x02): Ethernet frames host->device            (32 bytes)
-     * EP3 IN bulk     (0x83): Ethernet frames device->host            (32 bytes)
-     * UAC is disabled (ENABLE_UAC=0 forced by makefile) to save RAM.
+     * EP2 OUT bulk    (0x02): Ethernet frames host->device  (32 bytes/packet)
+     * EP3 IN bulk     (0x83): Ethernet frames device->host  (32 bytes/packet)
      * ========================================================================= */
-
-    /* IAD: CDC-ECM (IF0=comm + IF1=data) */
-    0x08,                           // bLength
-    0x0B,                           // bDescriptorType (IAD)
-    0x00,                           // bFirstInterface: 0
-    0x02,                           // bInterfaceCount: 2 (IF0+IF1)
-    0x02,                           // bFunctionClass: Communications
-    0x06,                           // bFunctionSubClass: ECM
-    0x00,                           // bFunctionProtocol
-    0x00,                           // iFunction
 
     /* Interface 0: CDC Communication (ECM) */
     0x09,                           // bLength
@@ -116,7 +112,7 @@ const uint8_t  USBD_ConfigDescriptor[] = {
     0x0A,                           // bInterfaceClass (Data)
     0x00, 0x00, 0x00,               // SubClass, Protocol, iInterface
 
-    /* EP2 OUT Bulk — Ethernet frames host→device (32B PMA buffer) */
+    /* EP2 OUT Bulk — Ethernet frames host->device (32B PMA buffer) */
     0x07,                           // bLength
     0x05,                           // bDescriptorType (Endpoint)
     0x02,                           // bEndpointAddress (EP2 OUT)
@@ -124,7 +120,7 @@ const uint8_t  USBD_ConfigDescriptor[] = {
     0x20, 0x00,                     // wMaxPacketSize 32
     0x00,                           // bInterval
 
-    /* EP3 IN Bulk — Ethernet frames device→host (32B PMA buffer) */
+    /* EP3 IN Bulk — Ethernet frames device->host (32B PMA buffer) */
     0x07,                           // bLength
     0x05,                           // bDescriptorType (Endpoint)
     0x83,                           // bEndpointAddress (EP3 IN)
@@ -372,78 +368,6 @@ const uint8_t  USBD_ConfigDescriptor[] = {
 
 #endif /* !ENABLE_ETH — UAC section ends here */
 
-#ifdef ENABLE_ETH
-    /* ===== CDC-ACM serial port — IF2 (comm) + IF3 (data) =================
-     * Runs alongside CDC-ECM (IF0/IF1) on the same legacy USBD controller.
-     * EP6 IN interrupt (0x86): ACM notifications   (8 bytes, PMA 0x1A0)
-     * EP7 OUT bulk    (0x07): Serial data host->device (32 B, PMA 0x1C0)
-     * EP7 IN bulk     (0x87): Serial data device->host (32 B, PMA 0x1E0)
-     * Total PMA used: 416 + 96 = 512B (exactly full).
-     * ===================================================================== */
-
-    /* IAD: CDC-ACM (IF2=comm + IF3=data) */
-    0x08,                           // bLength
-    0x0B,                           // bDescriptorType (IAD)
-    0x02,                           // bFirstInterface: 2
-    0x02,                           // bInterfaceCount: 2 (IF2+IF3)
-    0x02,                           // bFunctionClass: Communications
-    0x02,                           // bFunctionSubClass: Abstract Control Model
-    0x01,                           // bFunctionProtocol: AT Commands
-    0x00,                           // iFunction
-
-    /* Interface 2: CDC Communications (ACM) */
-    0x09,                           // bLength
-    0x04,                           // bDescriptorType (Interface)
-    0x02,                           // bInterfaceNumber 2
-    0x00,                           // bAlternateSetting
-    0x01,                           // bNumEndpoints 1 (EP6 INT IN)
-    0x02,                           // bInterfaceClass (Communications)
-    0x02,                           // bInterfaceSubClass (Abstract Control Model)
-    0x01,                           // bFunctionProtocol: AT Commands
-    0x00,                           // iInterface
-
-    /* CS Header */
-    0x05, 0x24, 0x00, 0x10, 0x01,
-    /* CS Call Management: bCapabilities=0, bDataInterface=IF3 */
-    0x05, 0x24, 0x01, 0x00, 0x03,
-    /* CS ACM: bCapabilities=0x02 (Set_Line_Coding supported) */
-    0x04, 0x24, 0x02, 0x02,
-    /* CS Union: master=IF2, slave=IF3 */
-    0x05, 0x24, 0x06, 0x02, 0x03,
-
-    /* EP6 IN interrupt — ACM notifications */
-    0x07,                           // bLength
-    0x05,                           // bDescriptorType (Endpoint)
-    0x86,                           // bEndpointAddress (EP6 IN)
-    0x03,                           // bmAttributes (Interrupt)
-    0x08, 0x00,                     // wMaxPacketSize 8
-    0x01,                           // bInterval 1 ms
-
-    /* Interface 3: CDC Data */
-    0x09,                           // bLength
-    0x04,                           // bDescriptorType (Interface)
-    0x03,                           // bInterfaceNumber 3
-    0x00,                           // bAlternateSetting
-    0x02,                           // bNumEndpoints 2
-    0x0A,                           // bInterfaceClass (Data)
-    0x00, 0x00, 0x00,               // SubClass, Protocol, iInterface
-
-    /* EP7 OUT bulk — serial data host->device (32B PMA) */
-    0x07,                           // bLength
-    0x05,                           // bDescriptorType (Endpoint)
-    0x07,                           // bEndpointAddress (EP7 OUT)
-    0x02,                           // bmAttributes (Bulk)
-    0x20, 0x00,                     // wMaxPacketSize 32
-    0x00,                           // bInterval
-
-    /* EP7 IN bulk — serial data device->host (32B PMA) */
-    0x07,                           // bLength
-    0x05,                           // bDescriptorType (Endpoint)
-    0x87,                           // bEndpointAddress (EP7 IN)
-    0x02,                           // bmAttributes (Bulk)
-    0x20, 0x00,                     // wMaxPacketSize 32
-    0x00,                           // bInterval
-#endif /* ENABLE_ETH */
 };
 
 

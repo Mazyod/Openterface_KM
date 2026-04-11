@@ -162,10 +162,9 @@ void USBD_Status_In(void)
     {
         if (Request_No == CDC_SET_LINE_CODING)
         {
-#ifdef ENABLE_ETH
-            if (pInformation->USBwIndex0 == 2) /* ACM comm interface (IF2) */
-#endif
+#ifndef ENABLE_ETH
             UART2_USB_Init();
+#endif
         }
     }
 }
@@ -451,12 +450,12 @@ uint8_t *USBD_GetStringDescriptor(uint16_t Length)
 RESULT USBD_Get_Interface_Setting(uint8_t Interface, uint8_t AlternateSetting)
 {
   /* Interface layout:
-   *   IF0: CDC Control/ECM Comm  — alt 0 only
+   *   IF0: CDC Comm / ECM Comm   — alt 0 only
    *   IF1: CDC Data / ECM Data   — alt 0 only (ACM) or alt 0+1 (ECM)
-   *   IF2: AudioControl / ACM Comm (ENABLE_ETH) — alt 0 only
-   *   IF3: AS IN  (EP4 ISO IN) / ACM Data (ENABLE_ETH) — alt 0+1 / alt 0 only
-   *   IF4: AS OUT (EP5 ISO OUT) — alt 0+1 (non-ETH only) */
-  if (Interface == 0 || Interface == 2)
+   *   IF2: AudioControl          — alt 0 only          (non-ETH only)
+   *   IF3: AS IN  (EP4 ISO IN)   — alt 0+1             (non-ETH only)
+   *   IF4: AS OUT (EP5 ISO OUT)  — alt 0+1             (non-ETH only) */
+  if (Interface == 0)
   {
     if (AlternateSetting > 0)
       return USB_UNSUPPORT;
@@ -464,23 +463,22 @@ RESULT USBD_Get_Interface_Setting(uint8_t Interface, uint8_t AlternateSetting)
   else if (Interface == 1)
   {
 #ifdef ENABLE_ETH
-    if (AlternateSetting > 1)  /* ECM: alt0 + alt1 */
+    if (AlternateSetting > 1)  /* ECM: alt0 (zero-bw) + alt1 (active) */
       return USB_UNSUPPORT;
 #else
     if (AlternateSetting > 0)  /* ACM: alt0 only */
       return USB_UNSUPPORT;
 #endif
   }
+#ifndef ENABLE_ETH
+  else if (Interface == 2)
+  {
+    if (AlternateSetting > 0)
+      return USB_UNSUPPORT;
+  }
   else if (Interface <= 4)
   {
     if (AlternateSetting > 1)
-      return USB_UNSUPPORT;
-  }
-#ifdef ENABLE_ETH
-  else if (Interface <= 3)
-  {
-    /* IF2 (ACM comm) and IF3 (ACM data): no alternate settings */
-    if (AlternateSetting > 0)
       return USB_UNSUPPORT;
   }
 #endif
@@ -554,18 +552,18 @@ RESULT USBD_Data_Setup(uint8_t RequestNo)
     if (Request_No == CDC_GET_LINE_CODING)
     {
 #ifdef ENABLE_ETH
-      /* With ETH, only serve GET_LINE_CODING for ACM serial interface (IF2) */
-      if (pInformation->USBwIndex0 != 2) return USB_UNSUPPORT;
-#endif
+      return USB_UNSUPPORT;  /* pure ECM: no ACM serial port */
+#else
       CopyRoutine = &USB_CDC_GetLineCoding;
+#endif
     }
     else if (Request_No == CDC_SET_LINE_CODING)
     {
 #ifdef ENABLE_ETH
-      /* With ETH, only serve SET_LINE_CODING for ACM serial interface (IF2) */
-      if (pInformation->USBwIndex0 != 2) return USB_UNSUPPORT;
-#endif
+      return USB_UNSUPPORT;  /* pure ECM: no ACM serial port */
+#else
       CopyRoutine = &USB_CDC_SetLineCoding;
+#endif
     }
     else
     {
