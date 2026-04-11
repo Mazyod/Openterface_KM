@@ -145,6 +145,30 @@ void SD_Switch_StateMachine(void)
 }
 
 #endif  // SD_SWITCH_VERSION == 2
+
+#if (version != 1) && (version != 2)
+void SD_Switch_Init(void)
+{
+    /* No SD switch hardware on this product variant. */
+    sd_card_channel_state = 0xFF;
+}
+
+void TARGET_SD_Switch(void)
+{
+    /* Not supported for this product variant. */
+}
+
+void HOST_SD_Switch(void)
+{
+    /* Not supported for this product variant. */
+}
+
+void SD_Switch_StateMachine(void)
+{
+    /* Not supported for this product variant. */
+}
+#endif
+
 void SD_USB_Switch(uint8_t addr, uint8_t cmd_code, uint8_t *pdata, uint8_t data_len)
 {
     if (data_len < 5)
