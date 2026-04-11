@@ -7,7 +7,7 @@
 #include "peripheral.h"
 #include "include/keyboard_handler.h"
 #include "include/mouse_handler.h"
-#include "SD_SWITCH.h"
+#include "sd_switch.h"
 #include "CH32_TEMP.h"
 #include "km_ring.h"
 #include "Version_selection.h"
