@@ -1166,6 +1166,7 @@ void DevEP2_IN_Deal(UINT8 l)
  */
 uint8_t USBSendData(void)
 {
+#ifdef ENABLE_BLE
     if(USBFSD->UEP2_TX_CTRL & USBFS_UEP_T_RES_MASK == USBFS_UEP_T_RES_ACK)
     {
         return 0x01;
@@ -1182,4 +1183,7 @@ uint8_t USBSendData(void)
         DevEP2_IN_Deal(len);
     }
     return SUCCESS;
+#else
+    return 0x01;
+#endif
 }

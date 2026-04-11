@@ -28,6 +28,9 @@ volatile uint32_t UARTx_Rx_DMACurCount;                       /* Serial port 1 r
 volatile uint32_t UARTx_Rx_DMALastCount;                      /* Serial port 1 receive dma last value counter  */
 
 extern uint8_t USBD_Endp3_Busy;
+#ifdef ENABLE_ETH
+extern uint8_t USBD_Endp7_Busy;
+#endif
 
 /*********************************************************************
  * @fn      RCC_Configuration
@@ -482,7 +485,7 @@ void UART2_DataRx_Deal( void )
                 NVIC_DisableIRQ( USB_HP_CAN1_TX_IRQn );
                 Uart.USB_Up_IngFlag = 0x01;
                 Uart.USB_Up_TimeOut = 0x00;
-                USBD_ENDPx_DataUp( ENDP3, &UART2_Rx_Buf[ Uart.Rx_DealPtr], packlen);
+                USBD_ENDPx_DataUp( USBD_SERIAL_ENDP, &UART2_Rx_Buf[ Uart.Rx_DealPtr], packlen);
                 /* Calculate the variables of interest */
                 Uart.Rx_RemainLen -= packlen;
                 Uart.Rx_DealPtr += packlen;
@@ -507,7 +510,7 @@ void UART2_DataRx_Deal( void )
             if( Uart.USB_Up_TimeOut >= DEF_UARTx_USB_UP_TIMEOUT )
             {
                 Uart.USB_Up_IngFlag = 0x00;
-                USBD_Endp3_Busy = 0;
+                USBD_SERIAL_BUSY = 0;
             }
         }
     }
@@ -525,7 +528,7 @@ void UART2_DataRx_Deal( void )
                 Uart.USB_Up_IngFlag = 0x01;
                 Uart.USB_Up_TimeOut = 0x00;
 
-                USBD_ENDPx_DataUp( ENDP3, &UART2_Rx_Buf[ Uart.Rx_DealPtr], 0);
+                USBD_ENDPx_DataUp( USBD_SERIAL_ENDP, &UART2_Rx_Buf[ Uart.Rx_DealPtr], 0);
 
                 Uart.USB_Up_IngFlag = 0;
                 Uart.USB_Up_Pack0_Flag = 0x00;

@@ -1,0 +1,148 @@
+name: Build Openterface KM Firmware (Ubuntu)
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+env:
+  XPACK_VERSION: 15.2.0-1
+  TOOLCHAIN_DIR: ${{ github.workspace }}/.toolchain/xpack-riscv-none-elf-gcc-15.2.0-1
+  WRAPPERS_DIR: ${{ github.workspace }}/.toolchain/wrappers
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Cache RISC-V toolchain
+        uses: actions/cache@v4
+        id: cache-toolchain
+        with:
+          path: ${{ github.workspace }}/.toolchain
+          key: ubuntu-xpack-riscv-${{ env.XPACK_VERSION }}
+
+      - name: Download and extract xpack RISC-V toolchain
+        if: steps.cache-toolchain.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p "${{ github.workspace }}/.toolchain"
+          curl -L --progress-bar \
+            -o "${{ github.workspace }}/.toolchain/toolchain.tar.gz" \
+            "https://github.com/xpack-dev-tools/riscv-none-elf-gcc-xpack/releases/download/v${{ env.XPACK_VERSION }}/xpack-riscv-none-elf-gcc-${{ env.XPACK_VERSION }}-linux-x64.tar.gz"
+          tar -xzf "${{ github.workspace }}/.toolchain/toolchain.tar.gz" \
+            -C "${{ github.workspace }}/.toolchain"
+
+      - name: Create toolchain wrappers
+        run: |
+          TOOLBIN="${{ env.TOOLCHAIN_DIR }}/bin"
+          WRAPDIR="${{ env.WRAPPERS_DIR }}"
+          mkdir -p "$WRAPDIR"
+
+          # Generic pass-through wrappers
+          for tool in g++ objcopy objdump size ar as nm ranlib addr2line readelf strings strip c++filt; do
+            printf '#!/bin/sh\nexec "%s/riscv-none-elf-%s" "$@"\n' "$TOOLBIN" "$tool" \
+              > "$WRAPDIR/riscv-none-embed-$tool"
+            chmod +x "$WRAPDIR/riscv-none-embed-$tool"
+          done
+
+          # GCC wrapper — strips the proprietary 'xw' arch extension
+          cat > "$WRAPDIR/riscv-none-embed-gcc" << 'WRAPPER_EOF'
+          #!/bin/bash
+          TOOLBIN="${{ env.TOOLCHAIN_DIR }}/bin"
+          args=()
+          for arg in "$@"; do
+            args+=("${arg//rv32imacxw/rv32imac_zicsr_zifencei}")
+          done
+          exec "$TOOLBIN/riscv-none-elf-gcc" "${args[@]}"
+          WRAPPER_EOF
+          chmod +x "$WRAPDIR/riscv-none-embed-gcc"
+
+      - name: Build KVMGo (version 1)
+        run: |
+          echo "Building KVMGo..."
+          sed -i 's/#define version  [0-9]\+/#define version  1/' \
+            "${{ github.workspace }}/APP/include/Version_selection.h"
+
+          export PATH="${{ env.WRAPPERS_DIR }}:$PATH"
+          cd "${{ github.workspace }}/build"
+          make clean
+          make -j$(nproc) ENABLE_BLE=1 ENABLE_ETH=0 all
+
+          cp openterface-km-firmware.hex openterface-km-firmware-kvmgo.hex
+          echo "KVMGo build succeeded"
+
+      - name: Build Mini-KVM v1.2 (version 2)
+        run: |
+          echo "Building Mini-KVM v1.2..."
+          sed -i 's/#define version  [0-9]\+/#define version  2/' \
+            "${{ github.workspace }}/APP/include/Version_selection.h"
+
+          export PATH="${{ env.WRAPPERS_DIR }}:$PATH"
+          cd "${{ github.workspace }}/build"
+          make clean
+          make -j$(nproc) ENABLE_BLE=1 ENABLE_ETH=0 all
+
+          cp openterface-km-firmware.hex openterface-km-firmware-mini-kvm.hex
+          echo "Mini-KVM v1.2 build succeeded"
+
+      - name: Build KeyMod v1.0 BLE (version 3)
+        run: |
+          echo "Building KeyMod v1.0 (BLE)..."
+          sed -i 's/#define version  [0-9]\+/#define version  3/' \
+            "${{ github.workspace }}/APP/include/Version_selection.h"
+
+          export PATH="${{ env.WRAPPERS_DIR }}:$PATH"
+          cd "${{ github.workspace }}/build"
+          make clean
+          make -j$(nproc) ENABLE_BLE=1 ENABLE_ETH=0 all
+
+          cp openterface-km-firmware.hex openterface-km-firmware-keymod-ble.hex
+          echo "KeyMod v1.0 BLE build succeeded"
+
+      - name: Build KeyMod v1.0 CDC-ECM (version 4)
+        run: |
+          echo "Building KeyMod v1.0 (CDC-ECM)..."
+          sed -i 's/#define version  [0-9]\+/#define version  4/' \
+            "${{ github.workspace }}/APP/include/Version_selection.h"
+
+          export PATH="${{ env.WRAPPERS_DIR }}:$PATH"
+          cd "${{ github.workspace }}/build"
+          make clean
+          make -j$(nproc) ENABLE_BLE=0 ENABLE_ETH=1 all
+
+          cp openterface-km-firmware.hex openterface-km-firmware-keymod-ecm.hex
+          echo "KeyMod v1.0 CDC-ECM build succeeded"
+
+      - name: Upload KVMGo firmware
+        uses: actions/upload-artifact@v4
+        with:
+          name: openterface-km-firmware-kvmgo
+          if-no-files-found: error
+          path: ${{ github.workspace }}/build/openterface-km-firmware-kvmgo.hex
+
+      - name: Upload Mini-KVM v1.2 firmware
+        uses: actions/upload-artifact@v4
+        with:
+          name: openterface-km-firmware-mini-kvm-v1.2
+          if-no-files-found: error
+          path: ${{ github.workspace }}/build/openterface-km-firmware-mini-kvm.hex
+
+      - name: Upload KeyMod v1.0 BLE firmware
+        uses: actions/upload-artifact@v4
+        with:
+          name: openterface-km-firmware-keymod-v1.0-ble
+          if-no-files-found: error
+          path: ${{ github.workspace }}/build/openterface-km-firmware-keymod-ble.hex
+
+      - name: Upload KeyMod v1.0 CDC-ECM firmware
+        uses: actions/upload-artifact@v4
+        with:
+          name: openterface-km-firmware-keymod-v1.0-ecm
+          if-no-files-found: error
+          path: ${{ github.workspace }}/build/openterface-km-firmware-keymod-ecm.hex
