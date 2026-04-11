@@ -46,10 +46,11 @@ typedef struct
     uint16_t connTimeout;
 } peripheralConnItem_t;
 
+#ifdef ENABLE_BLE
 extern RingMemParm_t RingMemUSB;
-extern uint8_t RingMemUSBBuf[2048];
+extern uint8_t RingMemUSBBuf[512];
 extern RingMemParm_t RingMemBLE;
-extern uint8_t RingMemBLEBuf[2048];
+extern uint8_t RingMemBLEBuf[512];
 extern uint8_t Peripheral_TaskID;
 /*********************************************************************
  * FUNCTIONS
@@ -65,6 +66,7 @@ extern void Peripheral_Init(void);
  */
 extern uint16_t Peripheral_ProcessEvent(uint8_t task_id, uint16_t events);
 uint8_t app_usb_notify(uint8_t *SendBuf, uint8_t l);
+#endif /* ENABLE_BLE */
 
 /*********************************************************************
 *********************************************************************/

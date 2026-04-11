@@ -43,6 +43,28 @@
 #define ENDP4_ISO_TXADDR    (0x120)                         /* 64B, UAC IN    */
 #define ENDP5_ISO_RXADDR    (0x160)                         /* 64B, UAC OUT   */
 
+/* When ENABLE_ETH=1, EP6/EP7 carry CDC-ACM serial (separate from ECM on EP1-3).
+ *   EP6 TX:  0x1A0 (32B) -- ACM interrupt IN (notifications)
+ *   EP7 RX:  0x1C0 (32B) -- ACM bulk OUT (host->device serial data)
+ *   EP7 TX:  0x1E0 (32B) -- ACM bulk IN  (device->host serial data)
+ *   Total PMA with EP6/EP7: 416+96 = 512B (exactly full)  */
+#ifdef ENABLE_ETH
+#define ENDP6_TXADDR        (0x1A0)                         /* 32B, ACM INT IN  */
+#define ENDP7_RXADDR        (0x1C0)                         /* 32B, ACM bulk OUT */
+#define ENDP7_TXADDR        (0x1E0)                         /* 32B, ACM bulk IN  */
+#endif /* ENABLE_ETH */
+
+/* Serial data endpoint abstraction:
+ *   Without ETH: CDC-ACM occupies EP3 (as before)
+ *   With    ETH: CDC-ECM occupies EP3; CDC-ACM serial moves to EP7 */
+#ifdef ENABLE_ETH
+#  define USBD_SERIAL_ENDP       ENDP7
+#  define USBD_SERIAL_BUSY       USBD_Endp7_Busy
+#else
+#  define USBD_SERIAL_ENDP       ENDP3
+#  define USBD_SERIAL_BUSY       USBD_Endp3_Busy
+#endif
+
 
 /* ISTR events */
 /* IMR_MSK */
@@ -68,16 +90,25 @@
 // #define  EP3_IN_Callback   NOP_Process
 // #define  EP4_IN_Callback   NOP_Process  /* UAC ISO IN handled in uac_handler */
 #define  EP5_IN_Callback   NOP_Process
-#define  EP6_IN_Callback   NOP_Process
-#define  EP7_IN_Callback   NOP_Process
+#ifdef ENABLE_ETH
+/* EP6 IN (ACM notification sent), EP7 IN (ACM bulk IN done),
+ * EP7 OUT (ACM bulk OUT received) are real functions in usb_endp.c. */
+#else
+#define  EP6_IN_Callback    NOP_Process
+#define  EP7_IN_Callback    NOP_Process
+#endif /* ENABLE_ETH */
 
 #define  EP1_OUT_Callback   NOP_Process
 // #define  EP2_OUT_Callback   NOP_Process
 #define  EP3_OUT_Callback   NOP_Process
 #define  EP4_OUT_Callback   NOP_Process
-// #define  EP5_OUT_Callback   NOP_Process  /* EP5 ISO OUT active — handled in usb_endp.c */
-#define  EP6_OUT_Callback   NOP_Process
+// #define  EP5_OUT_Callback   NOP_Process  /* EP5 ISO OUT active -- handled in usb_endp.c */
+#define  EP6_OUT_Callback   NOP_Process   /* EP6 has no bulk OUT direction */
+#ifdef ENABLE_ETH
+/* EP7_OUT handled in usb_endp.c for ACM bulk OUT (host->device) */
+#else
 #define  EP7_OUT_Callback   NOP_Process
+#endif /* ENABLE_ETH */
 
 #endif /* __USB_CONF_H */
 

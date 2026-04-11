@@ -18,8 +18,14 @@
 #include "usb_prop.h"
 #include "UART.h"
 #include "../../include/uac_handler.h"
+#ifdef ENABLE_ETH
+#include "../../include/eth_handler.h"
+#endif /* ENABLE_ETH */
 
 uint8_t USBD_Endp3_Busy;
+#ifdef ENABLE_ETH
+uint8_t USBD_Endp7_Busy;  /* ACM serial EP7 IN busy flag */
+#endif
 uint16_t USB_Rx_Cnt=0; 
 
 /*********************************************************************
@@ -30,9 +36,25 @@ uint16_t USB_Rx_Cnt=0;
  * @return  none
  */
 void EP1_IN_Callback (void)
-{ 
-	
+{
+#ifdef ENABLE_ETH
+    ETH_USBD_EP1_TxDone();
+#endif
 }
+
+#ifdef ENABLE_ETH
+/*********************************************************************
+ * @fn      EP6_IN_Callback
+ *
+ * @brief  Endpoint 6 IN (ACM interrupt IN — notification sent).
+ *
+ * @return  none
+ */
+void EP6_IN_Callback(void)
+{
+    /* ACM notification delivered — no further action needed */
+}
+#endif /* ENABLE_ETH */
 
 
 
@@ -44,7 +66,11 @@ void EP1_IN_Callback (void)
  * @return  none
  */
 void EP2_OUT_Callback (void)
-{ 
+{
+#ifdef ENABLE_ETH
+    uint16_t len = GetEPRxCount( EP2_OUT & 0x7F );
+    ETH_USBD_EP2_RxDone( len );
+#else
 	uint32_t len;
     len = GetEPRxCount( EP2_OUT & 0x7F );
     PMAToUserBufferCopy( &UART2_Tx_Buf[ ( Uart.Tx_LoadNum * DEF_USB_FS_PACK_LEN ) ], GetEPRxAddr( EP2_OUT & 0x7F ), len );
@@ -64,6 +90,7 @@ void EP2_OUT_Callback (void)
     {
         SetEPRxValid( ENDP2 );
     }
+#endif /* ENABLE_ETH */
 }
 /*********************************************************************
  * @fn      EP3_IN_Callback
@@ -73,10 +100,54 @@ void EP2_OUT_Callback (void)
  * @return  none
  */
 void EP3_IN_Callback (void)
-{ 
+{
+#ifdef ENABLE_ETH
+    ETH_USBD_EP3_TxDone();
+#else
 	USBD_Endp3_Busy = 0;
 	Uart.USB_Up_IngFlag = 0x00;
+#endif /* ENABLE_ETH */
 }
+
+#ifdef ENABLE_ETH
+/*********************************************************************
+ * @fn      EP7_OUT_Callback
+ *
+ * @brief   Endpoint 7 OUT — CDC-ACM serial data from host.
+ *          Mirrors the non-ETH EP2_OUT_Callback logic.
+ *
+ * @return  none
+ */
+void EP7_OUT_Callback(void)
+{
+    uint32_t len;
+    len = GetEPRxCount(EP7_OUT & 0x7F);
+    PMAToUserBufferCopy(&UART2_Tx_Buf[(Uart.Tx_LoadNum * DEF_USB_FS_PACK_LEN)],
+                        ENDP7_RXADDR, len);
+    Uart.Tx_PackLen[Uart.Tx_LoadNum] = len;
+    Uart.Tx_LoadNum++;
+    if (Uart.Tx_LoadNum >= DEF_UARTx_TX_BUF_NUM_MAX)
+        Uart.Tx_LoadNum = 0x00;
+    Uart.Tx_RemainNum++;
+    if (Uart.Tx_RemainNum >= (DEF_UARTx_TX_BUF_NUM_MAX - 2))
+        Uart.USB_Down_StopFlag = 0x01;
+    else
+        SetEPRxValid(ENDP7);
+}
+
+/*********************************************************************
+ * @fn      EP7_IN_Callback
+ *
+ * @brief   Endpoint 7 IN — CDC-ACM serial data sent to host.
+ *
+ * @return  none
+ */
+void EP7_IN_Callback(void)
+{
+    USBD_Endp7_Busy = 0;
+    Uart.USB_Up_IngFlag = 0x00;
+}
+#endif /* ENABLE_ETH */
 
 /*********************************************************************
  * @fn      EP4_IN_Callback
@@ -137,6 +208,18 @@ uint8_t USBD_ENDPx_DataUp( uint8_t endp, uint8_t *pbuf, uint16_t len )
 		USBD_Endp3_Busy = 1;
 		SetEPTxStatus( ENDP3, EP_TX_VALID );
 	}
+#ifdef ENABLE_ETH
+	else if( endp == ENDP7 )
+	{
+		if (USBD_Endp7_Busy)
+		{
+			return USB_ERROR;
+		}
+		USB_SIL_Write( EP7_IN, pbuf, len );
+		USBD_Endp7_Busy = 1;
+		SetEPTxStatus( ENDP7, EP_TX_VALID );
+	}
+#endif /* ENABLE_ETH */
 	else
 	{
 		return USB_ERROR;

@@ -6,10 +6,12 @@
 #include "UART.h"
 #include "debug.h"
 #include "usb_lib.h"
+#ifdef ENABLE_BLE
 #include "CONFIG.h"
 #include "HAL.h"
 #include "gattprofile.h"
 #include "peripheral.h"
+#endif
 #include "include/keyboard_handler.h"
 #include "include/mouse_handler.h"
 #include "sd_switch.h"
@@ -19,11 +21,16 @@
 #include "km_ring.h"
 #include "Version_selection.h"
 #include "include/uac_handler.h"
+#ifdef ENABLE_ETH
+#include "include/eth_handler.h"
+#endif /* ENABLE_ETH */
 
 /*********************************************************************
  * GLOBAL TYPEDEFS
  */
+#ifdef ENABLE_BLE
 __attribute__((aligned(4))) uint32_t MEM_BUF[BLE_MEMHEAP_SIZE / 4];
+#endif
 
 #if(defined(BLE_MAC)) && (BLE_MAC == TRUE)
 const uint8_t MacAddr[6] = {0x84, 0xC2, 0xE4, 0x03, 0x02, 0x02};
@@ -59,9 +66,11 @@ void Main_Circulation(void)
         //SDcard_state
         Update_SDcard();
         //Enable Bluetooth broadcasting
+#ifdef ENABLE_BLE
         if (version == 1) {
         TMOS_SystemProcess();
         }
+#endif
         //Instruction code receiving protocol
         USB_DataRx_To_KMHandle();
         //Keyboard and mouse control code sending loop
@@ -99,7 +108,9 @@ int main(void) {
     //minikvm havent ble & ds18b20
     if (version == 1)
     {    
+#ifdef ENABLE_BLE
     WCHBLE_Init();
+#endif
     DS18B20_Init();
     }
     //usbfs_init
@@ -109,12 +120,17 @@ int main(void) {
 #ifdef ENABLE_UAC
     UAC_Init();
 #endif
+#ifdef ENABLE_ETH
+    ETH_Init();
+#endif
     Keyboard_Init();
     Mouse_Init();
     //ble_init(Must be placed after USB initialization)
+#ifdef ENABLE_BLE
     HAL_Init();
     GAPRole_PeripheralInit();
     Peripheral_Init();
+#endif
     //km_ring
     Queue_Init();
     //SDcontrol_init

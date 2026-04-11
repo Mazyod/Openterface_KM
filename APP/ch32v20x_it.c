@@ -14,14 +14,18 @@
  * INCLUDES
  */
 #include "ch32v20x_it.h"
+#ifdef ENABLE_BLE
 #include "CONFIG.h"
+#endif
 
 /*********************************************************************
  * LOCAL FUNCTIONS
  */
 void NMI_Handler(void) __attribute__((interrupt("WCH-Interrupt-fast")));
 void HardFault_Handler(void) __attribute__((interrupt("WCH-Interrupt-fast")));
+#ifdef ENABLE_BLE
 void BB_IRQHandler(void) __attribute__((interrupt("WCH-Interrupt-fast")));
+#endif
 
 /*********************************************************************
  * @fn      NMI_Handler
@@ -49,14 +53,9 @@ void HardFault_Handler(void)
     }
 }
 
-/*********************************************************************
- * @fn      BB_IRQHandler
- *
- * @brief   BB Interrupt for BLE.
- *
- * @return  None
- */
+#ifdef ENABLE_BLE
 void BB_IRQHandler(void)
 {
     BB_IRQLibHandler();
 }
+#endif /* ENABLE_BLE */

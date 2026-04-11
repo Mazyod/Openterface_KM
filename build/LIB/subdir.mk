@@ -3,6 +3,7 @@
 # Automatically-generated file. Do not edit!
 ################################################################################
 
+ifeq ($(ENABLE_BLE),1)
 # Add inputs and outputs from these tool invocations to the build variables 
 S_UPPER_SRCS += \
 ../LIB/ble_task_scheduler.S 
@@ -22,3 +23,5 @@ LIB/%.o: ../LIB/%.S
 	riscv-none-embed-gcc -march=rv32imacxw -mabi=ilp32 -mcmodel=medany -msmall-data-limit=8 -mno-save-restore -fmax-errors=20 -Os -fmessage-length=0 -fsigned-char -ffunction-sections -fdata-sections -fno-common -g -x assembler-with-cpp -MMD -MP -MF"$(@:%.o=%.d)" -MT"$(@)" -c -o "$@" "$<"
 	@echo 'Finished building: $<'
 	@
+
+endif # ENABLE_BLE
