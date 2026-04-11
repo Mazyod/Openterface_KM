@@ -356,25 +356,8 @@ void USBD_Reset(void)
   UAC_Init();
 #endif /* ENABLE_UAC */
 
-#ifdef ENABLE_ETH
-  /* EP6: CDC-ACM serial interrupt IN (notifications to host) */
-  SetEPType(ENDP6, EP_INTERRUPT);
-  SetEPTxStatus(ENDP6, EP_TX_NAK);
-  SetEPTxAddr(ENDP6, ENDP6_TXADDR);
-  SetEPRxStatus(ENDP6, EP_RX_DIS);
-  _ClearDTOG_TX(ENDP6);
-  _ClearDTOG_RX(ENDP6);
-
-  /* EP7: CDC-ACM serial bulk (OUT = host→device, IN = device→host) */
-  SetEPType(ENDP7, EP_BULK);
-  SetEPTxStatus(ENDP7, EP_TX_NAK);
-  SetEPTxAddr(ENDP7, ENDP7_TXADDR);
-  SetEPRxAddr(ENDP7, ENDP7_RXADDR);
-  SetEPRxCount(ENDP7, 32);
-  SetEPRxStatus(ENDP7, EP_RX_VALID);
-  _ClearDTOG_RX(ENDP7);
-  _ClearDTOG_TX(ENDP7);
-#endif /* ENABLE_ETH */
+/* Note: when ENABLE_ETH is defined, only EP0-3 are used (pure CDC-ECM).
+ * No CDC-ACM serial endpoints (EP6/EP7) are initialized. */
 
   SetDeviceAddress(0);
 
