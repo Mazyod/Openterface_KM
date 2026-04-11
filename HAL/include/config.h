@@ -21,9 +21,9 @@
 #define CHIP_ID								ID_CH32V208
 
 #ifdef WCHBLE_ROM
-#include "WCHBLE_ROM.H"
+#include "wchble_rom.h"
 #else
-#include "wchble.H"
+#include "wchble.h"
 #endif
 
 #include "ch32v20x.h"
