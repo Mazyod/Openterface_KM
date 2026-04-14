@@ -104,6 +104,7 @@ Before compiling, ensure you have the following:
 - **WCH MounRiver Studio** (Windows, recommended): includes the RISC-V toolchain and one-click flash support.
 - **xpack riscv-none-elf-gcc** (macOS / Linux): see [macOS build guide](docs/build-on-mac.md).
 - **GNU Make** (`brew install make` on macOS).
+- **libusb + pkg-config** (`brew install libusb pkg-config` on macOS) for the bundled command-line flasher.
 - **Git** (for cloning the repository).
 
 > The build system uses the `riscv-none-embed-gcc` wrapper name.  
@@ -122,16 +123,47 @@ Before compiling, ensure you have the following:
 See [docs/build-on-mac.md](docs/build-on-mac.md) for full toolchain setup.
 
 ```bash
+./tools/firmware.sh build
+```
+
+The helper script automatically uses `build/makefile` and the bundled WCH ISP flasher source in `tools/`.
+
+Common commands:
+
+```bash
+# Build the default firmware
+./tools/firmware.sh build
+
+# Probe for the bootloader before flashing
+./tools/firmware.sh probe
+
+# Build and flash KeyMod BLE firmware
+./tools/firmware.sh flash --clean --board-version 3 --enable-uac 0 --enable-eth 0 --enable-ble 1 --ble-name KeyMod-BLE
+
+# Build and flash a BLE-only image with a custom BLE name
+./tools/firmware.sh flash --clean --enable-uac 0 --enable-eth 0 --enable-ble 1 --ble-name Keymod-BLE
+```
+
+Direct `make` usage is still supported:
+
+```bash
 export PATH="$HOME/tools/xpack-riscv/wrappers:$PATH"
 cd build
 make clean && make all
+make probe
+make clean && make flash BOARD_VERSION=3 ENABLE_UAC=0 ENABLE_ETH=0 ENABLE_BLE=1 BLE_NAME=KeyMod-BLE
+make clean && make flash ENABLE_UAC=0 ENABLE_ETH=0 ENABLE_BLE=1 BLE_NAME=Keymod-BLE
 ```
+
+When switching feature flags or `BLE_NAME`, prefer a clean build for that first flash.
+If you are flashing KeyMod hardware, use `BOARD_VERSION=3` for BLE-only firmware or `BOARD_VERSION=4` for the CDC-ECM variant. The default remains `BOARD_VERSION=1` (KVMGo).
 
 Build output:
 
 ```
 build/openterface-km-firmware.elf   ← flash this
-build/openterface-km-firmware.hex   ← binary image
+build/openterface-km-firmware.bin   ← raw binary image used by the ISP flasher
+build/openterface-km-firmware.hex   ← Intel HEX image
 ```
 
 ### Build Flags
@@ -191,7 +223,7 @@ When `ENABLE_BLE=1` the following BLE parameters can also be tuned:
 
 | Variable | Default | Minimum | Description |
 |---|---|---|---|
-| `BLE_MEMHEAP_SIZE` | `6144` | `6144` | Bytes of static RAM given to the BLE stack heap |
+| `BLE_MEMHEAP_SIZE` | `7168` | `6144` | Bytes of static RAM given to the BLE stack heap |
 | `BLE_BUFF_MAX_LEN` | `64` | `27` | Max HCI packet payload (ATT_MTU = value − 4) |
 | `BLE_TX_NUM_EVENT` | `1` | `1` | Max TX packets per connection event |
 
@@ -202,7 +234,7 @@ Examples:
 make all BLE_MEMHEAP_SIZE=8192 BLE_BUFF_MAX_LEN=128
 
 # Minimal BLE — keyboard/mouse only, minimum RAM
-make all BLE_MEMHEAP_SIZE=6144 BLE_BUFF_MAX_LEN=64 BLE_TX_NUM_EVENT=1
+make all BLE_MEMHEAP_SIZE=7168 BLE_BUFF_MAX_LEN=64 BLE_TX_NUM_EVENT=1
 ```
 
 #### Combining flags
@@ -249,7 +281,7 @@ make all ENABLE_ETH=1 ENABLE_BLE=0
    make clean && make all
    ```
 
-4. **`BLE_LibInit` fails at runtime** (BLE=1, device hangs on boot)
+4. **`BLE_LibInit` fails at runtime** (BLE=1, device hangs on boot or no advertising)
    Increase the heap: `make all BLE_MEMHEAP_SIZE=8192`.
 
 ## How to Flash to Device

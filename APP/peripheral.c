@@ -87,25 +87,13 @@
  */
 uint8_t Peripheral_TaskID = INVALID_TASK_ID; // Task ID for internal task/event processing
 
-// GAP - SCAN RSP data (max size = 31 bytes)
-static uint8_t scanRspData[] = {
-    // complete name
-    0x07, // length of this data
-    GAP_ADTYPE_LOCAL_NAME_COMPLETE,
-    'K', 'V','M', '-', 'G', 'O',
-    // connection interval range
-    0x05, // length of this data
-    GAP_ADTYPE_SLAVE_CONN_INTERVAL_RANGE,
-    LO_UINT16(DEFAULT_DESIRED_MIN_CONN_INTERVAL), // 100ms
-    HI_UINT16(DEFAULT_DESIRED_MIN_CONN_INTERVAL),
-    LO_UINT16(DEFAULT_DESIRED_MAX_CONN_INTERVAL), // 1s
-    HI_UINT16(DEFAULT_DESIRED_MAX_CONN_INTERVAL),
+#ifndef BLE_DEVICE_NAME
+#define BLE_DEVICE_NAME "KVM-GO"
+#endif
 
-    // Tx power level
-    0x02, // length of this data
-    GAP_ADTYPE_POWER_LEVEL,
-    0 // 0dBm
-};
+// GAP - SCAN RSP data (max size = 31 bytes)
+static uint8_t scanRspData[31] = {0};
+static uint8_t scanRspDataLen = 0;
 
 // GAP - Advertisement data (max size = 31 bytes, though this is
 // best kept short to conserve power while advertising)
@@ -125,7 +113,7 @@ static uint8_t advertData[] = {
     HI_UINT16(SIMPLEPROFILE_SERV_UUID)};
 
 // GAP GATT Attributes
-static uint8_t attDeviceName[GAP_DEVICE_NAME_LEN] = "KVM-GO";
+static uint8_t attDeviceName[GAP_DEVICE_NAME_LEN] = {0};
 
 // Connection item list
 static peripheralConnItem_t peripheralConnList;
@@ -205,10 +193,35 @@ void Peripheral_Init()
         uint8_t  initial_advertising_enable = TRUE;
         uint16_t desired_min_interval = DEFAULT_DESIRED_MIN_CONN_INTERVAL;
         uint16_t desired_max_interval = DEFAULT_DESIRED_MAX_CONN_INTERVAL;
+        uint8_t nameLen = sizeof(BLE_DEVICE_NAME) - 1;
+        uint8_t deviceNameLen = sizeof(attDeviceName) - 1;
+
+        if(nameLen > 20) nameLen = 20;
+        if(deviceNameLen > sizeof(BLE_DEVICE_NAME) - 1) deviceNameLen = sizeof(BLE_DEVICE_NAME) - 1;
+
+        tmos_memset(attDeviceName, 0, sizeof(attDeviceName));
+        tmos_memcpy(attDeviceName, BLE_DEVICE_NAME, deviceNameLen);
+        
+        scanRspDataLen = 0;
+        scanRspData[scanRspDataLen++] = nameLen + 1;
+        scanRspData[scanRspDataLen++] = GAP_ADTYPE_LOCAL_NAME_COMPLETE;
+        tmos_memcpy(&scanRspData[scanRspDataLen], BLE_DEVICE_NAME, nameLen);
+        scanRspDataLen += nameLen;
+        
+        scanRspData[scanRspDataLen++] = 0x05;
+        scanRspData[scanRspDataLen++] = GAP_ADTYPE_SLAVE_CONN_INTERVAL_RANGE;
+        scanRspData[scanRspDataLen++] = LO_UINT16(DEFAULT_DESIRED_MIN_CONN_INTERVAL);
+        scanRspData[scanRspDataLen++] = HI_UINT16(DEFAULT_DESIRED_MIN_CONN_INTERVAL);
+        scanRspData[scanRspDataLen++] = LO_UINT16(DEFAULT_DESIRED_MAX_CONN_INTERVAL);
+        scanRspData[scanRspDataLen++] = HI_UINT16(DEFAULT_DESIRED_MAX_CONN_INTERVAL);
+        
+        scanRspData[scanRspDataLen++] = 0x02;
+        scanRspData[scanRspDataLen++] = GAP_ADTYPE_POWER_LEVEL;
+        scanRspData[scanRspDataLen++] = 0;
 
         // Set the GAP Role Parameters
         GAPRole_SetParameter(GAPROLE_ADVERT_ENABLED, sizeof(uint8_t), &initial_advertising_enable);
-        GAPRole_SetParameter(GAPROLE_SCAN_RSP_DATA, sizeof(scanRspData), scanRspData);
+        GAPRole_SetParameter(GAPROLE_SCAN_RSP_DATA, scanRspDataLen, scanRspData);
         GAPRole_SetParameter(GAPROLE_ADVERT_DATA, sizeof(advertData), advertData);
         GAPRole_SetParameter(GAPROLE_MIN_CONN_INTERVAL, sizeof(uint16_t), &desired_min_interval);
         GAPRole_SetParameter(GAPROLE_MAX_CONN_INTERVAL, sizeof(uint16_t), &desired_max_interval);

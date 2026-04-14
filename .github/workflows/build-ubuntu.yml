@@ -67,13 +67,10 @@ jobs:
       - name: Build KVMGo (version 1)
         run: |
           echo "Building KVMGo..."
-          sed -i 's/#define version  [0-9]\+/#define version  1/' \
-            "${{ github.workspace }}/APP/include/Version_selection.h"
-
           export PATH="${{ env.WRAPPERS_DIR }}:$PATH"
           cd "${{ github.workspace }}/build"
           make clean
-          make -j$(nproc) ENABLE_BLE=1 ENABLE_ETH=0 all
+          make -j$(nproc) ENABLE_BLE=1 ENABLE_ETH=0 BOARD_VERSION=1 all
 
           cp openterface-km-firmware.hex openterface-km-firmware-kvmgo.hex
           echo "KVMGo build succeeded"
@@ -81,13 +78,10 @@ jobs:
       - name: Build Mini-KVM v1.2 (version 2)
         run: |
           echo "Building Mini-KVM v1.2..."
-          sed -i 's/#define version  [0-9]\+/#define version  2/' \
-            "${{ github.workspace }}/APP/include/Version_selection.h"
-
           export PATH="${{ env.WRAPPERS_DIR }}:$PATH"
           cd "${{ github.workspace }}/build"
           make clean
-          make -j$(nproc) ENABLE_BLE=1 ENABLE_ETH=0 all
+          make -j$(nproc) ENABLE_BLE=1 ENABLE_ETH=0 BOARD_VERSION=2 all
 
           cp openterface-km-firmware.hex openterface-km-firmware-mini-kvm.hex
           echo "Mini-KVM v1.2 build succeeded"
@@ -95,13 +89,10 @@ jobs:
       - name: Build KeyMod v1.0 BLE (version 3)
         run: |
           echo "Building KeyMod v1.0 (BLE)..."
-          sed -i 's/#define version  [0-9]\+/#define version  3/' \
-            "${{ github.workspace }}/APP/include/Version_selection.h"
-
           export PATH="${{ env.WRAPPERS_DIR }}:$PATH"
           cd "${{ github.workspace }}/build"
           make clean
-          make -j$(nproc) ENABLE_BLE=1 ENABLE_ETH=0 all
+          make -j$(nproc) ENABLE_BLE=1 ENABLE_ETH=0 BOARD_VERSION=3 all
 
           cp openterface-km-firmware.hex openterface-km-firmware-keymod-ble.hex
           echo "KeyMod v1.0 BLE build succeeded"
@@ -109,13 +100,10 @@ jobs:
       - name: Build KeyMod v1.0 CDC-ECM (version 4)
         run: |
           echo "Building KeyMod v1.0 (CDC-ECM)..."
-          sed -i 's/#define version  [0-9]\+/#define version  4/' \
-            "${{ github.workspace }}/APP/include/Version_selection.h"
-
           export PATH="${{ env.WRAPPERS_DIR }}:$PATH"
           cd "${{ github.workspace }}/build"
           make clean
-          make -j$(nproc) ENABLE_BLE=0 ENABLE_ETH=1 all
+          make -j$(nproc) ENABLE_BLE=0 ENABLE_ETH=1 BOARD_VERSION=4 all
 
           cp openterface-km-firmware.hex openterface-km-firmware-keymod-ecm.hex
           echo "KeyMod v1.0 CDC-ECM build succeeded"

@@ -7,3 +7,6 @@ obj/
 *.d
 .vscode/
 .mrs/
+*.bin
+tools/wchisp_c
+.DS_Store

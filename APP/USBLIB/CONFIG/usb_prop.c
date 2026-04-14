@@ -227,7 +227,7 @@ void USBD_SetInterface_Impl(void)
         g_eth_data_alt = alt;
         if (alt == 1)
         {
-            SetEPRxCount(ENDP2, 32);
+            SetEPRxCount(ENDP2, 64);
             SetEPRxStatus(ENDP2, EP_RX_VALID);  /* arm for Ethernet frame reception */
             ETH_SendNotification(1);             /* tell host link is up */
         }

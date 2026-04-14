@@ -8,6 +8,10 @@ This guide explains how to build the `openterface-km-firmware` binary on a macOS
   ```bash
   xcode-select --install
   ```
+- Homebrew packages required for the bundled command-line flasher:
+  ```bash
+  brew install libusb pkg-config
+  ```
 
 ## 1. Download the RISC-V Toolchain
 
@@ -62,13 +66,43 @@ chmod +x "$WRAPDIR/riscv-none-embed-gcc"
 
 ## 3. Build
 
-Add the wrappers to your `PATH` and run `make` from the `build/` directory:
+Add the wrappers to your `PATH` and run the helper from the repository root:
+
+```bash
+export PATH="$HOME/tools/xpack-riscv/wrappers:$PATH"
+cd /path/to/Openterface_KM
+./tools/firmware.sh build
+```
+
+Direct `make` usage still works if you prefer it:
 
 ```bash
 export PATH="$HOME/tools/xpack-riscv/wrappers:$PATH"
 cd /path/to/Openterface_KM/build
 make all
 ```
+
+### Probe and flash
+
+Put the board into bootloader mode before flashing.
+
+```bash
+# Check that the WCH ISP bootloader is visible over USB
+./tools/firmware.sh probe
+
+# Build and flash the default firmware
+./tools/firmware.sh flash
+
+# Build and flash KeyMod BLE firmware
+./tools/firmware.sh flash --clean --board-version 3 --enable-uac 0 --enable-eth 0 --enable-ble 1 --ble-name KeyMod-BLE
+
+# Build and flash a BLE-only image with a custom advertising name
+./tools/firmware.sh flash --clean --enable-uac 0 --enable-eth 0 --enable-ble 1 --ble-name Keymod-BLE
+```
+
+If you switch `ENABLE_*` flags or `BLE_NAME`, prefer a clean build for that first flash.
+If BLE still does not advertise after boot, retry with a larger heap, for example `--ble-memheap-size 8192`.
+If you are targeting KeyMod hardware, also pass `--board-version 3` for the BLE build.
 
 ### Expected output
 
@@ -84,11 +118,18 @@ Output files are written to the `build/` directory:
 | File | Description |
 |------|-------------|
 | `openterface-km-firmware.elf` | ELF with debug symbols, used for flashing and debugging |
-| `openterface-km-firmware.hex` | Raw binary image |
+| `openterface-km-firmware.bin` | Raw binary image used by the WCH ISP flasher |
+| `openterface-km-firmware.hex` | Intel HEX image |
 | `openterface-km-firmware.lst` | Disassembly listing |
 | `openterface-km-firmware.map` | Linker memory map |
 
 ## 4. Clean
+
+```bash
+./tools/firmware.sh clean
+```
+
+Direct `make` cleanup remains available:
 
 ```bash
 cd build && make clean
@@ -107,3 +148,4 @@ export PATH="$HOME/tools/xpack-riscv/wrappers:$PATH"
 - The `libwchble.a` BLE library is pre-built and included in the `LIB/` directory. It is a binary for the CH32V20x target and does not need to be compiled from source.
 - The `.lst` disassembly file will show a harmless warning (`unrecognized disassembler option: xw`) because `objdump` doesn't know the proprietary extension. This does not affect the firmware.
 - RAM usage is 100% by design — the BLE stack is mapped into the upper portion of RAM by the linker script.
+- `tools/firmware.sh` auto-builds the bundled `tools/wchisp_c` host flasher when you run `probe` or `flash`.

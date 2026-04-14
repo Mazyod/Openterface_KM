@@ -9,7 +9,9 @@
  * 3 = keymod v1.0 (BLE only)
  * 4 = keymod v1.0 (CDC-ECM only)
  */
+#ifndef version
 #define version  1
+#endif
 // Use this definition to set endpoint 3 as a touchscreen device,or an absolute mouse device
 #define EP3_USE_STYLUS
 /* USB Audio Class (UAC) support — controlled by the build system.

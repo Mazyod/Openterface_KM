@@ -55,8 +55,8 @@ const uint8_t  USBD_ConfigDescriptor[] = {
     /* ===== Pure CDC-ECM — USB Ethernet on the legacy USBD controller =========
      * bDeviceClass=0x02 (CDC) so NO IAD needed — single-function device.
      * EP1 IN interrupt (0x81): CDC NETWORK_CONNECTION notifications (8 bytes)
-     * EP2 OUT bulk    (0x02): Ethernet frames host->device  (32 bytes/packet)
-     * EP3 IN bulk     (0x83): Ethernet frames device->host  (32 bytes/packet)
+     * EP2 OUT bulk    (0x02): Ethernet frames host->device  (64 bytes/packet)
+     * EP3 IN bulk     (0x83): Ethernet frames device->host  (64 bytes/packet)
      * ========================================================================= */
 
     /* Interface 0: CDC Communication (ECM) */
