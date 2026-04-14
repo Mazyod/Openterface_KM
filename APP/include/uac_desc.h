@@ -96,8 +96,8 @@
  * --------------------------------------------------------------------- */
 
 /* AudioControl block sizes */
-/* AC Header bLength = 10 (8 fixed + 1 per baInterfaceNr; bInCollection=2 → 8+2=10) */
-#define UAC_AC_HEADER_LEN               9u
+/* AC Header bLength = 10 (8 fixed + 1 per baInterfaceNr; bInCollection=2 -> 8+2=10) */
+#define UAC_AC_HEADER_LEN               10u
 #define UAC_AC_INPUT_TERMINAL_LEN       12u
 #define UAC_AC_OUTPUT_TERMINAL_LEN      9u
 #define UAC_AC_INTERFACE_TOTAL_LEN      (UAC_AC_HEADER_LEN + \

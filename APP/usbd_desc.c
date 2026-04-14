@@ -197,7 +197,7 @@ const uint8_t MyCfgDescr[ ] =
     USB_DESC_TYPE_CS_INTERFACE,                             // bDescriptorType
     UAC_AC_HEADER,                                          // bDescriptorSubtype
     0x00, 0x01,                                             // bcdADC 1.00
-    UAC_AC_INTERFACE_TOTAL_LEN + 0x0A, 0x00,               // wTotalLength = 52 = 0x34
+    UAC_AC_INTERFACE_TOTAL_LEN, 0x00,                      // wTotalLength = 52 = 0x34
     0x02,                                                   // bInCollection: 2 streaming interfaces
     0x05,                                                   // baInterfaceNr(1): IF5 (AS IN)
     0x06,                                                   // baInterfaceNr(2): IF6 (AS OUT)
