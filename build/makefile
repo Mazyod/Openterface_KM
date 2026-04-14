@@ -11,16 +11,6 @@ SRC_DIR := $(abspath $(dir $(CURDIR)))
 RM := rm -rf
 
 # Feature flags — define BEFORE includes so subdir.mk files can use them
-# ETH support: build with 'make ENABLE_ETH=1' for CDC-ECM USB Ethernet on the
-# legacy USBD controller (separate physical USB port from HID).
-# UAC is forced off when ETH is enabled: ECM frame reassembly and the UAC
-# ping-pong buffers together exceed available RAM (512B PMA is also full).
-ENABLE_ETH ?= 0
-ifeq ($(ENABLE_ETH),1)
-CFLAGS += -DENABLE_ETH
-override ENABLE_UAC := 0
-endif
-
 # BLE support: build with 'make ENABLE_BLE=0' to omit BLE (frees ~14 KB RAM)
 ENABLE_BLE ?= 1
 
@@ -134,9 +124,9 @@ ifeq ($(ENABLE_BLE),1)
 CFLAGS += -DENABLE_BLE
 CFLAGS += -DBLE_DEVICE_NAME="\"$(BLE_NAME)\""
 # BLE heap size in bytes — WCH minimum is 6144 (6 KB); default was 10240.
-# The upstream firmware default is 7 KB. Smaller values save RAM but can
-# cause BLE_LibInit failures on some builds, which looks like "no BLE".
-BLE_MEMHEAP_SIZE ?= 7168
+# The working baseline used 6 KB. Keep that default unless a specific board
+# needs more heap for BLE bring-up.
+BLE_MEMHEAP_SIZE ?= 6144
 CFLAGS += -DBLE_MEMHEAP_SIZE=$(BLE_MEMHEAP_SIZE)
 # Max BLE packet length (ATT_MTU = BLE_BUFF_MAX_LEN - 4).
 # 64 is the WCH default; fully adequate for HID keyboard/mouse reports.
@@ -155,7 +145,6 @@ endif
 $(BUILD_CONFIG_STAMP): FORCE
 	@{ \
 		printf 'BOARD_VERSION=%s\n' "$(BOARD_VERSION)"; \
-		printf 'ENABLE_ETH=%s\n' "$(ENABLE_ETH)"; \
 		printf 'ENABLE_UAC=%s\n' "$(ENABLE_UAC)"; \
 		printf 'ENABLE_BLE=%s\n' "$(ENABLE_BLE)"; \
 		printf 'BLE_NAME=%s\n' "$(BLE_NAME)"; \

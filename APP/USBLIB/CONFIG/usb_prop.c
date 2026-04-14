@@ -20,9 +20,6 @@
 #include "ch32v20x_usb.h"
 #include "../../include/uac_desc.h"
 #include "../../include/uac_handler.h"
-#ifdef ENABLE_ETH
-#include "../../include/eth_handler.h"
-#endif /* ENABLE_ETH */
 
 uint8_t Request = 0;
 
@@ -75,17 +72,12 @@ ONE_DESCRIPTOR Config_Descriptor =
 	USBD_SIZE_CONFIG_DESC
 };
 
-ONE_DESCRIPTOR String_Descriptor[5] =
+ONE_DESCRIPTOR String_Descriptor[4] =
 {
 	{(uint8_t*)USBD_StringLangID,  USBD_SIZE_STRING_LANGID},
 	{(uint8_t*)USBD_StringVendor,  USBD_SIZE_STRING_VENDOR},
 	{(uint8_t*)USBD_StringProduct, USBD_SIZE_STRING_PRODUCT},
-	{(uint8_t*)USBD_StringSerial,  USBD_SIZE_STRING_SERIAL},
-#ifdef ENABLE_ETH
-	{(uint8_t*)USBD_StringMAC,     USBD_SIZE_STRING_MAC},
-#else
-	{NULL, 0},  /* index 4 unused in non-ETH builds */
-#endif
+  {(uint8_t*)USBD_StringSerial,  USBD_SIZE_STRING_SERIAL},
 };
 
 /*********************************************************************
@@ -162,9 +154,7 @@ void USBD_Status_In(void)
     {
         if (Request_No == CDC_SET_LINE_CODING)
         {
-#ifndef ENABLE_ETH
             UART2_USB_Init();
-#endif
         }
     }
 }
@@ -219,24 +209,6 @@ void USBD_SetInterface_Impl(void)
 {
     uint8_t iface = pInformation->USBwIndex0;
     uint8_t alt   = pInformation->USBwValue0;
-
-#ifdef ENABLE_ETH
-    /* IF1 = CDC-ECM Data interface: alt0=zero-bandwidth, alt1=active bulk */
-    if (iface == 1)
-    {
-        g_eth_data_alt = alt;
-        if (alt == 1)
-        {
-            SetEPRxCount(ENDP2, 64);
-            SetEPRxStatus(ENDP2, EP_RX_VALID);  /* arm for Ethernet frame reception */
-            ETH_SendNotification(1);             /* tell host link is up */
-        }
-        else
-        {
-            SetEPRxStatus(ENDP2, EP_RX_DIS);    /* zero-bandwidth: stop receiving */
-        }
-    }
-#endif /* ENABLE_ETH */
 
 #ifdef ENABLE_UAC
     /* IF3 = AudioStreaming IN (EP4 ISO IN, 0x84 — Target mic → Host PC)
@@ -315,13 +287,8 @@ void USBD_Reset(void)
   SetEPType(ENDP2, EP_BULK);
   SetEPTxStatus(ENDP2, EP_TX_DIS);
   SetEPRxAddr(ENDP2, ENDP2_RXADDR);
-#ifdef ENABLE_ETH
-  SetEPRxCount(ENDP2, 64);          /* ECM: 64B max-packet bulk OUT */
-  SetEPRxStatus(ENDP2, EP_RX_DIS);  /* CDC-ECM: disabled until SET_INTERFACE IF1 alt=1 */
-#else
   SetEPRxCount(ENDP2, 32);          /* ACM: 32B (PMA space shared with UAC EPs) */
   SetEPRxStatus(ENDP2, EP_RX_VALID); /* CDC-ACM: always active */
-#endif
   _ClearDTOG_RX(ENDP2);
   _ClearDTOG_TX(ENDP2);
 
@@ -355,9 +322,6 @@ void USBD_Reset(void)
    * previous session cannot be forwarded after re-enumeration.          */
   UAC_Init();
 #endif /* ENABLE_UAC */
-
-/* Note: when ENABLE_ETH is defined, only EP0-3 are used (pure CDC-ECM).
- * No CDC-ACM serial endpoints (EP6/EP7) are initialized. */
 
   SetDeviceAddress(0);
 
@@ -406,11 +370,7 @@ uint8_t *USBD_GetConfigDescriptor(uint16_t Length)
 uint8_t *USBD_GetStringDescriptor(uint16_t Length)
 {
   uint8_t wValue0 = pInformation->USBwValue0;
-  uint8_t max_idx = 3;
-#ifdef ENABLE_ETH
-  max_idx = 4;  /* string index 4 = MAC address */
-#endif
-  if (wValue0 > max_idx)
+  if (wValue0 > 3)
   {
     return NULL;
   }
@@ -433,29 +393,14 @@ uint8_t *USBD_GetStringDescriptor(uint16_t Length)
  */
 RESULT USBD_Get_Interface_Setting(uint8_t Interface, uint8_t AlternateSetting)
 {
+#ifdef ENABLE_UAC
   /* Interface layout:
-   *   IF0: CDC Comm / ECM Comm   — alt 0 only
-   *   IF1: CDC Data / ECM Data   — alt 0 only (ACM) or alt 0+1 (ECM)
-   *   IF2: AudioControl          — alt 0 only          (non-ETH only)
-   *   IF3: AS IN  (EP4 ISO IN)   — alt 0+1             (non-ETH only)
-   *   IF4: AS OUT (EP5 ISO OUT)  — alt 0+1             (non-ETH only) */
-  if (Interface == 0)
-  {
-    if (AlternateSetting > 0)
-      return USB_UNSUPPORT;
-  }
-  else if (Interface == 1)
-  {
-#ifdef ENABLE_ETH
-    if (AlternateSetting > 1)  /* ECM: alt0 (zero-bw) + alt1 (active) */
-      return USB_UNSUPPORT;
-#else
-    if (AlternateSetting > 0)  /* ACM: alt0 only */
-      return USB_UNSUPPORT;
-#endif
-  }
-#ifndef ENABLE_ETH
-  else if (Interface == 2)
+   *   IF0: CDC Comm              — alt 0 only
+   *   IF1: CDC Data              — alt 0 only
+   *   IF2: AudioControl          — alt 0 only
+   *   IF3: AS IN  (EP4 ISO IN)   — alt 0+1
+   *   IF4: AS OUT (EP5 ISO OUT)  — alt 0+1 */
+  if (Interface <= 2)
   {
     if (AlternateSetting > 0)
       return USB_UNSUPPORT;
@@ -465,11 +410,16 @@ RESULT USBD_Get_Interface_Setting(uint8_t Interface, uint8_t AlternateSetting)
     if (AlternateSetting > 1)
       return USB_UNSUPPORT;
   }
-#endif
   else
   {
     return USB_UNSUPPORT;
   }
+#else
+  if (Interface > 1 || AlternateSetting > 0)
+  {
+    return USB_UNSUPPORT;
+  }
+#endif
 
   return USB_SUCCESS;
 }
@@ -535,19 +485,11 @@ RESULT USBD_Data_Setup(uint8_t RequestNo)
   {
     if (Request_No == CDC_GET_LINE_CODING)
     {
-#ifdef ENABLE_ETH
-      return USB_UNSUPPORT;  /* pure ECM: no ACM serial port */
-#else
       CopyRoutine = &USB_CDC_GetLineCoding;
-#endif
     }
     else if (Request_No == CDC_SET_LINE_CODING)
     {
-#ifdef ENABLE_ETH
-      return USB_UNSUPPORT;  /* pure ECM: no ACM serial port */
-#else
       CopyRoutine = &USB_CDC_SetLineCoding;
-#endif
     }
     else
     {
@@ -582,12 +524,7 @@ RESULT USBD_NoData_Setup(uint8_t RequestNo)
 
   if (Type_Recipient == (CLASS_REQUEST | INTERFACE_RECIPIENT))
   {
-#ifdef ENABLE_ETH
-    /* CDC-ECM: SET_ETHERNET_PACKET_FILTER (0x43) — acknowledge, accept all */
-    if (Request_No == 0x43)
-      return USB_SUCCESS;
-#endif
-    /* CDC-ACM control signals (always present) */
+    /* CDC-ACM control signals */
     if (Request_No == CDC_SET_LINE_CTLSTE || Request_No == CDC_SEND_BREAK)
       return USB_SUCCESS;
     return USB_UNSUPPORT;

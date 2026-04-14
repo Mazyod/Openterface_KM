@@ -17,10 +17,9 @@ Usage:
 
 Options:
   --clean                 Run 'make clean' before build or flash.
-    --board-version <1-4>   Set board firmware variant: 1=kvm go, 2=mini kvm, 3=keymod BLE, 4=keymod ECM.
+    --board-version <1-3>   Set board firmware variant: 1=kvm go, 2=mini kvm, 3=keymod.
   --enable-ble <0|1>      Set ENABLE_BLE.
   --enable-uac <0|1>      Set ENABLE_UAC.
-  --enable-eth <0|1>      Set ENABLE_ETH.
   --ble-name <name>       Set BLE_NAME.
   --ble-memheap-size <n>  Set BLE_MEMHEAP_SIZE.
   --ble-buff-max-len <n>  Set BLE_BUFF_MAX_LEN.
@@ -31,9 +30,9 @@ Examples:
   ./tools/firmware.sh build
   ./tools/firmware.sh probe
   ./tools/firmware.sh flash
-    ./tools/firmware.sh flash --clean --board-version 3 --enable-uac 0 --enable-eth 0 --enable-ble 1 --ble-name KeyMod-BLE
-  ./tools/firmware.sh flash --enable-uac 0 --enable-eth 0 --enable-ble 1 --ble-name Keymod-BLE
-  ./tools/firmware.sh build ENABLE_ETH=1 ENABLE_BLE=0
+    ./tools/firmware.sh flash --clean --board-version 3 --enable-uac 0 --enable-ble 1 --ble-name KeyMod-BLE
+    ./tools/firmware.sh flash --enable-uac 0 --enable-ble 1 --ble-name Keymod-BLE
+    ./tools/firmware.sh build ENABLE_BLE=0
 EOF
 }
 
@@ -61,6 +60,14 @@ run_make() {
         cd "$BUILD_DIR"
         "$MAKE_BIN" "$@"
     )
+}
+
+run_make_with_vars() {
+    if [[ ${#make_vars[@]} -gt 0 ]]; then
+        run_make "${make_vars[@]}" "$@"
+    else
+        run_make "$@"
+    fi
 }
 
 if [[ $# -eq 0 ]]; then
@@ -92,11 +99,6 @@ while [[ $# -gt 0 ]]; do
         --enable-uac)
             [[ $# -ge 2 ]] || { echo "Missing value for $1" >&2; exit 1; }
             make_vars+=("ENABLE_UAC=$2")
-            shift
-            ;;
-        --enable-eth)
-            [[ $# -ge 2 ]] || { echo "Missing value for $1" >&2; exit 1; }
-            make_vars+=("ENABLE_ETH=$2")
             shift
             ;;
         --ble-name)
@@ -143,14 +145,14 @@ case "$command" in
         if [[ $clean_first -eq 1 ]]; then
             run_make clean
         fi
-        run_make "${make_vars[@]}" all
+        run_make_with_vars all
         ;;
     flash)
         ensure_toolchain
         if [[ $clean_first -eq 1 ]]; then
             run_make clean
         fi
-        run_make "${make_vars[@]}" flash
+        run_make_with_vars flash
         ;;
     probe)
         run_make probe

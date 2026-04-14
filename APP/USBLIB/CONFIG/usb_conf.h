@@ -38,22 +38,14 @@
  *   Total:   0x1A0 = 416B < 512B ✓
  * CDC bulk bandwidth: 32B/packet × 1000 pkt/s = 32 KB/s > 115200bps (11.5 KB/s) ✓ */
 #define ENDP1_TXADDR        (0xC0)                          /* 32B, CDC int   */
-#define ENDP2_RXADDR        (0xE0)                          /* 64B ECM/32B ACM bulk OUT */
-#ifdef ENABLE_ETH
-/* ECM build: EP2 RX is 64B (0xE0-0x11F), so EP3 TX starts at 0x120 */
-#define ENDP3_TXADDR        (0x120)                         /* 64B, ECM bulk IN  */
-#else
+#define ENDP2_RXADDR        (0xE0)                          /* 32B, CDC bulk OUT */
 #define ENDP3_TXADDR        (0x100)                         /* 32B, ACM bulk IN  */
 #define ENDP4_ISO_TXADDR    (0x120)                         /* 64B, UAC ISO IN   */
 #define ENDP5_ISO_RXADDR    (0x160)                         /* 64B, UAC ISO OUT  */
-#endif
 
-/* Serial data endpoint for CDC-ACM (non-ETH builds only).
- * When ENABLE_ETH=1, there is no CDC-ACM serial — only CDC-ECM Ethernet. */
-#ifndef ENABLE_ETH
-#  define USBD_SERIAL_ENDP       ENDP3
-#  define USBD_SERIAL_BUSY       USBD_Endp3_Busy
-#endif
+/* Serial data endpoint for CDC-ACM. */
+#define USBD_SERIAL_ENDP       ENDP3
+#define USBD_SERIAL_BUSY       USBD_Endp3_Busy
 
 
 /* ISTR events */

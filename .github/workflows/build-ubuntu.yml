@@ -70,7 +70,7 @@ jobs:
           export PATH="${{ env.WRAPPERS_DIR }}:$PATH"
           cd "${{ github.workspace }}/build"
           make clean
-          make -j$(nproc) ENABLE_BLE=1 ENABLE_ETH=0 BOARD_VERSION=1 all
+          make -j$(nproc) ENABLE_BLE=1 BOARD_VERSION=1 all
 
           cp openterface-km-firmware.hex openterface-km-firmware-kvmgo.hex
           echo "KVMGo build succeeded"
@@ -81,7 +81,7 @@ jobs:
           export PATH="${{ env.WRAPPERS_DIR }}:$PATH"
           cd "${{ github.workspace }}/build"
           make clean
-          make -j$(nproc) ENABLE_BLE=1 ENABLE_ETH=0 BOARD_VERSION=2 all
+          make -j$(nproc) ENABLE_BLE=1 BOARD_VERSION=2 all
 
           cp openterface-km-firmware.hex openterface-km-firmware-mini-kvm.hex
           echo "Mini-KVM v1.2 build succeeded"
@@ -92,21 +92,10 @@ jobs:
           export PATH="${{ env.WRAPPERS_DIR }}:$PATH"
           cd "${{ github.workspace }}/build"
           make clean
-          make -j$(nproc) ENABLE_BLE=1 ENABLE_ETH=0 BOARD_VERSION=3 all
+          make -j$(nproc) ENABLE_BLE=1 BOARD_VERSION=3 all
 
           cp openterface-km-firmware.hex openterface-km-firmware-keymod-ble.hex
           echo "KeyMod v1.0 BLE build succeeded"
-
-      - name: Build KeyMod v1.0 CDC-ECM (version 4)
-        run: |
-          echo "Building KeyMod v1.0 (CDC-ECM)..."
-          export PATH="${{ env.WRAPPERS_DIR }}:$PATH"
-          cd "${{ github.workspace }}/build"
-          make clean
-          make -j$(nproc) ENABLE_BLE=0 ENABLE_ETH=1 BOARD_VERSION=4 all
-
-          cp openterface-km-firmware.hex openterface-km-firmware-keymod-ecm.hex
-          echo "KeyMod v1.0 CDC-ECM build succeeded"
 
       - name: Upload KVMGo firmware
         uses: actions/upload-artifact@v4
@@ -128,10 +117,3 @@ jobs:
           name: openterface-km-firmware-keymod-v1.0-ble
           if-no-files-found: error
           path: ${{ github.workspace }}/build/openterface-km-firmware-keymod-ble.hex
-
-      - name: Upload KeyMod v1.0 CDC-ECM firmware
-        uses: actions/upload-artifact@v4
-        with:
-          name: openterface-km-firmware-keymod-v1.0-ecm
-          if-no-files-found: error
-          path: ${{ github.workspace }}/build/openterface-km-firmware-keymod-ecm.hex

@@ -30,22 +30,17 @@
 #define DEF_USBD_MAX_PACK_SIZE      64                              
        
 #define USBD_SIZE_DEVICE_DESC        18
-/* Config descriptor sizes:
- *   ETH (UAC disabled): 9(cfg) + 79(CDC-ECM) + 66(CDC-ACM) = 154
- *   default (ACM+UAC):  9(cfg) + 66(CDC-ACM) + 173(UAC)    = 248 */
-#ifdef ENABLE_ETH
-#define USBD_SIZE_CONFIG_DESC        80   /* pure CDC-ECM: 9+9+5+5+13+7+9+9+7+7 */
+#ifdef ENABLE_UAC
+/* 9(cfg) + 66(CDC-ACM) + 173(UAC) = 248 */
+#define USBD_SIZE_CONFIG_DESC        248
 #else
-#define USBD_SIZE_CONFIG_DESC        248  /* CDC-ACM + UAC */
+/* 9(cfg) + 66(CDC-ACM) = 75 */
+#define USBD_SIZE_CONFIG_DESC        75
 #endif
 #define USBD_SIZE_STRING_LANGID      4
 #define USBD_SIZE_STRING_VENDOR      14
 #define USBD_SIZE_STRING_PRODUCT     22
 #define USBD_SIZE_STRING_SERIAL      22
-#ifdef ENABLE_ETH
-/* CDC-ECM MAC address string "020000000001" (12 UTF-16LE chars = 24B + 2B header = 26B) */
-#define USBD_SIZE_STRING_MAC         26
-#endif
 
 extern const uint8_t USBD_DeviceDescriptor[USBD_SIZE_DEVICE_DESC];
 extern const uint8_t USBD_ConfigDescriptor[USBD_SIZE_CONFIG_DESC];
@@ -53,9 +48,6 @@ extern const uint8_t USBD_StringLangID [USBD_SIZE_STRING_LANGID];
 extern const uint8_t USBD_StringVendor [USBD_SIZE_STRING_VENDOR];
 extern const uint8_t USBD_StringProduct[USBD_SIZE_STRING_PRODUCT];
 extern uint8_t USBD_StringSerial [USBD_SIZE_STRING_SERIAL];
-#ifdef ENABLE_ETH
-extern const uint8_t USBD_StringMAC[USBD_SIZE_STRING_MAC];
-#endif
 
 #ifdef __cplusplus
 }

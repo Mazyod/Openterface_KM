@@ -94,10 +94,10 @@ Put the board into bootloader mode before flashing.
 ./tools/firmware.sh flash
 
 # Build and flash KeyMod BLE firmware
-./tools/firmware.sh flash --clean --board-version 3 --enable-uac 0 --enable-eth 0 --enable-ble 1 --ble-name KeyMod-BLE
+./tools/firmware.sh flash --clean --board-version 3 --enable-uac 0 --enable-ble 1 --ble-name KeyMod-BLE
 
 # Build and flash a BLE-only image with a custom advertising name
-./tools/firmware.sh flash --clean --enable-uac 0 --enable-eth 0 --enable-ble 1 --ble-name Keymod-BLE
+./tools/firmware.sh flash --clean --enable-uac 0 --enable-ble 1 --ble-name Keymod-BLE
 ```
 
 If you switch `ENABLE_*` flags or `BLE_NAME`, prefer a clean build for that first flash.

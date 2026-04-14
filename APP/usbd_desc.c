@@ -371,6 +371,12 @@ const uint8_t MyCfgDescr[ ] =
 #endif /* ENABLE_UAC */
 };
 
+#ifdef ENABLE_UAC
+typedef char MyCfgDescr_SizeCheck[(sizeof(MyCfgDescr) == 274) ? 1 : -1];
+#else
+typedef char MyCfgDescr_SizeCheck[(sizeof(MyCfgDescr) == 109) ? 1 : -1];
+#endif
+
 /* Keyboard Report Descriptor */
 const uint8_t KeyRepDesc[ ] =
 {

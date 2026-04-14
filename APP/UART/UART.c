@@ -450,9 +450,6 @@ void UART2_DataRx_Deal( void )
     NVIC_EnableIRQ( USB_LP_CAN1_RX0_IRQn );
     NVIC_EnableIRQ( USB_HP_CAN1_TX_IRQn );
 
-#ifndef ENABLE_ETH
-    /* CDC-ACM serial upload — disabled when ENABLE_ETH (no ACM interface) */
-
     /*****************************************************************/
     /* Serial port 1 data processing via USB upload and reception */
     if( Uart.Rx_RemainLen )
@@ -537,5 +534,4 @@ void UART2_DataRx_Deal( void )
             }
         }
     }
-#endif /* !ENABLE_ETH */
 }

@@ -18,9 +18,6 @@
 #include "usb_prop.h"
 #include "UART.h"
 #include "../../include/uac_handler.h"
-#ifdef ENABLE_ETH
-#include "../../include/eth_handler.h"
-#endif /* ENABLE_ETH */
 
 uint8_t USBD_Endp3_Busy;
 uint16_t USB_Rx_Cnt=0; 
@@ -34,9 +31,7 @@ uint16_t USB_Rx_Cnt=0;
  */
 void EP1_IN_Callback (void)
 {
-#ifdef ENABLE_ETH
-    ETH_USBD_EP1_TxDone();
-#endif
+    (void)0;
 }
 
 
@@ -52,10 +47,6 @@ void EP1_IN_Callback (void)
  */
 void EP2_OUT_Callback (void)
 {
-#ifdef ENABLE_ETH
-    uint16_t len = GetEPRxCount( EP2_OUT & 0x7F );
-    ETH_USBD_EP2_RxDone( len );
-#else
 	uint32_t len;
     len = GetEPRxCount( EP2_OUT & 0x7F );
     PMAToUserBufferCopy( &UART2_Tx_Buf[ ( Uart.Tx_LoadNum * DEF_USB_FS_PACK_LEN ) ], GetEPRxAddr( EP2_OUT & 0x7F ), len );
@@ -75,7 +66,6 @@ void EP2_OUT_Callback (void)
     {
         SetEPRxValid( ENDP2 );
     }
-#endif /* ENABLE_ETH */
 }
 /*********************************************************************
  * @fn      EP3_IN_Callback
@@ -86,12 +76,8 @@ void EP2_OUT_Callback (void)
  */
 void EP3_IN_Callback (void)
 {
-#ifdef ENABLE_ETH
-    ETH_USBD_EP3_TxDone();
-#else
 	USBD_Endp3_Busy = 0;
 	Uart.USB_Up_IngFlag = 0x00;
-#endif /* ENABLE_ETH */
 }
 
 

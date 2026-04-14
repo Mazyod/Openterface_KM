@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 
 #define VENDOR_ID 0x4348
 #define VENDOR_ID_ALT 0x1a86
@@ -221,6 +222,9 @@ static int flash_firmware(const char *path)
         }
     }
 
+    /* On macOS, set configuration explicitly to reset endpoint state */
+    libusb_set_configuration(handle, 1);
+
     status = libusb_claim_interface(handle, INTERFACE_NUMBER);
     if(status != 0) {
         fprintf(stderr, "Failed to claim interface: %s\n", libusb_error_name(status));
@@ -231,16 +235,34 @@ static int flash_firmware(const char *path)
     }
     release_claimed_interface = 1;
 
-    cmd[0] = 0xa1;
-    cmd[1] = 0x12;
-    memcpy(&cmd[5], "MCU ISP & WCH.CN", sizeof("MCU ISP & WCH.CN"));
-    if(bulk_out(handle, cmd, 21, "identify") != 0) {
-        goto fail;
-    }
-    response_size = bulk_in(handle, resp, sizeof(resp), "identify");
-    if(response_size < 5) {
-        fprintf(stderr, "identify read failed: short response\n");
-        goto fail;
+    /* Give the device a moment to settle after being opened on macOS */
+    usleep(200000);
+
+    /* Identify with retry (device may need a moment after enumeration) */
+    {
+        int identify_ok = 0;
+        int attempt;
+        for(attempt = 0; attempt < 3; attempt++) {
+            memset(cmd, 0, 128);
+            cmd[0] = 0xa1;
+            cmd[1] = 0x12;
+            memcpy(&cmd[5], "MCU ISP & WCH.CN", sizeof("MCU ISP & WCH.CN"));
+            if(bulk_out(handle, cmd, 21, "identify") != 0) {
+                usleep(300000);
+                continue;
+            }
+            response_size = bulk_in(handle, resp, sizeof(resp), "identify");
+            if(response_size >= 5) {
+                identify_ok = 1;
+                break;
+            }
+            fprintf(stderr, "identify attempt %d failed, retrying...\n", attempt + 1);
+            usleep(300000);
+        }
+        if(!identify_ok) {
+            fprintf(stderr, "identify failed after 3 attempts\n");
+            goto fail;
+        }
     }
     chip_id = resp[4];
     printf("Connected to WCH ISP bootloader, chip_id=0x%02x\n", chip_id);
@@ -268,6 +290,188 @@ static int flash_firmware(const char *path)
     xor_key[7] = (uint8_t)(xor_key[7] + chip_id);
     printf("XOR key checksum: 0x%02x\n", checksum);
     fflush(stdout);
+
+    /* ---- Check and remove code flash protection (RDPR + WRP) ---- */
+    {
+        uint8_t cfg_resp[64] = {0};
+
+        /* Read RDPR/UserData/WPR config (bitMask = 0x07) */
+        memset(cmd, 0, sizeof(cmd));
+        cmd[0] = 0xa7;  /* readConfig */
+        cmd[1] = 0x02;
+        cmd[3] = 0x07;  /* cfgMaskRDPRUserDataWPR */
+        if(bulk_out(handle, cmd, 5, "read config RDPR") != 0) {
+            goto fail;
+        }
+        response_size = bulk_in(handle, cfg_resp, sizeof(cfg_resp), "read config RDPR");
+        if(response_size < 18) {
+            fprintf(stderr, "read config RDPR failed: short response (%d bytes)\n", response_size);
+            goto fail;
+        }
+
+        /* cfg_resp layout: [0]=cmd, [1]=?, [2..3]=payload_len,
+         * [4]=payload[0] (unknown), [5]=payload[1] (unknown),
+         * [6]=RDPR, [7]=nRDPR, [8]=USER, [9]=nUSER,
+         * [10]=DATA0, [11]=nDATA0, [12]=DATA1, [13]=nDATA1,
+         * [14]=WRP0, [15]=WRP1, [16]=WRP2, [17]=WRP3 */
+        uint8_t rdpr_val  = cfg_resp[6];
+        uint8_t nrdpr_val = cfg_resp[7];
+        uint8_t user_val  = cfg_resp[8];
+        uint8_t nuser_val = cfg_resp[9];
+        uint8_t data0_val = cfg_resp[10];
+        uint8_t ndata0_val = cfg_resp[11];
+        uint8_t data1_val = cfg_resp[12];
+        uint8_t ndata1_val = cfg_resp[13];
+        printf("Option bytes dump:\n");
+        printf("  RDPR=0x%02x nRDPR=0x%02x  (valid=%s)\n",
+               rdpr_val, nrdpr_val, ((rdpr_val ^ nrdpr_val) == 0xff) ? "YES" : "NO");
+        printf("  USER=0x%02x nUSER=0x%02x  (valid=%s)\n",
+               user_val, nuser_val, ((user_val ^ nuser_val) == 0xff) ? "YES" : "NO");
+        printf("  DATA0=0x%02x nDATA0=0x%02x (valid=%s)\n",
+               data0_val, ndata0_val, ((data0_val ^ ndata0_val) == 0xff) ? "YES" : "NO");
+        printf("  DATA1=0x%02x nDATA1=0x%02x (valid=%s)\n",
+               data1_val, ndata1_val, ((data1_val ^ ndata1_val) == 0xff) ? "YES" : "NO");
+        printf("  WRP=%02x %02x %02x %02x\n",
+               cfg_resp[14], cfg_resp[15], cfg_resp[16], cfg_resp[17]);
+        fflush(stdout);
+
+        if(rdpr_val != 0xa5 || (rdpr_val ^ nrdpr_val) != 0xff ||
+           user_val != 0xff || (user_val ^ nuser_val) != 0xff ||
+           (data0_val ^ ndata0_val) != 0xff || (data1_val ^ ndata1_val) != 0xff ||
+           cfg_resp[14] != 0xff || cfg_resp[15] != 0xff ||
+           cfg_resp[16] != 0xff || cfg_resp[17] != 0xff) {
+            printf("Flash is protected, unprotecting...\n");
+            fflush(stdout);
+
+            /* Build 12-byte config payload (payload[2..13]) with safe defaults */
+            uint8_t cfg_data[12];
+            memcpy(cfg_data, &cfg_resp[6], 12);  /* copy from payload[2..13] */
+            cfg_data[0] = 0xa5;  /* RDPR: unprotected */
+            cfg_data[1] = 0x5a;  /* nRDPR: complement */
+            cfg_data[2] = 0xff;  /* USER: software WDT, normal resets (factory default) */
+            cfg_data[3] = 0x00;  /* nUSER: complement */
+            cfg_data[4] = 0xff;  /* DATA0: factory default */
+            cfg_data[5] = 0x00;  /* nDATA0: complement */
+            cfg_data[6] = 0xff;  /* DATA1: factory default */
+            cfg_data[7] = 0x00;  /* nDATA1: complement */
+            cfg_data[8]  = 0xff; /* WRP0: all unprotected */
+            cfg_data[9]  = 0xff; /* WRP1 */
+            cfg_data[10] = 0xff; /* WRP2 */
+            cfg_data[11] = 0xff; /* WRP3 */
+
+            /* writeConfig command: 0xa8, len=14 (2+12), bitMask=0x07, pad=0x00, then 12 data bytes */
+            memset(cmd, 0, sizeof(cmd));
+            cmd[0] = 0xa8;  /* writeConfig */
+            uint16_t wcfg_len = 2 + 12;
+            memcpy(&cmd[1], &wcfg_len, 2);
+            cmd[3] = 0x07;  /* cfgMaskRDPRUserDataWPR */
+            cmd[4] = 0x00;  /* padding */
+            memcpy(&cmd[5], cfg_data, 12);
+
+            if(bulk_out(handle, cmd, 17, "write config unprotect") != 0) {
+                goto fail;
+            }
+            response_size = bulk_in(handle, cfg_resp, sizeof(cfg_resp), "write config unprotect");
+            if(response_size < 4) {
+                fprintf(stderr, "Failed to unprotect flash: short response (%d bytes)\n", response_size);
+                goto fail;
+            }
+            /* Check that payload length field matches actual payload bytes received */
+            {
+                uint16_t expected_len;
+                memcpy(&expected_len, &cfg_resp[2], 2);
+                int actual_payload = response_size - 4;
+                if(actual_payload != (int)expected_len) {
+                    fprintf(stderr, "Failed to unprotect flash: length mismatch "
+                            "(expected=%u actual=%d)\n", expected_len, actual_payload);
+                    goto fail;
+                }
+            }
+            printf("Flash unprotected. Chip will mass-erase on next reset.\n");
+            printf("Resetting for unprotect to take effect...\n");
+            fflush(stdout);
+
+            /* Reset the chip so the protection change and mass-erase take effect */
+            memset(cmd, 0, sizeof(cmd));
+            cmd[0] = 0xa2;  /* ispEnd */
+            cmd[1] = 0x01;
+            cmd[3] = 0x01;
+            bulk_out(handle, cmd, 4, "reset after unprotect");
+            /* Give time for reset + mass erase */
+            sleep(5);
+
+            /* Reconnect to bootloader */
+            libusb_release_interface(handle, INTERFACE_NUMBER);
+            libusb_close(handle);
+
+            handle = libusb_open_device_with_vid_pid(context, VENDOR_ID, PRODUCT_ID);
+            if(handle == NULL) {
+                handle = libusb_open_device_with_vid_pid(context, VENDOR_ID_ALT, PRODUCT_ID);
+            }
+            if(handle == NULL) {
+                fprintf(stderr, "Failed to reconnect after unprotect. Please re-enter bootloader mode.\n");
+                libusb_exit(context);
+                free(firmware);
+                return 1;
+            }
+
+            if(libusb_kernel_driver_active(handle, INTERFACE_NUMBER) == 1) {
+                libusb_detach_kernel_driver(handle, INTERFACE_NUMBER);
+            }
+            status = libusb_claim_interface(handle, INTERFACE_NUMBER);
+            if(status != 0) {
+                fprintf(stderr, "Failed to claim interface after reconnect: %s\n", libusb_error_name(status));
+                libusb_close(handle);
+                libusb_exit(context);
+                free(firmware);
+                return 1;
+            }
+            release_claimed_interface = 1;
+
+            /* Re-identify */
+            memset(cmd, 0, sizeof(cmd));
+            cmd[0] = 0xa1;
+            cmd[1] = 0x12;
+            memcpy(&cmd[5], "MCU ISP & WCH.CN", sizeof("MCU ISP & WCH.CN"));
+            if(bulk_out(handle, cmd, 21, "re-identify") != 0) {
+                goto fail;
+            }
+            if(bulk_in(handle, resp, sizeof(resp), "re-identify") < 5) {
+                fprintf(stderr, "re-identify failed\n");
+                goto fail;
+            }
+            printf("Reconnected after unprotect, chip_id=0x%02x\n", resp[4]);
+            fflush(stdout);
+
+            /* Re-read config for XOR key */
+            memset(cmd, 0, sizeof(cmd));
+            cmd[0] = 0xa7;
+            cmd[1] = 0x02;
+            cmd[3] = 0x1f;
+            if(bulk_out(handle, cmd, 5, "re-read config") != 0) {
+                goto fail;
+            }
+            response_size = bulk_in(handle, resp, sizeof(resp), "re-read config");
+            if(response_size < 30) {
+                fprintf(stderr, "re-read config failed\n");
+                goto fail;
+            }
+
+            checksum = 0;
+            for(size_t index = 0; index < sizeof(xor_key); index++) {
+                checksum += resp[22 + index];
+            }
+            for(size_t index = 0; index < sizeof(xor_key); index++) {
+                xor_key[index] = checksum;
+            }
+            xor_key[7] = (uint8_t)(xor_key[7] + chip_id);
+            printf("New XOR key checksum: 0x%02x\n", checksum);
+            fflush(stdout);
+        } else {
+            printf("Flash is not protected, proceeding...\n");
+            fflush(stdout);
+        }
+    }
 
     memset(cmd, 0, sizeof(cmd));
     cmd[0] = 0xa3;

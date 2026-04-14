@@ -21,9 +21,6 @@
 #include "km_ring.h"
 #include "Version_selection.h"
 #include "include/uac_handler.h"
-#ifdef ENABLE_ETH
-#include "include/eth_handler.h"
-#endif /* ENABLE_ETH */
 
 /*********************************************************************
  * GLOBAL TYPEDEFS
@@ -67,7 +64,9 @@ void Main_Circulation(void)
         Update_SDcard();
         //Enable Bluetooth broadcasting
 #ifdef ENABLE_BLE
+        if (version == 1) {
         TMOS_SystemProcess();
+        }
 #endif
         //Instruction code receiving protocol
         USB_DataRx_To_KMHandle();
@@ -93,56 +92,35 @@ void Main_Circulation(void)
         IWDG_Auto_Handler();
     }
 }
+
 int main(void) {
 
     NVIC_PriorityGroupConfig(NVIC_PriorityGroup_1);
     SystemCoreClockUpdate();
     Delay_Init();
-
-#ifdef ENABLE_ETH
-    /* Early diagnostic: blink PC6 (red LED) 3 times so the operator
-     * can confirm the MCU is actually running after a flash update.
-     * This executes BEFORE any USB initialisation. */
-    {
-        RCC_APB2PeriphClockCmd(RCC_APB2Periph_GPIOC, ENABLE);
-        GPIO_InitTypeDef dbg_gpio = {0};
-        dbg_gpio.GPIO_Pin   = GPIO_Pin_6;
-        dbg_gpio.GPIO_Mode  = GPIO_Mode_Out_PP;
-        dbg_gpio.GPIO_Speed = GPIO_Speed_2MHz;
-        GPIO_Init(GPIOC, &dbg_gpio);
-        for (int i = 0; i < 6; i++) {
-            GPIO_WriteBit(GPIOC, GPIO_Pin_6, (i & 1) ? Bit_SET : Bit_RESET);
-            Delay_Ms(200);
-        }
-        GPIO_WriteBit(GPIOC, GPIO_Pin_6, Bit_RESET);
-    }
-#endif /* ENABLE_ETH */
-
     //usbd_init
     USART_Printf_Init(115200);
-    printf("FW start, ver=%d\r\n", version);
     Set_USBConfig();
     USB_Init();
     USB_Interrupts_Config();
-    printf("USBD init done\r\n");
+    if (version == 1)
+    {
 #ifdef ENABLE_BLE
     WCHBLE_Init();
 #endif
-    //minikvm havent ble & ds18b20
-    if (version == 1)
-    {
     DS18B20_Init();
     }
     //usbfs_init
     USBFS_RCC_Init();
     USBFS_Device_Init(ENABLE);
     USB_Sleep_Wakeup_CFG();
-    printf("USBFS init done\r\n");
+#ifdef USB_BRINGUP_DIAG
+    while (1)
+    {
+    }
+#endif
 #ifdef ENABLE_UAC
     UAC_Init();
-#endif
-#ifdef ENABLE_ETH
-    ETH_Init();
 #endif
     Keyboard_Init();
     Mouse_Init();
@@ -162,7 +140,6 @@ int main(void) {
     RGB_Init(); 
     Delay_Ms(1000);
     IWDG_Auto_Init(IWDG_Prescaler_32, 4000);
-    printf("Init complete, entering main loop\r\n");
     Main_Circulation();
 }
 
