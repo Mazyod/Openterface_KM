@@ -18,7 +18,7 @@
  *   USBD → USBFS (h2t):  64-byte (16 samples @ 16 kHz) received on USBD EP5.
  *     Each sample is repeated 3× to produce 48 samples @ 48 kHz → 192 bytes.
  *   USBFS → USBD (t2h):  192-byte (48 samples @ 48 kHz) received on USBFS EP6.
- *     Every 3rd sample is picked to decimate to 16 samples → 64 bytes.
+ *     Each 3-sample group is averaged to decimate to 16 samples → 64 bytes.
  *
  * Ping-pong buffers: writer fills slot (wr ^ 1), publishes by setting wr to
  * the new slot and ready=1.  Reader always consumes slot wr (latest frame).
@@ -76,16 +76,35 @@ static void up_sample_3x(const uint8_t *src, uint8_t *dst)
 
 /*============================================================================
  * down_sample_3x
- *   Decimate src (48 stereo 16-bit samples, 192 bytes) to dst by keeping
- *   every 3rd sample, producing 16 stereo samples = 64 bytes.
+ *   Decimate src (48 stereo 16-bit samples, 192 bytes) to dst by averaging
+ *   each 3-sample group per channel, producing 16 stereo samples = 64 bytes.
+ *
+ *   Keeping only every 3rd sample causes strong aliasing when converting
+ *   48 kHz -> 16 kHz and is heard as noise on the recording path.
  *===========================================================================*/
 static void down_sample_3x(const uint8_t *src, uint8_t *dst)
 {
     uint8_t i;
     for (i = 0; i < (UAC_USBD_ISO_PACKET_SIZE / 4u); i++) {
-        const uint8_t *s = src + (i * 12u);  /* pick sample 0, 3, 6, … */
+        const uint8_t *s = src + (i * 12u);
         uint8_t *d = dst + (i * 4u);
-        d[0] = s[0]; d[1] = s[1]; d[2] = s[2]; d[3] = s[3];
+
+        int16_t l0 = (int16_t)((uint16_t)s[0] | ((uint16_t)s[1] << 8));
+        int16_t r0 = (int16_t)((uint16_t)s[2] | ((uint16_t)s[3] << 8));
+        int16_t l1 = (int16_t)((uint16_t)s[4] | ((uint16_t)s[5] << 8));
+        int16_t r1 = (int16_t)((uint16_t)s[6] | ((uint16_t)s[7] << 8));
+        int16_t l2 = (int16_t)((uint16_t)s[8] | ((uint16_t)s[9] << 8));
+        int16_t r2 = (int16_t)((uint16_t)s[10] | ((uint16_t)s[11] << 8));
+
+        int32_t lsum = (int32_t)l0 + (int32_t)l1 + (int32_t)l2;
+        int32_t rsum = (int32_t)r0 + (int32_t)r1 + (int32_t)r2;
+        int16_t lout = (int16_t)(lsum / 3);
+        int16_t rout = (int16_t)(rsum / 3);
+
+        d[0] = (uint8_t)(lout & 0xFF);
+        d[1] = (uint8_t)((uint16_t)lout >> 8);
+        d[2] = (uint8_t)(rout & 0xFF);
+        d[3] = (uint8_t)((uint16_t)rout >> 8);
     }
 }
 

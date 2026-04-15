@@ -11,7 +11,7 @@
  *   USBD side: 16 kHz stereo 16-bit → 64 B/ms
  *   USBFS side: 48 kHz stereo 16-bit → 192 B/ms
  *   h2t (USBD→USBFS): 64 B up-sampled 3× to 192 B (nearest-neighbour)
- *   t2h (USBFS→USBD): 192 B decimated 3× to 64 B (keep every 3rd sample)
+ *   t2h (USBFS→USBD): 192 B decimated 3× to 64 B (average each 3-sample group)
  *****************************************************************************/
 #ifndef __UAC_HANDLER_H
 #define __UAC_HANDLER_H
