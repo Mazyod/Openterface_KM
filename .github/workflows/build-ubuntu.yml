@@ -74,13 +74,13 @@ jobs:
           else
             echo "Compiler does not support rv32imacxw, enabling compatibility translation"
 
-            # GCC wrapper: map proprietary xw to a standards-compliant arch accepted on Ubuntu.
+            # GCC wrapper: map proprietary xw to a baseline arch accepted by older GCC.
             printf '%s\n' \
               '#!/bin/bash' \
               'TOOLBIN="${{ env.TOOLCHAIN_DIR }}/bin"' \
               'args=()' \
               'for arg in "$@"; do' \
-              '  args+=("${arg//rv32imacxw/rv32imac_zicsr_zifencei}")' \
+              '  args+=("${arg//rv32imacxw/rv32imac}")' \
               'done' \
               'exec "$TOOLBIN/riscv-none-embed-gcc" "${args[@]}"' \
               > "$WRAPDIR/riscv-none-embed-gcc"
