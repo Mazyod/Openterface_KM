@@ -14,7 +14,7 @@ env:
   # support — the same upstream as the Windows CI toolchain. Do NOT use the newer
   # riscv-none-elf-gcc packages; those are standard upstream GCC without xw.
   XPACK_VERSION: 8.2.0-3.1
-  TOOLCHAIN_DIR: ${{ github.workspace }}/.toolchain/xpack-riscv-none-embed-gcc-8.2.0-3.1
+  TOOLCHAIN_DIR: ${{ github.workspace }}/.toolchain/xPacks/riscv-none-embed-gcc/8.2.0-3.1
 
 jobs:
   build:
@@ -40,6 +40,14 @@ jobs:
             "https://github.com/xpack-dev-tools/riscv-none-embed-gcc-xpack/releases/download/v${{ env.XPACK_VERSION }}/xpack-riscv-none-embed-gcc-${{ env.XPACK_VERSION }}-linux-x64.tgz"
           tar -xzf "${{ github.workspace }}/.toolchain/toolchain.tar.gz" \
             -C "${{ github.workspace }}/.toolchain"
+
+      - name: Verify toolchain in PATH
+        run: |
+          export PATH="${{ env.TOOLCHAIN_DIR }}/bin:$PATH"
+          echo "TOOLCHAIN_DIR=${{ env.TOOLCHAIN_DIR }}"
+          ls -la "${{ env.TOOLCHAIN_DIR }}/bin"
+          command -v riscv-none-embed-gcc
+          riscv-none-embed-gcc --version | head -n 1
 
       - name: Build KVMGo (version 1)
         run: |
