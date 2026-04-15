@@ -128,6 +128,9 @@ jobs:
           make clean
           make -j$(nproc) ENABLE_BLE=1 BOARD_VERSION=1 all
 
+          # Ensure .siz exists as a file for artifact upload.
+          riscv-none-embed-size --format=berkeley openterface-km-firmware.elf > openterface-km-firmware.siz
+
           # RAM guard: fail fast if runtime RAM footprint is too close to 64 KB.
           RAM_USED=$(riscv-none-embed-size -A openterface-km-firmware.elf | awk '$1==".data"{d=$2} $1==".bss"{b=$2} $1==".stack"{s=$2} END{print d+b+s}')
           echo "KVMGo RAM_USED=${RAM_USED} bytes"
@@ -150,6 +153,8 @@ jobs:
           make clean
           make -j$(nproc) ENABLE_BLE=1 BOARD_VERSION=2 all
 
+          riscv-none-embed-size --format=berkeley openterface-km-firmware.elf > openterface-km-firmware.siz
+
           RAM_USED=$(riscv-none-embed-size -A openterface-km-firmware.elf | awk '$1==".data"{d=$2} $1==".bss"{b=$2} $1==".stack"{s=$2} END{print d+b+s}')
           echo "Mini-KVM RAM_USED=${RAM_USED} bytes"
           if [ "$RAM_USED" -gt "${{ env.RAM_GUARD_BYTES }}" ]; then
@@ -170,6 +175,8 @@ jobs:
           cd "${{ github.workspace }}/build"
           make clean
           make -j$(nproc) ENABLE_BLE=1 BOARD_VERSION=3 all
+
+          riscv-none-embed-size --format=berkeley openterface-km-firmware.elf > openterface-km-firmware.siz
 
           RAM_USED=$(riscv-none-embed-size -A openterface-km-firmware.elf | awk '$1==".data"{d=$2} $1==".bss"{b=$2} $1==".stack"{s=$2} END{print d+b+s}')
           echo "KeyMod BLE RAM_USED=${RAM_USED} bytes"
