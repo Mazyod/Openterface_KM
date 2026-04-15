@@ -58,7 +58,7 @@ jobs:
 
           # Default pass-through wrappers for tools used by make.
           for tool in g++ objcopy size ar as nm ranlib addr2line readelf strings strip c++filt; do
-            printf '#!/bin/sh\nexec "%s/riscv-none-embed-%s" "\$@"\n' "$TOOLBIN" "$tool" \
+            printf '#!/bin/sh\nexec "%s/riscv-none-embed-%s" "$@"\n' "$TOOLBIN" "$tool" \
               > "$WRAPDIR/riscv-none-embed-$tool"
             chmod +x "$WRAPDIR/riscv-none-embed-$tool"
           done
@@ -67,9 +67,9 @@ jobs:
           printf 'int f(void){return 1;}\n' > /tmp/xw_probe.c
           if "$TOOLBIN/riscv-none-embed-gcc" -march=rv32imacxw -mabi=ilp32 -c /tmp/xw_probe.c -o /tmp/xw_probe.o >/dev/null 2>&1; then
             echo "Compiler supports rv32imacxw natively"
-            printf '#!/bin/sh\nexec "%s/riscv-none-embed-gcc" "\$@"\n' "$TOOLBIN" \
+            printf '#!/bin/sh\nexec "%s/riscv-none-embed-gcc" "$@"\n' "$TOOLBIN" \
               > "$WRAPDIR/riscv-none-embed-gcc"
-            printf '#!/bin/sh\nexec "%s/riscv-none-embed-objdump" "\$@"\n' "$TOOLBIN" \
+            printf '#!/bin/sh\nexec "%s/riscv-none-embed-objdump" "$@"\n' "$TOOLBIN" \
               > "$WRAPDIR/riscv-none-embed-objdump"
           else
             echo "Compiler does not support rv32imacxw, enabling compatibility translation"
