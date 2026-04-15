@@ -8,6 +8,23 @@ on:
     branches:
       - main
   workflow_dispatch:
+    inputs:
+      enable_uac:
+        description: Enable USB Audio Class (UAC)
+        required: false
+        default: '1'
+        type: choice
+        options:
+          - '1'
+          - '0'
+      enable_ble:
+        description: Enable Bluetooth Low Energy (BLE)
+        required: false
+        default: '1'
+        type: choice
+        options:
+          - '1'
+          - '0'
 
 env:
   # xPack riscv-none-embed-gcc 8.2.0 is the WCH-patched GCC with native rv32imacxw
@@ -17,6 +34,8 @@ env:
   TOOLCHAIN_DIR: ${{ github.workspace }}/.toolchain/xPacks/riscv-none-embed-gcc/8.2.0-3.1
   WRAPPERS_DIR: ${{ github.workspace }}/.toolchain/wrappers
   RAM_GUARD_BYTES: 61440
+  ENABLE_UAC: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.enable_uac || '1' }}
+  ENABLE_BLE: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.enable_ble || '1' }}
 
 jobs:
   build:
@@ -123,10 +142,11 @@ jobs:
       - name: Build KVMGo (version 1)
         run: |
           echo "Building KVMGo..."
+          echo "Feature flags: ENABLE_UAC=${{ env.ENABLE_UAC }}, ENABLE_BLE=${{ env.ENABLE_BLE }}"
           export PATH="${{ env.WRAPPERS_DIR }}:${{ env.TOOLCHAIN_DIR }}/bin:$PATH"
           cd "${{ github.workspace }}/build"
           make clean
-          make -j$(nproc) ENABLE_BLE=1 BOARD_VERSION=1 all
+          make -j$(nproc) ENABLE_UAC=${{ env.ENABLE_UAC }} ENABLE_BLE=${{ env.ENABLE_BLE }} BOARD_VERSION=1 all
 
           # Ensure .siz exists as a file for artifact upload.
           riscv-none-embed-size --format=berkeley openterface-km-firmware.elf > openterface-km-firmware.siz
@@ -148,10 +168,11 @@ jobs:
       - name: Build Mini-KVM v1.2 (version 2)
         run: |
           echo "Building Mini-KVM v1.2..."
+          echo "Feature flags: ENABLE_UAC=${{ env.ENABLE_UAC }}, ENABLE_BLE=${{ env.ENABLE_BLE }}"
           export PATH="${{ env.WRAPPERS_DIR }}:${{ env.TOOLCHAIN_DIR }}/bin:$PATH"
           cd "${{ github.workspace }}/build"
           make clean
-          make -j$(nproc) ENABLE_BLE=1 BOARD_VERSION=2 all
+          make -j$(nproc) ENABLE_UAC=${{ env.ENABLE_UAC }} ENABLE_BLE=${{ env.ENABLE_BLE }} BOARD_VERSION=2 all
 
           riscv-none-embed-size --format=berkeley openterface-km-firmware.elf > openterface-km-firmware.siz
 
@@ -171,10 +192,11 @@ jobs:
       - name: Build KeyMod v1.0 BLE (version 3)
         run: |
           echo "Building KeyMod v1.0 (BLE)..."
+          echo "Feature flags: ENABLE_UAC=${{ env.ENABLE_UAC }}, ENABLE_BLE=${{ env.ENABLE_BLE }}"
           export PATH="${{ env.WRAPPERS_DIR }}:${{ env.TOOLCHAIN_DIR }}/bin:$PATH"
           cd "${{ github.workspace }}/build"
           make clean
-          make -j$(nproc) ENABLE_BLE=1 BOARD_VERSION=3 all
+          make -j$(nproc) ENABLE_UAC=${{ env.ENABLE_UAC }} ENABLE_BLE=${{ env.ENABLE_BLE }} BOARD_VERSION=3 all
 
           riscv-none-embed-size --format=berkeley openterface-km-firmware.elf > openterface-km-firmware.siz
 
