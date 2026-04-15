@@ -10,9 +10,11 @@ on:
   workflow_dispatch:
 
 env:
-  XPACK_VERSION: 15.2.0-1
-  TOOLCHAIN_DIR: ${{ github.workspace }}/.toolchain/xpack-riscv-none-elf-gcc-15.2.0-1
-  WRAPPERS_DIR: ${{ github.workspace }}/.toolchain/wrappers
+  # xPack riscv-none-embed-gcc 8.2.0 is the WCH-patched GCC with native rv32imacxw
+  # support — the same upstream as the Windows CI toolchain. Do NOT use the newer
+  # riscv-none-elf-gcc packages; those are standard upstream GCC without xw.
+  XPACK_VERSION: 8.2.0-3.1
+  TOOLCHAIN_DIR: ${{ github.workspace }}/.toolchain/xpack-riscv-none-embed-gcc-8.2.0-3.1
 
 jobs:
   build:
@@ -27,7 +29,7 @@ jobs:
         id: cache-toolchain
         with:
           path: ${{ github.workspace }}/.toolchain
-          key: ubuntu-xpack-riscv-${{ env.XPACK_VERSION }}
+          key: ubuntu-xpack-riscv-none-embed-${{ env.XPACK_VERSION }}
 
       - name: Download and extract xpack RISC-V toolchain
         if: steps.cache-toolchain.outputs.cache-hit != 'true'
@@ -35,39 +37,14 @@ jobs:
           mkdir -p "${{ github.workspace }}/.toolchain"
           curl -L --progress-bar \
             -o "${{ github.workspace }}/.toolchain/toolchain.tar.gz" \
-            "https://github.com/xpack-dev-tools/riscv-none-elf-gcc-xpack/releases/download/v${{ env.XPACK_VERSION }}/xpack-riscv-none-elf-gcc-${{ env.XPACK_VERSION }}-linux-x64.tar.gz"
+            "https://github.com/xpack-dev-tools/riscv-none-embed-gcc-xpack/releases/download/v${{ env.XPACK_VERSION }}/xpack-riscv-none-embed-gcc-${{ env.XPACK_VERSION }}-linux-x64.tgz"
           tar -xzf "${{ github.workspace }}/.toolchain/toolchain.tar.gz" \
             -C "${{ github.workspace }}/.toolchain"
-
-      - name: Create toolchain wrappers
-        run: |
-          TOOLBIN="${{ env.TOOLCHAIN_DIR }}/bin"
-          WRAPDIR="${{ env.WRAPPERS_DIR }}"
-          mkdir -p "$WRAPDIR"
-
-          # Generic pass-through wrappers
-          for tool in g++ objcopy objdump size ar as nm ranlib addr2line readelf strings strip c++filt; do
-            printf '#!/bin/sh\nexec "%s/riscv-none-elf-%s" "$@"\n' "$TOOLBIN" "$tool" \
-              > "$WRAPDIR/riscv-none-embed-$tool"
-            chmod +x "$WRAPDIR/riscv-none-embed-$tool"
-          done
-
-          # GCC wrapper — strips the proprietary 'xw' arch extension
-          cat > "$WRAPDIR/riscv-none-embed-gcc" << 'WRAPPER_EOF'
-          #!/bin/bash
-          TOOLBIN="${{ env.TOOLCHAIN_DIR }}/bin"
-          args=()
-          for arg in "$@"; do
-            args+=("${arg//rv32imacxw/rv32imac_zicsr_zifencei}")
-          done
-          exec "$TOOLBIN/riscv-none-elf-gcc" "${args[@]}"
-          WRAPPER_EOF
-          chmod +x "$WRAPDIR/riscv-none-embed-gcc"
 
       - name: Build KVMGo (version 1)
         run: |
           echo "Building KVMGo..."
-          export PATH="${{ env.WRAPPERS_DIR }}:$PATH"
+          export PATH="${{ env.TOOLCHAIN_DIR }}/bin:$PATH"
           cd "${{ github.workspace }}/build"
           make clean
           make -j$(nproc) ENABLE_BLE=1 BOARD_VERSION=1 all
@@ -78,7 +55,7 @@ jobs:
       - name: Build Mini-KVM v1.2 (version 2)
         run: |
           echo "Building Mini-KVM v1.2..."
-          export PATH="${{ env.WRAPPERS_DIR }}:$PATH"
+          export PATH="${{ env.TOOLCHAIN_DIR }}/bin:$PATH"
           cd "${{ github.workspace }}/build"
           make clean
           make -j$(nproc) ENABLE_BLE=1 BOARD_VERSION=2 all
@@ -89,7 +66,7 @@ jobs:
       - name: Build KeyMod v1.0 BLE (version 3)
         run: |
           echo "Building KeyMod v1.0 (BLE)..."
-          export PATH="${{ env.WRAPPERS_DIR }}:$PATH"
+          export PATH="${{ env.TOOLCHAIN_DIR }}/bin:$PATH"
           cd "${{ github.workspace }}/build"
           make clean
           make -j$(nproc) ENABLE_BLE=1 BOARD_VERSION=3 all
