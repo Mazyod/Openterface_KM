@@ -84,6 +84,9 @@ jobs:
         
         # Copy artifact with version suffix
         Copy-Item "${{ env.BUILD_DIR }}\openterface-km-firmware.hex" "${{ env.BUILD_DIR }}\openterface-km-firmware-kvmgo.hex"
+        Copy-Item "${{ env.BUILD_DIR }}\openterface-km-firmware.elf" "${{ env.BUILD_DIR }}\openterface-km-firmware-kvmgo.elf"
+        Copy-Item "${{ env.BUILD_DIR }}\openterface-km-firmware.map" "${{ env.BUILD_DIR }}\openterface-km-firmware-kvmgo.map"
+        Copy-Item "${{ env.BUILD_DIR }}\openterface-km-firmware.siz" "${{ env.BUILD_DIR }}\openterface-km-firmware-kvmgo.siz"
 
     - name: Build Mini-KVM v1.2
       run: |
@@ -109,6 +112,9 @@ jobs:
         
         # Copy artifact with version suffix
         Copy-Item "${{ env.BUILD_DIR }}\openterface-km-firmware.hex" "${{ env.BUILD_DIR }}\openterface-km-firmware-mini-kvm.hex"
+        Copy-Item "${{ env.BUILD_DIR }}\openterface-km-firmware.elf" "${{ env.BUILD_DIR }}\openterface-km-firmware-mini-kvm.elf"
+        Copy-Item "${{ env.BUILD_DIR }}\openterface-km-firmware.map" "${{ env.BUILD_DIR }}\openterface-km-firmware-mini-kvm.map"
+        Copy-Item "${{ env.BUILD_DIR }}\openterface-km-firmware.siz" "${{ env.BUILD_DIR }}\openterface-km-firmware-mini-kvm.siz"
 
     - name: Upload KVMGo firmware
       uses: actions/upload-artifact@v4
@@ -117,9 +123,29 @@ jobs:
         if-no-files-found: error
         path: ${{ env.BUILD_DIR }}\openterface-km-firmware-kvmgo.hex
 
+    - name: Upload KVMGo diagnostics
+      uses: actions/upload-artifact@v4
+      with:
+        name: openterface-km-firmware-kvmgo-diagnostics
+        if-no-files-found: error
+        path: |
+          ${{ env.BUILD_DIR }}\openterface-km-firmware-kvmgo.elf
+          ${{ env.BUILD_DIR }}\openterface-km-firmware-kvmgo.map
+          ${{ env.BUILD_DIR }}\openterface-km-firmware-kvmgo.siz
+
     - name: Upload Mini-KVM v1.2 firmware
       uses: actions/upload-artifact@v4
       with:
         name: openterface-km-firmware-mini-kvm-v1.2
         if-no-files-found: error
         path: ${{ env.BUILD_DIR }}\openterface-km-firmware-mini-kvm.hex
+
+    - name: Upload Mini-KVM v1.2 diagnostics
+      uses: actions/upload-artifact@v4
+      with:
+        name: openterface-km-firmware-mini-kvm-v1.2-diagnostics
+        if-no-files-found: error
+        path: |
+          ${{ env.BUILD_DIR }}\openterface-km-firmware-mini-kvm.elf
+          ${{ env.BUILD_DIR }}\openterface-km-firmware-mini-kvm.map
+          ${{ env.BUILD_DIR }}\openterface-km-firmware-mini-kvm.siz

@@ -16,6 +16,7 @@ env:
   XPACK_VERSION: 8.2.0-3.1
   TOOLCHAIN_DIR: ${{ github.workspace }}/.toolchain/xPacks/riscv-none-embed-gcc/8.2.0-3.1
   WRAPPERS_DIR: ${{ github.workspace }}/.toolchain/wrappers
+  RAM_GUARD_BYTES: 61440
 
 jobs:
   build:
@@ -127,7 +128,18 @@ jobs:
           make clean
           make -j$(nproc) ENABLE_BLE=1 BOARD_VERSION=1 all
 
+          # RAM guard: fail fast if runtime RAM footprint is too close to 64 KB.
+          RAM_USED=$(riscv-none-embed-size -A openterface-km-firmware.elf | awk '$1==".data"{d=$2} $1==".bss"{b=$2} $1==".stack"{s=$2} END{print d+b+s}')
+          echo "KVMGo RAM_USED=${RAM_USED} bytes"
+          if [ "$RAM_USED" -gt "${{ env.RAM_GUARD_BYTES }}" ]; then
+            echo "ERROR: KVMGo RAM usage ${RAM_USED} exceeds guard ${{ env.RAM_GUARD_BYTES }}"
+            exit 1
+          fi
+
           cp openterface-km-firmware.hex openterface-km-firmware-kvmgo.hex
+          cp openterface-km-firmware.elf openterface-km-firmware-kvmgo.elf
+          cp openterface-km-firmware.map openterface-km-firmware-kvmgo.map
+          cp openterface-km-firmware.siz openterface-km-firmware-kvmgo.siz
           echo "KVMGo build succeeded"
 
       - name: Build Mini-KVM v1.2 (version 2)
@@ -138,7 +150,17 @@ jobs:
           make clean
           make -j$(nproc) ENABLE_BLE=1 BOARD_VERSION=2 all
 
+          RAM_USED=$(riscv-none-embed-size -A openterface-km-firmware.elf | awk '$1==".data"{d=$2} $1==".bss"{b=$2} $1==".stack"{s=$2} END{print d+b+s}')
+          echo "Mini-KVM RAM_USED=${RAM_USED} bytes"
+          if [ "$RAM_USED" -gt "${{ env.RAM_GUARD_BYTES }}" ]; then
+            echo "ERROR: Mini-KVM RAM usage ${RAM_USED} exceeds guard ${{ env.RAM_GUARD_BYTES }}"
+            exit 1
+          fi
+
           cp openterface-km-firmware.hex openterface-km-firmware-mini-kvm.hex
+          cp openterface-km-firmware.elf openterface-km-firmware-mini-kvm.elf
+          cp openterface-km-firmware.map openterface-km-firmware-mini-kvm.map
+          cp openterface-km-firmware.siz openterface-km-firmware-mini-kvm.siz
           echo "Mini-KVM v1.2 build succeeded"
 
       - name: Build KeyMod v1.0 BLE (version 3)
@@ -149,7 +171,17 @@ jobs:
           make clean
           make -j$(nproc) ENABLE_BLE=1 BOARD_VERSION=3 all
 
+          RAM_USED=$(riscv-none-embed-size -A openterface-km-firmware.elf | awk '$1==".data"{d=$2} $1==".bss"{b=$2} $1==".stack"{s=$2} END{print d+b+s}')
+          echo "KeyMod BLE RAM_USED=${RAM_USED} bytes"
+          if [ "$RAM_USED" -gt "${{ env.RAM_GUARD_BYTES }}" ]; then
+            echo "ERROR: KeyMod BLE RAM usage ${RAM_USED} exceeds guard ${{ env.RAM_GUARD_BYTES }}"
+            exit 1
+          fi
+
           cp openterface-km-firmware.hex openterface-km-firmware-keymod-ble.hex
+          cp openterface-km-firmware.elf openterface-km-firmware-keymod-ble.elf
+          cp openterface-km-firmware.map openterface-km-firmware-keymod-ble.map
+          cp openterface-km-firmware.siz openterface-km-firmware-keymod-ble.siz
           echo "KeyMod v1.0 BLE build succeeded"
 
       - name: Upload KVMGo firmware
@@ -159,6 +191,16 @@ jobs:
           if-no-files-found: error
           path: ${{ github.workspace }}/build/openterface-km-firmware-kvmgo.hex
 
+      - name: Upload KVMGo diagnostics
+        uses: actions/upload-artifact@v4
+        with:
+          name: openterface-km-firmware-kvmgo-diagnostics
+          if-no-files-found: error
+          path: |
+            ${{ github.workspace }}/build/openterface-km-firmware-kvmgo.elf
+            ${{ github.workspace }}/build/openterface-km-firmware-kvmgo.map
+            ${{ github.workspace }}/build/openterface-km-firmware-kvmgo.siz
+
       - name: Upload Mini-KVM v1.2 firmware
         uses: actions/upload-artifact@v4
         with:
@@ -166,9 +208,29 @@ jobs:
           if-no-files-found: error
           path: ${{ github.workspace }}/build/openterface-km-firmware-mini-kvm.hex
 
+      - name: Upload Mini-KVM v1.2 diagnostics
+        uses: actions/upload-artifact@v4
+        with:
+          name: openterface-km-firmware-mini-kvm-v1.2-diagnostics
+          if-no-files-found: error
+          path: |
+            ${{ github.workspace }}/build/openterface-km-firmware-mini-kvm.elf
+            ${{ github.workspace }}/build/openterface-km-firmware-mini-kvm.map
+            ${{ github.workspace }}/build/openterface-km-firmware-mini-kvm.siz
+
       - name: Upload KeyMod v1.0 BLE firmware
         uses: actions/upload-artifact@v4
         with:
           name: openterface-km-firmware-keymod-v1.0-ble
           if-no-files-found: error
           path: ${{ github.workspace }}/build/openterface-km-firmware-keymod-ble.hex
+
+      - name: Upload KeyMod v1.0 BLE diagnostics
+        uses: actions/upload-artifact@v4
+        with:
+          name: openterface-km-firmware-keymod-v1.0-ble-diagnostics
+          if-no-files-found: error
+          path: |
+            ${{ github.workspace }}/build/openterface-km-firmware-keymod-ble.elf
+            ${{ github.workspace }}/build/openterface-km-firmware-keymod-ble.map
+            ${{ github.workspace }}/build/openterface-km-firmware-keymod-ble.siz
