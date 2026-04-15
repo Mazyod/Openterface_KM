@@ -58,10 +58,8 @@ jobs:
 
           # Default pass-through wrappers for tools used by make.
           for tool in g++ objcopy size ar as nm ranlib addr2line readelf strings strip c++filt; do
-            cat > "$WRAPDIR/riscv-none-embed-$tool" <<EOF
-#!/bin/sh
-exec "$TOOLBIN/riscv-none-embed-$tool" "\$@"
-EOF
+            printf '#!/bin/sh\nexec "%s/riscv-none-embed-%s" "\$@"\n' "$TOOLBIN" "$tool" \
+              > "$WRAPDIR/riscv-none-embed-$tool"
             chmod +x "$WRAPDIR/riscv-none-embed-$tool"
           done
 
@@ -69,55 +67,51 @@ EOF
           printf 'int f(void){return 1;}\n' > /tmp/xw_probe.c
           if "$TOOLBIN/riscv-none-embed-gcc" -march=rv32imacxw -mabi=ilp32 -c /tmp/xw_probe.c -o /tmp/xw_probe.o >/dev/null 2>&1; then
             echo "Compiler supports rv32imacxw natively"
-            cat > "$WRAPDIR/riscv-none-embed-gcc" <<EOF
-#!/bin/sh
-exec "$TOOLBIN/riscv-none-embed-gcc" "\$@"
-EOF
-            cat > "$WRAPDIR/riscv-none-embed-objdump" <<EOF
-#!/bin/sh
-exec "$TOOLBIN/riscv-none-embed-objdump" "\$@"
-EOF
+            printf '#!/bin/sh\nexec "%s/riscv-none-embed-gcc" "\$@"\n' "$TOOLBIN" \
+              > "$WRAPDIR/riscv-none-embed-gcc"
+            printf '#!/bin/sh\nexec "%s/riscv-none-embed-objdump" "\$@"\n' "$TOOLBIN" \
+              > "$WRAPDIR/riscv-none-embed-objdump"
           else
             echo "Compiler does not support rv32imacxw, enabling compatibility translation"
 
             # GCC wrapper: map proprietary xw to a standards-compliant arch accepted on Ubuntu.
-            cat > "$WRAPDIR/riscv-none-embed-gcc" <<'EOF'
-#!/bin/bash
-TOOLBIN="${{ env.TOOLCHAIN_DIR }}/bin"
-args=()
-for arg in "$@"; do
-  args+=("${arg//rv32imacxw/rv32imac_zicsr_zifencei}")
-done
-exec "$TOOLBIN/riscv-none-embed-gcc" "${args[@]}"
-EOF
+            printf '%s\n' \
+              '#!/bin/bash' \
+              'TOOLBIN="${{ env.TOOLCHAIN_DIR }}/bin"' \
+              'args=()' \
+              'for arg in "$@"; do' \
+              '  args+=("${arg//rv32imacxw/rv32imac_zicsr_zifencei}")' \
+              'done' \
+              'exec "$TOOLBIN/riscv-none-embed-gcc" "${args[@]}"' \
+              > "$WRAPDIR/riscv-none-embed-gcc"
 
             # objdump wrapper: remove unsupported '-M xw' so listing generation succeeds.
-            cat > "$WRAPDIR/riscv-none-embed-objdump" <<'EOF'
-#!/bin/bash
-TOOLBIN="${{ env.TOOLCHAIN_DIR }}/bin"
-args=()
-skip_next=0
-for arg in "$@"; do
-  if [[ "$skip_next" -eq 1 ]]; then
-    if [[ "$arg" == "xw" ]]; then
-      skip_next=0
-      continue
-    fi
-    args+=("-M" "$arg")
-    skip_next=0
-    continue
-  fi
-  if [[ "$arg" == "-M" ]]; then
-    skip_next=1
-    continue
-  fi
-  args+=("$arg")
-done
-if [[ "$skip_next" -eq 1 ]]; then
-  args+=("-M")
-fi
-exec "$TOOLBIN/riscv-none-embed-objdump" "${args[@]}"
-EOF
+            printf '%s\n' \
+              '#!/bin/bash' \
+              'TOOLBIN="${{ env.TOOLCHAIN_DIR }}/bin"' \
+              'args=()' \
+              'skip_next=0' \
+              'for arg in "$@"; do' \
+              '  if [[ "$skip_next" -eq 1 ]]; then' \
+              '    if [[ "$arg" == "xw" ]]; then' \
+              '      skip_next=0' \
+              '      continue' \
+              '    fi' \
+              '    args+=("-M" "$arg")' \
+              '    skip_next=0' \
+              '    continue' \
+              '  fi' \
+              '  if [[ "$arg" == "-M" ]]; then' \
+              '    skip_next=1' \
+              '    continue' \
+              '  fi' \
+              '  args+=("$arg")' \
+              'done' \
+              'if [[ "$skip_next" -eq 1 ]]; then' \
+              '  args+=("-M")' \
+              'fi' \
+              'exec "$TOOLBIN/riscv-none-embed-objdump" "${args[@]}"' \
+              > "$WRAPDIR/riscv-none-embed-objdump"
           fi
 
           chmod +x "$WRAPDIR/riscv-none-embed-gcc" "$WRAPDIR/riscv-none-embed-objdump"
