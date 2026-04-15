@@ -7,9 +7,8 @@
  * 1 = kvm go
  * 2 = mini kvm (version 1.2)
  * 3 = keymod v1.0 (BLE only)
- * 4 = keymod v1.0 (CDC-ECM only)
  */
-#define version  1
+#define version  2
 // Use this definition to set endpoint 3 as a touchscreen device,or an absolute mouse device
 #define EP3_USE_STYLUS
 /* USB Audio Class (UAC) support — controlled by the build system.
@@ -23,9 +22,4 @@
  *   make ENABLE_BLE=0
  * In MounRiver Studio: add -DENABLE_BLE to project compiler flags. */
 
-/* Ethernet support — controlled by the build system.
- * Default: disabled.  Enabling auto-forces ENABLE_BLE=0 and ENABLE_UAC=0
- * to free EP5+EP6+EP7 (CDC-ECM needs 3 EPs) and the BLE heap RAM.
- *   make ENABLE_ETH=1
- * In MounRiver Studio: add -DENABLE_ETH (and remove -DENABLE_BLE / -DENABLE_UAC). */
 #endif /* VERSION_SELECTION_H */

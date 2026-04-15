@@ -21,9 +21,6 @@
 #include "km_ring.h"
 #include "Version_selection.h"
 #include "include/uac_handler.h"
-#ifdef ENABLE_ETH
-#include "include/eth_handler.h"
-#endif /* ENABLE_ETH */
 
 /*********************************************************************
  * GLOBAL TYPEDEFS
@@ -100,11 +97,19 @@ int main(void) {
     NVIC_PriorityGroupConfig(NVIC_PriorityGroup_1);
     SystemCoreClockUpdate();
     Delay_Init();
-    //usbd_init
+
+    /* Configure board SD/USB routing before enabling USB controllers.
+     * On MiniKVM v1.2 this avoids enumerating while the route pin is undefined. */
+    SD_Switch_Init();
+    SD_Switch_StateMachine();
+
+    //usbd_init (legacy USB device controller)
     USART_Printf_Init(115200);
-    Set_USBConfig();
-    USB_Init();
-    USB_Interrupts_Config();
+    if (version == 1) {
+        Set_USBConfig();
+        USB_Init();
+        USB_Interrupts_Config();
+    }
     //minikvm havent ble & ds18b20
     if (version == 1)
     {    
@@ -120,9 +125,6 @@ int main(void) {
 #ifdef ENABLE_UAC
     UAC_Init();
 #endif
-#ifdef ENABLE_ETH
-    ETH_Init();
-#endif
     Keyboard_Init();
     Mouse_Init();
     //ble_init(Must be placed after USB initialization)
@@ -133,8 +135,6 @@ int main(void) {
 #endif
     //km_ring
     Queue_Init();
-    //SDcontrol_init
-    SD_Switch_Init();
     //temp_init
     ADC_Function_Init();
     //rgb_init

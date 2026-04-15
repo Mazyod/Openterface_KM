@@ -72,9 +72,9 @@ jobs:
           export PATH="${{ env.WRAPPERS_DIR }}:$PATH"
           cd "${{ github.workspace }}/build"
           make clean
-          make -j$(nproc) ENABLE_BLE=1 ENABLE_ETH=0 all
+          make -j$(nproc) ENABLE_BLE=1 all
 
-          cp openterface-km-firmware.hex openterface-km-firmware-kvmgo.hex
+          cp openterface-km-firmware.bin openterface-km-firmware-kvmgo.bin
           echo "KVMGo build succeeded"
 
       - name: Build Mini-KVM v1.2 (version 2)
@@ -86,9 +86,9 @@ jobs:
           export PATH="${{ env.WRAPPERS_DIR }}:$PATH"
           cd "${{ github.workspace }}/build"
           make clean
-          make -j$(nproc) ENABLE_BLE=1 ENABLE_ETH=0 all
+          make -j$(nproc) ENABLE_BLE=1 all
 
-          cp openterface-km-firmware.hex openterface-km-firmware-mini-kvm.hex
+          cp openterface-km-firmware.bin openterface-km-firmware-mini-kvm.bin
           echo "Mini-KVM v1.2 build succeeded"
 
       - name: Build KeyMod v1.0 BLE (version 3)
@@ -100,49 +100,28 @@ jobs:
           export PATH="${{ env.WRAPPERS_DIR }}:$PATH"
           cd "${{ github.workspace }}/build"
           make clean
-          make -j$(nproc) ENABLE_BLE=1 ENABLE_ETH=0 all
+          make -j$(nproc) ENABLE_BLE=1 all
 
-          cp openterface-km-firmware.hex openterface-km-firmware-keymod-ble.hex
+          cp openterface-km-firmware.bin openterface-km-firmware-keymod-ble.bin
           echo "KeyMod v1.0 BLE build succeeded"
-
-      - name: Build KeyMod v1.0 CDC-ECM (version 4)
-        run: |
-          echo "Building KeyMod v1.0 (CDC-ECM)..."
-          sed -i 's/#define version  [0-9]\+/#define version  4/' \
-            "${{ github.workspace }}/APP/include/Version_selection.h"
-
-          export PATH="${{ env.WRAPPERS_DIR }}:$PATH"
-          cd "${{ github.workspace }}/build"
-          make clean
-          make -j$(nproc) ENABLE_BLE=0 ENABLE_ETH=1 all
-
-          cp openterface-km-firmware.hex openterface-km-firmware-keymod-ecm.hex
-          echo "KeyMod v1.0 CDC-ECM build succeeded"
 
       - name: Upload KVMGo firmware
         uses: actions/upload-artifact@v4
         with:
           name: openterface-km-firmware-kvmgo
           if-no-files-found: error
-          path: ${{ github.workspace }}/build/openterface-km-firmware-kvmgo.hex
+          path: ${{ github.workspace }}/build/openterface-km-firmware-kvmgo.bin
 
       - name: Upload Mini-KVM v1.2 firmware
         uses: actions/upload-artifact@v4
         with:
           name: openterface-km-firmware-mini-kvm-v1.2
           if-no-files-found: error
-          path: ${{ github.workspace }}/build/openterface-km-firmware-mini-kvm.hex
+          path: ${{ github.workspace }}/build/openterface-km-firmware-mini-kvm.bin
 
       - name: Upload KeyMod v1.0 BLE firmware
         uses: actions/upload-artifact@v4
         with:
           name: openterface-km-firmware-keymod-v1.0-ble
           if-no-files-found: error
-          path: ${{ github.workspace }}/build/openterface-km-firmware-keymod-ble.hex
-
-      - name: Upload KeyMod v1.0 CDC-ECM firmware
-        uses: actions/upload-artifact@v4
-        with:
-          name: openterface-km-firmware-keymod-v1.0-ecm
-          if-no-files-found: error
-          path: ${{ github.workspace }}/build/openterface-km-firmware-keymod-ecm.hex
+          path: ${{ github.workspace }}/build/openterface-km-firmware-keymod-ble.bin

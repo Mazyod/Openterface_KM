@@ -28,9 +28,6 @@ volatile uint32_t UARTx_Rx_DMACurCount;                       /* Serial port 1 r
 volatile uint32_t UARTx_Rx_DMALastCount;                      /* Serial port 1 receive dma last value counter  */
 
 extern uint8_t USBD_Endp3_Busy;
-#ifdef ENABLE_ETH
-extern uint8_t USBD_Endp7_Busy;
-#endif
 
 /*********************************************************************
  * @fn      RCC_Configuration

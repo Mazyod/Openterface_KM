@@ -12,15 +12,6 @@ SRC_DIR := $(abspath $(dir $(CURDIR)))
 RM := rm -rf
 
 # Feature flags — define BEFORE includes so subdir.mk files can use them
-# ETH support: build with 'make ENABLE_ETH=1' for CDC-ECM USB Ethernet on the
-# legacy USBD controller (separate physical USB port from HID).
-# UAC is forced off when ETH is enabled: ECM frame reassembly and the UAC
-# ping-pong buffers together exceed available RAM (512B PMA is also full).
-ENABLE_ETH ?= 0
-ifeq ($(ENABLE_ETH),1)
-CFLAGS += -DENABLE_ETH
-override ENABLE_UAC := 0
-endif
 
 # BLE support: build with 'make ENABLE_BLE=0' to omit BLE (frees ~14 KB RAM)
 ENABLE_BLE ?= 1
