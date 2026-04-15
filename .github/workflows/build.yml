@@ -80,22 +80,17 @@ jobs:
         echo "C:\\tools\\risc-none-embed-gcc\\bin" >> $GITHUB_PATH
         echo "RISC_COMPILER_PATH=C:\\tools\\risc-none-embed-gcc" >> $GITHUB_ENV
 
-    - name: Build KVMGo
+    - name: Build KVMGo (version 1)
       run: |
         echo "Building KVMGo..."
         echo "Feature flags: ENABLE_UAC=${{ env.ENABLE_UAC }}, ENABLE_BLE=${{ env.ENABLE_BLE }}"
-        
-        # Patch version file
-        $content = Get-Content "${{ github.workspace }}\APP\include\Version_selection.h"
-        $content = $content -replace '#define version  \d+', '#define version  1'
-        Set-Content "${{ github.workspace }}\APP\include\Version_selection.h" $content
-        
+
         # Build
         cd build
         $env:PATH = "C:\tools\risc-none-embed-gcc\bin;" + $env:PATH
         $env:RISC_COMPILER_PATH = "C:\tools\risc-none-embed-gcc"
         make clean
-        make -j4 ENABLE_UAC=${{ env.ENABLE_UAC }} ENABLE_BLE=${{ env.ENABLE_BLE }} all
+        make -j4 ENABLE_UAC=${{ env.ENABLE_UAC }} ENABLE_BLE=${{ env.ENABLE_BLE }} BOARD_VERSION=1 all
         riscv-none-embed-size --format=berkeley openterface-km-firmware.elf | Out-File -Encoding ascii openterface-km-firmware.siz
         if ($LASTEXITCODE -eq 0) {
           Write-Host "✓ KVMGo build succeeded" -ForegroundColor Green
@@ -110,22 +105,17 @@ jobs:
         Copy-Item "${{ env.BUILD_DIR }}\openterface-km-firmware.map" "${{ env.BUILD_DIR }}\openterface-km-firmware-kvmgo.map"
         Copy-Item "${{ env.BUILD_DIR }}\openterface-km-firmware.siz" "${{ env.BUILD_DIR }}\openterface-km-firmware-kvmgo.siz"
 
-    - name: Build Mini-KVM v1.2
+    - name: Build Mini-KVM v1.2 (version 2)
       run: |
         echo "Building Mini-KVM v1.2..."
         echo "Feature flags: ENABLE_UAC=${{ env.ENABLE_UAC }}, ENABLE_BLE=${{ env.ENABLE_BLE }}"
-        
-        # Patch version file
-        $content = Get-Content "${{ github.workspace }}\APP\include\Version_selection.h"
-        $content = $content -replace '#define version  \d+', '#define version  2'
-        Set-Content "${{ github.workspace }}\APP\include\Version_selection.h" $content
-        
+
         # Build
         cd build
         $env:PATH = "C:\tools\risc-none-embed-gcc\bin;" + $env:PATH
         $env:RISC_COMPILER_PATH = "C:\tools\risc-none-embed-gcc"
         make clean
-        make -j4 ENABLE_UAC=${{ env.ENABLE_UAC }} ENABLE_BLE=${{ env.ENABLE_BLE }} all
+        make -j4 ENABLE_UAC=${{ env.ENABLE_UAC }} ENABLE_BLE=${{ env.ENABLE_BLE }} BOARD_VERSION=2 all
         riscv-none-embed-size --format=berkeley openterface-km-firmware.elf | Out-File -Encoding ascii openterface-km-firmware.siz
         if ($LASTEXITCODE -eq 0) {
           Write-Host "✓ Mini-KVM v1.2 build succeeded" -ForegroundColor Green
@@ -139,6 +129,31 @@ jobs:
         Copy-Item "${{ env.BUILD_DIR }}\openterface-km-firmware.elf" "${{ env.BUILD_DIR }}\openterface-km-firmware-mini-kvm.elf"
         Copy-Item "${{ env.BUILD_DIR }}\openterface-km-firmware.map" "${{ env.BUILD_DIR }}\openterface-km-firmware-mini-kvm.map"
         Copy-Item "${{ env.BUILD_DIR }}\openterface-km-firmware.siz" "${{ env.BUILD_DIR }}\openterface-km-firmware-mini-kvm.siz"
+
+    - name: Build KeyMod v1.0 BLE + UAC (version 3)
+      run: |
+        echo "Building KeyMod v1.0..."
+        echo "Feature flags: ENABLE_UAC=1, ENABLE_BLE=1"
+
+        # Build
+        cd build
+        $env:PATH = "C:\tools\risc-none-embed-gcc\bin;" + $env:PATH
+        $env:RISC_COMPILER_PATH = "C:\tools\risc-none-embed-gcc"
+        make clean
+        make -j4 ENABLE_UAC=1 ENABLE_BLE=1 BOARD_VERSION=3 all
+        riscv-none-embed-size --format=berkeley openterface-km-firmware.elf | Out-File -Encoding ascii openterface-km-firmware.siz
+        if ($LASTEXITCODE -eq 0) {
+          Write-Host "✓ KeyMod v1.0 BLE + UAC build succeeded" -ForegroundColor Green
+        } else {
+          Write-Host "✗ KeyMod v1.0 BLE + UAC build failed with exit code $LASTEXITCODE" -ForegroundColor Red
+          exit 1
+        }
+
+        # Copy artifact with version suffix
+        Copy-Item "${{ env.BUILD_DIR }}\openterface-km-firmware.hex" "${{ env.BUILD_DIR }}\openterface-km-firmware-keymod-ble-uac.hex"
+        Copy-Item "${{ env.BUILD_DIR }}\openterface-km-firmware.elf" "${{ env.BUILD_DIR }}\openterface-km-firmware-keymod-ble-uac.elf"
+        Copy-Item "${{ env.BUILD_DIR }}\openterface-km-firmware.map" "${{ env.BUILD_DIR }}\openterface-km-firmware-keymod-ble-uac.map"
+        Copy-Item "${{ env.BUILD_DIR }}\openterface-km-firmware.siz" "${{ env.BUILD_DIR }}\openterface-km-firmware-keymod-ble-uac.siz"
 
     - name: Upload KVMGo firmware
       uses: actions/upload-artifact@v4
@@ -173,3 +188,20 @@ jobs:
           ${{ env.BUILD_DIR }}\openterface-km-firmware-mini-kvm.elf
           ${{ env.BUILD_DIR }}\openterface-km-firmware-mini-kvm.map
           ${{ env.BUILD_DIR }}\openterface-km-firmware-mini-kvm.siz
+
+    - name: Upload KeyMod v1.0 BLE + UAC firmware
+      uses: actions/upload-artifact@v4
+      with:
+        name: openterface-km-firmware-keymod-v1.0-ble-uac
+        if-no-files-found: error
+        path: ${{ env.BUILD_DIR }}\openterface-km-firmware-keymod-ble-uac.hex
+
+    - name: Upload KeyMod v1.0 BLE + UAC diagnostics
+      uses: actions/upload-artifact@v4
+      with:
+        name: openterface-km-firmware-keymod-v1.0-ble-uac-diagnostics
+        if-no-files-found: error
+        path: |
+          ${{ env.BUILD_DIR }}\openterface-km-firmware-keymod-ble-uac.elf
+          ${{ env.BUILD_DIR }}\openterface-km-firmware-keymod-ble-uac.map
+          ${{ env.BUILD_DIR }}\openterface-km-firmware-keymod-ble-uac.siz
