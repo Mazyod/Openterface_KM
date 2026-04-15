@@ -15,6 +15,7 @@ env:
   # riscv-none-elf-gcc packages; those are standard upstream GCC without xw.
   XPACK_VERSION: 8.2.0-3.1
   TOOLCHAIN_DIR: ${{ github.workspace }}/.toolchain/xPacks/riscv-none-embed-gcc/8.2.0-3.1
+  WRAPPERS_DIR: ${{ github.workspace }}/.toolchain/wrappers
 
 jobs:
   build:
@@ -49,10 +50,85 @@ jobs:
           command -v riscv-none-embed-gcc
           riscv-none-embed-gcc --version | head -n 1
 
+      - name: Prepare xw compatibility wrappers
+        run: |
+          TOOLBIN="${{ env.TOOLCHAIN_DIR }}/bin"
+          WRAPDIR="${{ env.WRAPPERS_DIR }}"
+          mkdir -p "$WRAPDIR"
+
+          # Default pass-through wrappers for tools used by make.
+          for tool in g++ objcopy size ar as nm ranlib addr2line readelf strings strip c++filt; do
+            cat > "$WRAPDIR/riscv-none-embed-$tool" <<EOF
+#!/bin/sh
+exec "$TOOLBIN/riscv-none-embed-$tool" "\$@"
+EOF
+            chmod +x "$WRAPDIR/riscv-none-embed-$tool"
+          done
+
+          # Probe native rv32imacxw support in this compiler.
+          printf 'int f(void){return 1;}\n' > /tmp/xw_probe.c
+          if "$TOOLBIN/riscv-none-embed-gcc" -march=rv32imacxw -mabi=ilp32 -c /tmp/xw_probe.c -o /tmp/xw_probe.o >/dev/null 2>&1; then
+            echo "Compiler supports rv32imacxw natively"
+            cat > "$WRAPDIR/riscv-none-embed-gcc" <<EOF
+#!/bin/sh
+exec "$TOOLBIN/riscv-none-embed-gcc" "\$@"
+EOF
+            cat > "$WRAPDIR/riscv-none-embed-objdump" <<EOF
+#!/bin/sh
+exec "$TOOLBIN/riscv-none-embed-objdump" "\$@"
+EOF
+          else
+            echo "Compiler does not support rv32imacxw, enabling compatibility translation"
+
+            # GCC wrapper: map proprietary xw to a standards-compliant arch accepted on Ubuntu.
+            cat > "$WRAPDIR/riscv-none-embed-gcc" <<'EOF'
+#!/bin/bash
+TOOLBIN="${{ env.TOOLCHAIN_DIR }}/bin"
+args=()
+for arg in "$@"; do
+  args+=("${arg//rv32imacxw/rv32imac_zicsr_zifencei}")
+done
+exec "$TOOLBIN/riscv-none-embed-gcc" "${args[@]}"
+EOF
+
+            # objdump wrapper: remove unsupported '-M xw' so listing generation succeeds.
+            cat > "$WRAPDIR/riscv-none-embed-objdump" <<'EOF'
+#!/bin/bash
+TOOLBIN="${{ env.TOOLCHAIN_DIR }}/bin"
+args=()
+skip_next=0
+for arg in "$@"; do
+  if [[ "$skip_next" -eq 1 ]]; then
+    if [[ "$arg" == "xw" ]]; then
+      skip_next=0
+      continue
+    fi
+    args+=("-M" "$arg")
+    skip_next=0
+    continue
+  fi
+  if [[ "$arg" == "-M" ]]; then
+    skip_next=1
+    continue
+  fi
+  args+=("$arg")
+done
+if [[ "$skip_next" -eq 1 ]]; then
+  args+=("-M")
+fi
+exec "$TOOLBIN/riscv-none-embed-objdump" "${args[@]}"
+EOF
+          fi
+
+          chmod +x "$WRAPDIR/riscv-none-embed-gcc" "$WRAPDIR/riscv-none-embed-objdump"
+          export PATH="$WRAPDIR:$TOOLBIN:$PATH"
+          command -v riscv-none-embed-gcc
+          riscv-none-embed-gcc --version | head -n 1
+
       - name: Build KVMGo (version 1)
         run: |
           echo "Building KVMGo..."
-          export PATH="${{ env.TOOLCHAIN_DIR }}/bin:$PATH"
+          export PATH="${{ env.WRAPPERS_DIR }}:${{ env.TOOLCHAIN_DIR }}/bin:$PATH"
           cd "${{ github.workspace }}/build"
           make clean
           make -j$(nproc) ENABLE_BLE=1 BOARD_VERSION=1 all
@@ -63,7 +139,7 @@ jobs:
       - name: Build Mini-KVM v1.2 (version 2)
         run: |
           echo "Building Mini-KVM v1.2..."
-          export PATH="${{ env.TOOLCHAIN_DIR }}/bin:$PATH"
+          export PATH="${{ env.WRAPPERS_DIR }}:${{ env.TOOLCHAIN_DIR }}/bin:$PATH"
           cd "${{ github.workspace }}/build"
           make clean
           make -j$(nproc) ENABLE_BLE=1 BOARD_VERSION=2 all
@@ -74,7 +150,7 @@ jobs:
       - name: Build KeyMod v1.0 BLE (version 3)
         run: |
           echo "Building KeyMod v1.0 (BLE)..."
-          export PATH="${{ env.TOOLCHAIN_DIR }}/bin:$PATH"
+          export PATH="${{ env.WRAPPERS_DIR }}:${{ env.TOOLCHAIN_DIR }}/bin:$PATH"
           cd "${{ github.workspace }}/build"
           make clean
           make -j$(nproc) ENABLE_BLE=1 BOARD_VERSION=3 all
