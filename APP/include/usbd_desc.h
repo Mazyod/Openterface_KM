@@ -24,7 +24,7 @@
 /* Macro Definition */
 
 /* File Version */
-#define DEF_FILE_VERSION              0x01
+#define DEF_FILE_VERSION              0x02
 
 /* USB Device Info */
 #define DEF_USB_VID                   0x1A86

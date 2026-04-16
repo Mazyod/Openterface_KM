@@ -172,12 +172,12 @@ const uint8_t MyCfgDescr[ ] =
      * IF4: AudioControl
      * IF5: AudioStreaming IN  (EP5 ISO IN  0x85 — Target PC gets mic audio)
      *   alt0: zero-bandwidth
-     *   alt1: active 48 kHz stereo 16-bit 192 B/ms
+    *   alt1: active 16 kHz stereo 16-bit 64 B/ms
      * IF6: AudioStreaming OUT (EP6 ISO OUT 0x06 — Target PC sends playback)
      *   alt0: zero-bandwidth
-     *   alt1: active 48 kHz stereo 16-bit 192 B/ms
+    *   alt1: active 16 kHz stereo 16-bit 64 B/ms
      *
-     * NOTE: All descriptor fields use UAC_USBFS_* constants (48 kHz / 192 B)
+    * NOTE: All descriptor fields use UAC_USBFS_* constants (16 kHz / 64 B)
      * which is what the Target PC negotiates with the USBFS controller.
      * =================================================================== */
 
@@ -277,7 +277,7 @@ const uint8_t MyCfgDescr[ ] =
     0x00,                                                   // bDelay
     UAC_SR_B0(UAC_FORMAT_PCM), UAC_SR_B1(UAC_FORMAT_PCM),  // wFormatTag: PCM
 
-    /* CS Interface: Format Type I — 48 kHz stereo 16-bit */
+    /* CS Interface: Format Type I — 16 kHz stereo 16-bit */
     0x0B,                                                   // bLength
     USB_DESC_TYPE_CS_INTERFACE,                             // bDescriptorType
     UAC_AS_FORMAT_TYPE,                                     // bDescriptorSubtype
@@ -286,16 +286,16 @@ const uint8_t MyCfgDescr[ ] =
     UAC_BYTES_PER_SAMPLE,                                   // bSubFrameSize: 2
     UAC_BIT_RESOLUTION,                                     // bBitResolution: 16
     0x01,                                                   // bSamFreqType: 1 frequency
-    UAC_SR_B0(UAC_SAMPLE_RATE),                             // tSamFreq: 48000 Hz byte0
-    UAC_SR_B1(UAC_SAMPLE_RATE),                             // tSamFreq: 48000 Hz byte1
-    UAC_SR_B2(UAC_SAMPLE_RATE),                             // tSamFreq: 48000 Hz byte2
+    UAC_SR_B0(UAC_SAMPLE_RATE),                             // tSamFreq byte0
+    UAC_SR_B1(UAC_SAMPLE_RATE),                             // tSamFreq byte1
+    UAC_SR_B2(UAC_SAMPLE_RATE),                             // tSamFreq byte2
 
-    /* Endpoint Descriptor: EP5 ISO IN (0x85) — 192 B/ms at 48 kHz */
+    /* Endpoint Descriptor: EP5 ISO IN (0x85) */
     0x09,                                                   // bLength
     0x05,                                                   // bDescriptorType (Endpoint)
     UAC_USBFS_EP_IN_ADDR,                                   // bEndpointAddress: 0x85 (EP5 IN)
     0x01,                                                   // bmAttributes: Isochronous
-    UAC_SR_B0(UAC_ISO_PACKET_SIZE), UAC_SR_B1(UAC_ISO_PACKET_SIZE), // wMaxPacketSize: 192
+    UAC_SR_B0(UAC_ISO_PACKET_SIZE), UAC_SR_B1(UAC_ISO_PACKET_SIZE), // wMaxPacketSize
     0x01,                                                   // bInterval: 1 ms
     0x00,                                                   // bRefresh
     0x00,                                                   // bSynchAddress
@@ -338,7 +338,7 @@ const uint8_t MyCfgDescr[ ] =
     0x00,                                                   // bDelay
     UAC_SR_B0(UAC_FORMAT_PCM), UAC_SR_B1(UAC_FORMAT_PCM),  // wFormatTag: PCM
 
-    /* CS Interface: Format Type I — 48 kHz stereo 16-bit */
+    /* CS Interface: Format Type I — 16 kHz stereo 16-bit */
     0x0B,                                                   // bLength
     USB_DESC_TYPE_CS_INTERFACE,                             // bDescriptorType
     UAC_AS_FORMAT_TYPE,                                     // bDescriptorSubtype
@@ -347,16 +347,16 @@ const uint8_t MyCfgDescr[ ] =
     UAC_BYTES_PER_SAMPLE,                                   // bSubFrameSize: 2
     UAC_BIT_RESOLUTION,                                     // bBitResolution: 16
     0x01,                                                   // bSamFreqType: 1 frequency
-    UAC_SR_B0(UAC_SAMPLE_RATE),                             // tSamFreq: 48000 Hz byte0
-    UAC_SR_B1(UAC_SAMPLE_RATE),                             // tSamFreq: 48000 Hz byte1
-    UAC_SR_B2(UAC_SAMPLE_RATE),                             // tSamFreq: 48000 Hz byte2
+    UAC_SR_B0(UAC_SAMPLE_RATE),                             // tSamFreq byte0
+    UAC_SR_B1(UAC_SAMPLE_RATE),                             // tSamFreq byte1
+    UAC_SR_B2(UAC_SAMPLE_RATE),                             // tSamFreq byte2
 
-    /* Endpoint Descriptor: EP6 ISO OUT (0x06) — 192 B/ms at 48 kHz */
+    /* Endpoint Descriptor: EP6 ISO OUT (0x06) */
     0x09,                                                   // bLength
     0x05,                                                   // bDescriptorType (Endpoint)
     UAC_USBFS_EP_OUT_ADDR,                                  // bEndpointAddress: 0x06 (EP6 OUT)
     0x01,                                                   // bmAttributes: Isochronous
-    UAC_SR_B0(UAC_ISO_PACKET_SIZE), UAC_SR_B1(UAC_ISO_PACKET_SIZE), // wMaxPacketSize: 192
+    UAC_SR_B0(UAC_ISO_PACKET_SIZE), UAC_SR_B1(UAC_ISO_PACKET_SIZE), // wMaxPacketSize
     0x01,                                                   // bInterval: 1 ms
     0x00,                                                   // bRefresh
     0x00,                                                   // bSynchAddress
@@ -682,14 +682,15 @@ const uint8_t MyManuInfo[ ] =
 /* Product Information */
 const uint8_t MyProdInfo[ ]  =
 {
-    0x0E, // Descriptor length (6 chars * 2 + 2)
+    0x0F, // Descriptor length (7 chars * 2 + 2)
     0x03, // Descriptor type (STRING)
     'K', 0,  // KeyMod
     'e', 0,
     'y', 0,
     'M', 0,
     'o', 0,
-    'd', 0
+    'd', 0,
+    'T', 0
 };
 
 /* Serial Number Information */
