@@ -8,15 +8,15 @@
  * │  Host PC mic  ──USBD EP5 OUT──► h2t_buf ──USBFS EP5 IN──► Target spk   │
  * │  Target mic   ─USBFS EP6 OUT──► t2h_buf ──USBD EP4 IN──►  Host PC spk  │
  * │                                                                         │
- * │  USBFS (Target PC side):  EP5 ISO IN   64 B/ms  16 kHz stereo 16-bit   │
- * │                           EP6 ISO OUT  64 B/ms  16 kHz stereo 16-bit   │
+ * │  USBFS (Target PC side):  EP5 ISO IN  192 B/ms  48 kHz stereo 16-bit   │
+ * │                           EP6 ISO OUT 192 B/ms  48 kHz stereo 16-bit   │
  * │  USBD  (Host PC side):    EP4 ISO IN   64 B/ms  16 kHz stereo 16-bit   │
  * │                           EP5 ISO OUT  64 B/ms  16 kHz stereo 16-bit   │
  * └─────────────────────────────────────────────────────────────────────────┘
  *
- * Audio bridge:
- *   USBD → USBFS (h2t):  64-byte frames are copied directly.
- *   USBFS → USBD (t2h):  64-byte frames are copied directly.
+ * Sample-rate bridge:
+ *   USBD → USBFS (h2t):  64-byte (16k) frame up-sampled 3x to 192-byte (48k).
+ *   USBFS → USBD (t2h):  192-byte (48k) frame decimated 3x to 64-byte (16k).
  *
  * Ping-pong buffers: writer fills slot (wr ^ 1), publishes by setting wr to
  * the new slot and ready=1.  Reader always consumes slot wr (latest frame).
@@ -50,16 +50,51 @@ static const uint8_t g_silence_192[UAC_ISO_PACKET_SIZE];
 static const uint8_t g_silence_64 [UAC_USBD_ISO_PACKET_SIZE];
 
 /*============================================================================
- * copy_frame_with_pad
- *   Copy min(src_len, dst_len) bytes and zero-pad the rest if needed.
+ * up_sample_3x
+ *   Expand src (16 stereo 16-bit samples, 64 B) to dst by repeating each
+ *   sample 3 times -> 48 stereo samples, 192 B.
  *===========================================================================*/
-static void copy_frame_with_pad(const uint8_t *src, uint16_t src_len,
-                                uint8_t *dst, uint16_t dst_len)
+static void up_sample_3x(const uint8_t *src, uint8_t *dst)
 {
-    uint16_t n = (src_len < dst_len) ? src_len : dst_len;
-    memcpy(dst, src, n);
-    if (n < dst_len)
-        memset(dst + n, 0, dst_len - n);
+    uint8_t i;
+    for (i = 0; i < (UAC_USBD_ISO_PACKET_SIZE / 4u); i++) {
+        const uint8_t *s = src + (i * 4u);
+        uint8_t *d = dst + (i * 12u);
+        d[ 0] = s[0]; d[ 1] = s[1]; d[ 2] = s[2]; d[ 3] = s[3];
+        d[ 4] = s[0]; d[ 5] = s[1]; d[ 6] = s[2]; d[ 7] = s[3];
+        d[ 8] = s[0]; d[ 9] = s[1]; d[10] = s[2]; d[11] = s[3];
+    }
+}
+
+/*============================================================================
+ * down_sample_3x
+ *   Decimate src (48 stereo 16-bit samples, 192 B) by averaging each
+ *   3-sample group per channel -> 16 stereo samples, 64 B.
+ *===========================================================================*/
+static void down_sample_3x(const uint8_t *src, uint8_t *dst)
+{
+    uint8_t i;
+    for (i = 0; i < (UAC_USBD_ISO_PACKET_SIZE / 4u); i++) {
+        const uint8_t *s = src + (i * 12u);
+        uint8_t *d = dst + (i * 4u);
+
+        int16_t l0 = (int16_t)((uint16_t)s[0] | ((uint16_t)s[1] << 8));
+        int16_t r0 = (int16_t)((uint16_t)s[2] | ((uint16_t)s[3] << 8));
+        int16_t l1 = (int16_t)((uint16_t)s[4] | ((uint16_t)s[5] << 8));
+        int16_t r1 = (int16_t)((uint16_t)s[6] | ((uint16_t)s[7] << 8));
+        int16_t l2 = (int16_t)((uint16_t)s[8] | ((uint16_t)s[9] << 8));
+        int16_t r2 = (int16_t)((uint16_t)s[10] | ((uint16_t)s[11] << 8));
+
+        int32_t lsum = (int32_t)l0 + (int32_t)l1 + (int32_t)l2;
+        int32_t rsum = (int32_t)r0 + (int32_t)r1 + (int32_t)r2;
+        int16_t lout = (int16_t)(lsum / 3);
+        int16_t rout = (int16_t)(rsum / 3);
+
+        d[0] = (uint8_t)(lout & 0xFF);
+        d[1] = (uint8_t)((uint16_t)lout >> 8);
+        d[2] = (uint8_t)(rout & 0xFF);
+        d[3] = (uint8_t)((uint16_t)rout >> 8);
+    }
 }
 
 /*============================================================================
@@ -118,9 +153,9 @@ void UAC_USBFS_EP5_TxDone(void)
 /*============================================================================
  * UAC_USBFS_EP6_RxDone   (USBFS EP6 ISO OUT complete)
  *
- * Hardware just received one ISO frame from the Target PC mic.
+ * Hardware just received one 192-byte frame from the Target PC mic.
  * DMA deposited data into USBFS_EP6_Buf (single buffer, BUF_MOD=0).
- * Copy/pad into g_t2h_buf for USBD EP4 IN.
+ * Down-sample 192 B -> 64 B and publish into g_t2h_buf for USBD EP4 IN.
  *
  * Single-buffer mode: data is always at USBFS_EP6_Buf[0].
  * No ping-pong half tracking is needed.
@@ -135,7 +170,14 @@ void UAC_USBFS_EP6_RxDone(uint16_t len)
     uint8_t write_slot = g_t2h_wr ^ 1u;
     uint8_t *dst = g_t2h_buf + ((uint16_t)write_slot * UAC_USBD_ISO_PACKET_SIZE);
 
-    copy_frame_with_pad(src, len, dst, UAC_USBD_ISO_PACKET_SIZE);
+    if (len >= UAC_ISO_PACKET_SIZE) {
+        down_sample_3x(src, dst);
+    } else {
+        static uint8_t tmp[UAC_ISO_PACKET_SIZE];
+        memcpy(tmp, src, len);
+        memset(tmp + len, 0, UAC_ISO_PACKET_SIZE - len);
+        down_sample_3x(tmp, dst);
+    }
 
     g_t2h_wr  = write_slot;
     g_t2h_rdy = 1;
@@ -176,7 +218,7 @@ void UAC_USBD_EP3_TxDone(void)
  *
  * The Host PC just sent one mic frame (Host PC mic OUT direction).
  * PMA holds UAC_USBD_ISO_PACKET_SIZE (64 B) at ENDP5_ISO_RXADDR.
- * Copy/pad and publish into g_h2t_buf for USBFS EP5 IN.
+ * Up-sample 64 B -> 192 B and publish into g_h2t_buf for USBFS EP5 IN.
  *
  * For ISO OUT endpoints on CH32V20x USBD (STM32-compatible USB IP):
  *   - The hardware sets EP_CTR_RX after each received ISO packet.
@@ -204,7 +246,7 @@ void UAC_USBD_EP4_RxDone(uint16_t len)
     uint8_t write_slot = g_h2t_wr ^ 1u;
     uint8_t *dst = g_h2t_buf + ((uint16_t)write_slot * UAC_ISO_PACKET_SIZE);
 
-    copy_frame_with_pad(usbd_tmp, UAC_USBD_ISO_PACKET_SIZE, dst, UAC_ISO_PACKET_SIZE);
+    up_sample_3x(usbd_tmp, dst);
 
     g_h2t_wr  = write_slot;
     g_h2t_rdy = 1;
