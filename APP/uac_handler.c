@@ -18,9 +18,8 @@
  *   USBD → USBFS (h2t):  64-byte (16k) frame up-sampled 3x to 192-byte (48k).
  *   USBFS → USBD (t2h):  192-byte (48k) frame decimated 3x to 64-byte (16k).
  *
- * Ping-pong buffers: writer fills slot (wr ^ 1), publishes by setting wr to
- * the new slot and ready=1.  Reader always consumes slot wr (latest frame).
- * If no fresh frame is available, silence (zero) is sent instead.
+ * Small FIFO jitter buffers are used in both directions so short callback
+ * timing jitter does not immediately become audible silence/click noise.
  *****************************************************************************/
 #include "include/uac_handler.h"
 #include "include/Version_selection.h"
@@ -35,15 +34,20 @@
 /* ── global UAC state ─────────────────────────────────────────────────────── */
 UAC_State_t g_uac_state;
 
+#define UAC_H2T_FIFO_FRAMES 4u
+#define UAC_T2H_FIFO_FRAMES 4u
+
 /* ── Host→Target bridge  (USBD EP5 OUT → USBFS EP5 IN) ────────────────────── */
-static uint8_t          g_h2t_buf[UAC_ISO_PACKET_SIZE * 2];
-static volatile uint8_t g_h2t_wr  = 0;   /* slot last written by USBD RxDone */
-static volatile uint8_t g_h2t_rdy = 0;   /* 1 = at least one fresh frame     */
+static uint8_t          g_h2t_buf[UAC_H2T_FIFO_FRAMES * UAC_ISO_PACKET_SIZE];
+static volatile uint8_t g_h2t_wr = 0;
+static volatile uint8_t g_h2t_rd = 0;
+static volatile uint8_t g_h2t_count = 0;
 
 /* ── Target→Host bridge  (USBFS EP6 OUT → USBD EP4 IN) ───────────────────── */
-static uint8_t          g_t2h_buf[UAC_USBD_ISO_PACKET_SIZE * 2];
-static volatile uint8_t g_t2h_wr  = 0;
-static volatile uint8_t g_t2h_rdy = 0;
+static uint8_t          g_t2h_buf[UAC_T2H_FIFO_FRAMES * UAC_USBD_ISO_PACKET_SIZE];
+static volatile uint8_t g_t2h_wr = 0;
+static volatile uint8_t g_t2h_rd = 0;
+static volatile uint8_t g_t2h_count = 0;
 
 /* ── Silence frames ────────────────────────────────────────────────────────── */
 static const uint8_t g_silence_192[UAC_ISO_PACKET_SIZE];
@@ -107,8 +111,8 @@ void UAC_Init(void)
      * cannot be heard as noise before the first real frame arrives.     */
     memset(g_h2t_buf, 0, sizeof(g_h2t_buf));
     memset(g_t2h_buf, 0, sizeof(g_t2h_buf));
-    g_h2t_wr  = 0;  g_h2t_rdy = 0;
-    g_t2h_wr  = 0;  g_t2h_rdy = 0;
+    g_h2t_wr = 0; g_h2t_rd = 0; g_h2t_count = 0;
+    g_t2h_wr = 0; g_t2h_rd = 0; g_t2h_count = 0;
 }
 
 /*============================================================================
@@ -135,11 +139,12 @@ void UAC_USBFS_EP5_Preload(void)
  *===========================================================================*/
 void UAC_USBFS_EP5_TxDone(void)
 {
-    if (g_h2t_rdy) {
+    if (g_h2t_count > 0u) {
         memcpy(USBFS_EP5_Buf,
-               g_h2t_buf + ((uint16_t)g_h2t_wr * UAC_ISO_PACKET_SIZE),
+               g_h2t_buf + ((uint16_t)g_h2t_rd * UAC_ISO_PACKET_SIZE),
                UAC_ISO_PACKET_SIZE);
-        g_h2t_rdy = 0;
+        g_h2t_rd = (uint8_t)((g_h2t_rd + 1u) % UAC_H2T_FIFO_FRAMES);
+        g_h2t_count--;
     } else {
         memcpy(USBFS_EP5_Buf, g_silence_192, UAC_ISO_PACKET_SIZE);
     }
@@ -167,8 +172,7 @@ void UAC_USBFS_EP6_RxDone(uint16_t len)
 
     const uint8_t *src = USBFS_EP6_Buf;   /* single buffer, always offset 0 */
 
-    uint8_t write_slot = g_t2h_wr ^ 1u;
-    uint8_t *dst = g_t2h_buf + ((uint16_t)write_slot * UAC_USBD_ISO_PACKET_SIZE);
+    uint8_t *dst = g_t2h_buf + ((uint16_t)g_t2h_wr * UAC_USBD_ISO_PACKET_SIZE);
 
     if (len >= UAC_ISO_PACKET_SIZE) {
         down_sample_3x(src, dst);
@@ -179,8 +183,13 @@ void UAC_USBFS_EP6_RxDone(uint16_t len)
         down_sample_3x(tmp, dst);
     }
 
-    g_t2h_wr  = write_slot;
-    g_t2h_rdy = 1;
+    g_t2h_wr = (uint8_t)((g_t2h_wr + 1u) % UAC_T2H_FIFO_FRAMES);
+    if (g_t2h_count < UAC_T2H_FIFO_FRAMES) {
+        g_t2h_count++;
+    } else {
+        /* Overflow: drop oldest frame to keep stream live. */
+        g_t2h_rd = (uint8_t)((g_t2h_rd + 1u) % UAC_T2H_FIFO_FRAMES);
+    }
 }
 
 /*============================================================================
@@ -194,9 +203,10 @@ void UAC_USBD_EP3_TxDone(void)
 {
     const uint8_t *src;
 
-    if (g_t2h_rdy) {
-        src = g_t2h_buf + ((uint16_t)g_t2h_wr * UAC_USBD_ISO_PACKET_SIZE);
-        g_t2h_rdy = 0;
+    if (g_t2h_count > 0u) {
+        src = g_t2h_buf + ((uint16_t)g_t2h_rd * UAC_USBD_ISO_PACKET_SIZE);
+        g_t2h_rd = (uint8_t)((g_t2h_rd + 1u) % UAC_T2H_FIFO_FRAMES);
+        g_t2h_count--;
     } else {
         src = g_silence_64;
     }
@@ -243,13 +253,17 @@ void UAC_USBD_EP4_RxDone(uint16_t len)
     memset(usbd_tmp, 0, UAC_USBD_ISO_PACKET_SIZE);
     PMAToUserBufferCopy(usbd_tmp, ENDP5_ISO_RXADDR, copy_len);
 
-    uint8_t write_slot = g_h2t_wr ^ 1u;
-    uint8_t *dst = g_h2t_buf + ((uint16_t)write_slot * UAC_ISO_PACKET_SIZE);
+    uint8_t *dst = g_h2t_buf + ((uint16_t)g_h2t_wr * UAC_ISO_PACKET_SIZE);
 
     up_sample_3x(usbd_tmp, dst);
 
-    g_h2t_wr  = write_slot;
-    g_h2t_rdy = 1;
+    g_h2t_wr = (uint8_t)((g_h2t_wr + 1u) % UAC_H2T_FIFO_FRAMES);
+    if (g_h2t_count < UAC_H2T_FIFO_FRAMES) {
+        g_h2t_count++;
+    } else {
+        /* Overflow: drop oldest frame to keep stream live. */
+        g_h2t_rd = (uint8_t)((g_h2t_rd + 1u) % UAC_H2T_FIFO_FRAMES);
+    }
 
     /* Do NOT call SetEPRxStatus(ENDP5, EP_RX_VALID) here!
      * On EP_ISOCHRONOUS endpoints the STAT_RX field is a SW_BUF toggle,
