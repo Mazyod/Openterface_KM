@@ -44,8 +44,6 @@ UAC_State_t g_uac_state;
 #define UAC_T2H_FIFO_FRAMES 8u
 #define UAC_H2T_START_LEVEL 3u
 #define UAC_T2H_START_LEVEL 3u
-#define UAC_H2T_LOW_WATER   2u
-#define UAC_T2H_LOW_WATER   2u
 #define UAC_H2T_HIGH_WATER  (UAC_H2T_FIFO_FRAMES - 2u)
 #define UAC_T2H_HIGH_WATER  (UAC_T2H_FIFO_FRAMES - 2u)
 
@@ -233,11 +231,7 @@ void UAC_USBFS_EP5_TxDone(void)
 
         if (level == 0u) {
             g_h2t_underrun_cnt++;
-            memcpy(USBFS_EP5_Buf, g_h2t_last, UAC_ISO_PACKET_SIZE);
-        } else if (level <= UAC_H2T_LOW_WATER) {
-            /* Low headroom: hold last frame for one SOF to refill FIFO. */
-            g_h2t_hold_cnt++;
-            memcpy(USBFS_EP5_Buf, g_h2t_last, UAC_ISO_PACKET_SIZE);
+            memcpy(USBFS_EP5_Buf, g_silence_192, UAC_ISO_PACKET_SIZE);
         } else {
             memcpy(USBFS_EP5_Buf,
                    g_h2t_buf + ((uint16_t)g_h2t_rd * UAC_ISO_PACKET_SIZE),
@@ -332,11 +326,7 @@ void UAC_USBD_EP3_TxDone(void)
 
         if (level == 0u) {
             g_t2h_underrun_cnt++;
-            src = g_t2h_last;
-        } else if (level <= UAC_T2H_LOW_WATER) {
-            /* Low headroom: hold last frame for one SOF to refill FIFO. */
-            g_t2h_hold_cnt++;
-            src = g_t2h_last;
+            src = g_silence_64;
         } else {
             src = g_t2h_buf + ((uint16_t)g_t2h_rd * UAC_USBD_ISO_PACKET_SIZE);
             memcpy(g_t2h_last, src, UAC_USBD_ISO_PACKET_SIZE);
