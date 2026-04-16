@@ -9,9 +9,9 @@
  *
  * Sample-rate bridge:
  *   USBD side: 16 kHz stereo 16-bit → 64 B/ms
- *   USBFS side: 48 kHz stereo 16-bit → 192 B/ms
- *   h2t (USBD→USBFS): 64 B up-sampled 3× to 192 B
- *   t2h (USBFS→USBD): 192 B decimated 3× to 64 B (averaged)
+ *   USBFS side: 16 kHz stereo 16-bit → 64 B/ms
+ *   h2t (USBD→USBFS): direct copy when packet sizes match
+ *   t2h (USBFS→USBD): direct copy when packet sizes match
  *****************************************************************************/
 #ifndef __UAC_HANDLER_H
 #define __UAC_HANDLER_H
@@ -50,7 +50,7 @@ void UAC_USBFS_EP5_TxDone(void);
 /**
  * @brief  Called when USBFS EP6 ISO OUT transfer completes.
  * @param  len  Number of bytes received from the Target PC mic.
- *         Decimates 192 B to 64 B and stores in t2h bridge buffer.
+ *         Converts and stores one frame in t2h bridge buffer.
  */
 void UAC_USBFS_EP6_RxDone(uint16_t len);
 
@@ -65,7 +65,7 @@ void UAC_USBD_EP3_TxDone(void);
 /**
  * @brief  Called when USBD EP5 ISO OUT transfer completes (EP5_OUT_Callback).
  * @param  len  Number of bytes received from the Host PC mic.
- *         Up-samples 64 B to 192 B and stores in h2t bridge buffer.
+ *         Converts and stores one frame in h2t bridge buffer.
  */
 void UAC_USBD_EP4_RxDone(uint16_t len);
 
