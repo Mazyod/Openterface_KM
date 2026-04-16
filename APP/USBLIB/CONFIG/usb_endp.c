@@ -114,6 +114,9 @@ void EP5_OUT_Callback(void)
 #ifdef ENABLE_UAC
     uint16_t len = GetEPRxCount(ENDP5);
     UAC_USBD_EP4_RxDone(len);
+    /* Keep ISO OUT RX status untouched, but refresh PMA receive count
+     * so the next frame always has buffer space. */
+    SetEPRxCount(ENDP5, UAC_USBD_ISO_PACKET_SIZE);
 #endif
 }
 

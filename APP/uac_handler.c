@@ -374,9 +374,10 @@ void UAC_USBD_EP3_TxDone(void)
  *     NAK/VALID status.  Calling SetEPRxStatus(EP_RX_VALID) after each
  *     packet would TOGGLE the buffer-select bit, making every other packet
  *     land at an uninitialised PMA address → alternating silence/garbage.
- *   - Correct behaviour: do NOT call SetEPRxStatus here.  The ISO OUT
- *     endpoint re-arms automatically; hardware writes the next packet into
- *     ENDP5_ISO_RXADDR (DTOG_RX=0, cleared in USBD_Reset) every SOF.
+ *   - Correct behaviour: do NOT call SetEPRxStatus here.
+ *   - RX count is refreshed in EP5_OUT_Callback after each packet so the
+ *     next ISO OUT frame always has PMA space, while RX status bits stay
+ *     untouched to avoid SW_BUF toggle side effects.
  *===========================================================================*/
 void UAC_USBD_EP4_RxDone(uint16_t len)
 {
@@ -406,7 +407,7 @@ void UAC_USBD_EP4_RxDone(uint16_t len)
 
     /* Do NOT call SetEPRxStatus(ENDP5, EP_RX_VALID) here!
      * On EP_ISOCHRONOUS endpoints the STAT_RX field is a SW_BUF toggle,
-     * not a NAK/VALID control.  The hardware re-arms ISO OUT automatically. */
+     * not a NAK/VALID control. */
 }
 
 #endif /* ENABLE_UAC */
