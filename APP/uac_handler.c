@@ -34,6 +34,12 @@
 /* ── global UAC state ─────────────────────────────────────────────────────── */
 UAC_State_t g_uac_state;
 
+/* Diagnostic mode:
+ *   1 = loop Target-side USBFS EP6 OUT -> EP5 IN directly at 48 kHz
+ *       (bypasses USBD<->USBFS sample-rate bridge on playback path)
+ *   0 = normal bridge mode */
+#define UAC_TEST_TARGET_LOOPBACK 1u
+
 #define UAC_H2T_FIFO_FRAMES 8u
 #define UAC_T2H_FIFO_FRAMES 8u
 #define UAC_H2T_START_LEVEL 3u
@@ -58,6 +64,11 @@ static uint8_t          g_t2h_last[UAC_USBD_ISO_PACKET_SIZE];
 /* ── Silence frames ────────────────────────────────────────────────────────── */
 static const uint8_t g_silence_192[UAC_ISO_PACKET_SIZE];
 static const uint8_t g_silence_64 [UAC_USBD_ISO_PACKET_SIZE];
+
+#if UAC_TEST_TARGET_LOOPBACK
+static uint8_t          g_usbfs_loop_48k[UAC_ISO_PACKET_SIZE];
+static volatile uint8_t g_usbfs_loop_valid = 0;
+#endif
 
 /*============================================================================
  * up_sample_3x
@@ -119,6 +130,10 @@ void UAC_Init(void)
     memset(g_t2h_buf, 0, sizeof(g_t2h_buf));
     memset(g_h2t_last, 0, sizeof(g_h2t_last));
     memset(g_t2h_last, 0, sizeof(g_t2h_last));
+#if UAC_TEST_TARGET_LOOPBACK
+    memset(g_usbfs_loop_48k, 0, sizeof(g_usbfs_loop_48k));
+    g_usbfs_loop_valid = 0;
+#endif
     g_h2t_wr = 0; g_h2t_rd = 0; g_h2t_count = 0;
     g_t2h_wr = 0; g_t2h_rd = 0; g_t2h_count = 0;
     g_h2t_started = 0;
@@ -149,6 +164,19 @@ void UAC_USBFS_EP5_Preload(void)
  *===========================================================================*/
 void UAC_USBFS_EP5_TxDone(void)
 {
+#if UAC_TEST_TARGET_LOOPBACK
+    if (g_usbfs_loop_valid) {
+        memcpy(USBFS_EP5_Buf, g_usbfs_loop_48k, UAC_ISO_PACKET_SIZE);
+    } else {
+        memcpy(USBFS_EP5_Buf, g_silence_192, UAC_ISO_PACKET_SIZE);
+    }
+
+    USBFSD->UEP5_TX_LEN  = UAC_ISO_PACKET_SIZE;
+    USBFSD->UEP5_TX_CTRL = (USBFSD->UEP5_TX_CTRL & ~USBFS_UEP_T_RES_MASK)
+                           | USBFS_UEP_T_RES_NONE;
+    return;
+#endif
+
     if (!g_h2t_started) {
         if (g_h2t_count >= UAC_H2T_START_LEVEL)
             g_h2t_started = 1;
@@ -190,6 +218,16 @@ void UAC_USBFS_EP6_RxDone(uint16_t len)
         return;
 
     const uint8_t *src = USBFS_EP6_Buf;   /* single buffer, always offset 0 */
+
+#if UAC_TEST_TARGET_LOOPBACK
+    if (len >= UAC_ISO_PACKET_SIZE) {
+        memcpy(g_usbfs_loop_48k, src, UAC_ISO_PACKET_SIZE);
+    } else {
+        memcpy(g_usbfs_loop_48k, src, len);
+        memset(g_usbfs_loop_48k + len, 0, UAC_ISO_PACKET_SIZE - len);
+    }
+    g_usbfs_loop_valid = 1;
+#endif
 
     uint8_t *dst = g_t2h_buf + ((uint16_t)g_t2h_wr * UAC_USBD_ISO_PACKET_SIZE);
 
