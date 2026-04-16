@@ -16,6 +16,7 @@
 #include "debug.h"
 #include "string.h"
 #include "usbd_desc.h"
+#include "uac_desc.h"
 #include "ch32v20x_usb.h"
 #ifndef NULL
 #define NULL                    0
@@ -164,8 +165,10 @@ extern __attribute__ ((aligned(4))) uint8_t USBFS_EP1_Buf[ DEF_USB_EP1_FS_SIZE ]
 extern __attribute__ ((aligned(4))) uint8_t USBFS_EP2_Buf[ DEF_USB_EP2_FS_SIZE ];    //ep2_in(64)
 extern __attribute__ ((aligned(4))) uint8_t USBFS_EP3_Buf[ DEF_USB_EP3_FS_SIZE ];    //ep3_in(64)
 extern __attribute__ ((aligned(4))) uint8_t USBFS_EP4_Buf[ DEF_USB_EP4_FS_SIZE ];    //ep4_in(64)
-extern __attribute__ ((aligned(4))) uint8_t USBFS_EP5_Buf[ 192 ];                    //ep5_in  ISO TX 192B single-buf
-extern __attribute__ ((aligned(4))) uint8_t USBFS_EP6_Buf[ 192 ];                    //ep6_out ISO RX 192B single-buf
+#ifdef ENABLE_UAC
+extern __attribute__ ((aligned(4))) uint8_t USBFS_EP5_Buf[ UAC_ISO_PACKET_SIZE ];    //ep5_in  ISO TX single-buf
+extern __attribute__ ((aligned(4))) uint8_t USBFS_EP6_Buf[ UAC_ISO_PACKET_SIZE ];    //ep6_out ISO RX single-buf
+#endif /* ENABLE_UAC */
 
 /* USB IN Endpoint Busy Flag */
 extern volatile uint8_t  USBFS_Endp_Busy[ DEF_UEP_NUM ];
