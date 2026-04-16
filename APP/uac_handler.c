@@ -8,15 +8,15 @@
  * │  Host PC mic  ──USBD EP5 OUT──► h2t_buf ──USBFS EP5 IN──► Target spk   │
  * │  Target mic   ─USBFS EP6 OUT──► t2h_buf ──USBD EP4 IN──►  Host PC spk  │
  * │                                                                         │
- * │  USBFS (Target PC side):  EP5 ISO IN  192 B/ms  48 kHz stereo 16-bit   │
- * │                           EP6 ISO OUT 192 B/ms  48 kHz stereo 16-bit   │
+ * │  USBFS (Target PC side):  EP5 ISO IN   64 B/ms  16 kHz stereo 16-bit   │
+ * │                           EP6 ISO OUT  64 B/ms  16 kHz stereo 16-bit   │
  * │  USBD  (Host PC side):    EP4 ISO IN   64 B/ms  16 kHz stereo 16-bit   │
  * │                           EP5 ISO OUT  64 B/ms  16 kHz stereo 16-bit   │
  * └─────────────────────────────────────────────────────────────────────────┘
  *
- * Sample-rate bridge:
- *   USBD → USBFS (h2t):  64-byte (16k) frame up-sampled 3x to 192-byte (48k).
- *   USBFS → USBD (t2h):  192-byte (48k) frame decimated 3x to 64-byte (16k).
+ * Bridge mode:
+ *   Aligned-rate test (16k -> 16k): direct frame copy.
+ *   Mixed-rate mode (16k <-> 48k): 3x up/down sample conversion.
  *
  * Small FIFO jitter buffers are used in both directions so short callback
  * timing jitter does not immediately become audible silence/click noise.
@@ -82,13 +82,19 @@ static uint8_t t2h_level(void)
     return (uint8_t)((wr + UAC_T2H_FIFO_FRAMES - rd) % UAC_T2H_FIFO_FRAMES);
 }
 
-/*============================================================================
- * up_sample_3x
- *   Expand src (16 stereo 16-bit samples, 64 B) to dst by repeating each
- *   sample 3 times -> 48 stereo samples, 192 B.
- *===========================================================================*/
-static void up_sample_3x(const uint8_t *src, uint8_t *dst)
+static void copy_pad_frame(const uint8_t *src, uint16_t src_len, uint8_t *dst, uint16_t dst_len)
 {
+    uint16_t n = (src_len < dst_len) ? src_len : dst_len;
+    memcpy(dst, src, n);
+    if (n < dst_len)
+        memset(dst + n, 0, dst_len - n);
+}
+
+static void h2t_convert_frame(const uint8_t *src, uint8_t *dst)
+{
+#if UAC_ISO_PACKET_SIZE == UAC_USBD_ISO_PACKET_SIZE
+    memcpy(dst, src, UAC_ISO_PACKET_SIZE);
+#else
     uint8_t i;
     for (i = 0; i < (UAC_USBD_ISO_PACKET_SIZE / 4u); i++) {
         const uint8_t *s = src + (i * 4u);
@@ -97,15 +103,14 @@ static void up_sample_3x(const uint8_t *src, uint8_t *dst)
         d[ 4] = s[0]; d[ 5] = s[1]; d[ 6] = s[2]; d[ 7] = s[3];
         d[ 8] = s[0]; d[ 9] = s[1]; d[10] = s[2]; d[11] = s[3];
     }
+#endif
 }
 
-/*============================================================================
- * down_sample_3x
- *   Decimate src (48 stereo 16-bit samples, 192 B) by averaging each
- *   3-sample group per channel -> 16 stereo samples, 64 B.
- *===========================================================================*/
-static void down_sample_3x(const uint8_t *src, uint8_t *dst)
+static void t2h_convert_frame(const uint8_t *src, uint8_t *dst)
 {
+#if UAC_ISO_PACKET_SIZE == UAC_USBD_ISO_PACKET_SIZE
+    memcpy(dst, src, UAC_USBD_ISO_PACKET_SIZE);
+#else
     uint8_t i;
     for (i = 0; i < (UAC_USBD_ISO_PACKET_SIZE / 4u); i++) {
         const uint8_t *s = src + (i * 12u);
@@ -128,6 +133,7 @@ static void down_sample_3x(const uint8_t *src, uint8_t *dst)
         d[2] = (uint8_t)(rout & 0xFF);
         d[3] = (uint8_t)((uint16_t)rout >> 8);
     }
+#endif
 }
 
 /*============================================================================
@@ -216,9 +222,9 @@ void UAC_USBFS_EP5_TxDone(void)
 /*============================================================================
  * UAC_USBFS_EP6_RxDone   (USBFS EP6 ISO OUT complete)
  *
- * Hardware just received one 192-byte frame from the Target PC mic.
+ * Hardware just received one frame from the Target PC mic.
  * DMA deposited data into USBFS_EP6_Buf (single buffer, BUF_MOD=0).
- * Down-sample 192 B -> 64 B and publish into g_t2h_buf for USBD EP4 IN.
+ * Convert and publish into g_t2h_buf for USBD EP4 IN.
  *
  * Single-buffer mode: data is always at USBFS_EP6_Buf[0].
  * No ping-pong half tracking is needed.
@@ -243,12 +249,11 @@ void UAC_USBFS_EP6_RxDone(uint16_t len)
     uint8_t *dst = g_t2h_buf + ((uint16_t)g_t2h_wr * UAC_USBD_ISO_PACKET_SIZE);
 
     if (len >= UAC_ISO_PACKET_SIZE) {
-        down_sample_3x(src, dst);
+        t2h_convert_frame(src, dst);
     } else {
         static uint8_t tmp[UAC_ISO_PACKET_SIZE];
-        memcpy(tmp, src, len);
-        memset(tmp + len, 0, UAC_ISO_PACKET_SIZE - len);
-        down_sample_3x(tmp, dst);
+        copy_pad_frame(src, len, tmp, UAC_ISO_PACKET_SIZE);
+        t2h_convert_frame(tmp, dst);
     }
 
     {
@@ -305,7 +310,7 @@ void UAC_USBD_EP3_TxDone(void)
  *
  * The Host PC just sent one mic frame (Host PC mic OUT direction).
  * PMA holds UAC_USBD_ISO_PACKET_SIZE (64 B) at ENDP5_ISO_RXADDR.
- * Up-sample 64 B -> 192 B and publish into g_h2t_buf for USBFS EP5 IN.
+ * Convert and publish into g_h2t_buf for USBFS EP5 IN.
  *
  * For ISO OUT endpoints on CH32V20x USBD (STM32-compatible USB IP):
  *   - The hardware sets EP_CTR_RX after each received ISO packet.
@@ -332,7 +337,7 @@ void UAC_USBD_EP4_RxDone(uint16_t len)
 
     uint8_t *dst = g_h2t_buf + ((uint16_t)g_h2t_wr * UAC_ISO_PACKET_SIZE);
 
-    up_sample_3x(usbd_tmp, dst);
+    h2t_convert_frame(usbd_tmp, dst);
 
     {
         uint8_t next = (uint8_t)((g_h2t_wr + 1u) % UAC_H2T_FIFO_FRAMES);

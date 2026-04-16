@@ -6,7 +6,7 @@
  *                      and the USBD/CDC side (Target-facing, EP4/EP5).
  *
  * Audio format:
- *   USBFS side: PCM, 48 kHz, Stereo, 16-bit  → 192 bytes/ms
+ *   USBFS side: PCM, 16 kHz, Stereo, 16-bit  → 64 bytes/ms
  *   USBD side:  PCM, 16 kHz, Stereo, 16-bit  → 64 bytes/ms
  *
  * Interface layout on USBFS (Host side):
@@ -30,13 +30,13 @@
  * Audio format parameters
  * --------------------------------------------------------------------- */
 
-/* USBFS side (Host-facing): 48 kHz stereo 16-bit = 192 B/ms */
-#define UAC_SAMPLE_RATE         48000u
+/* USBFS side (Host-facing): 16 kHz stereo 16-bit = 64 B/ms */
+#define UAC_SAMPLE_RATE         16000u
 #define UAC_CHANNELS            2u
 #define UAC_BIT_RESOLUTION      16u
 #define UAC_BYTES_PER_SAMPLE    (UAC_BIT_RESOLUTION / 8u)
 #define UAC_ISO_PACKET_SIZE     ((UAC_SAMPLE_RATE / 1000u) * UAC_CHANNELS * UAC_BYTES_PER_SAMPLE)
-                                                /* = 192 */
+                                                /* = 64 */
 
 /* USBD side (Target-facing): 16 kHz stereo 16-bit = 64 B/ms */
 #define UAC_USBD_SAMPLE_RATE    16000u
