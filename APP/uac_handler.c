@@ -38,7 +38,7 @@ UAC_State_t g_uac_state;
  *   1 = loop Target-side USBFS EP6 OUT -> EP5 IN directly at 48 kHz
  *       (bypasses USBD<->USBFS sample-rate bridge on playback path)
  *   0 = normal bridge mode */
-#define UAC_TEST_TARGET_LOOPBACK 1u
+#define UAC_TEST_TARGET_LOOPBACK 0u
 
 #define UAC_H2T_FIFO_FRAMES 8u
 #define UAC_T2H_FIFO_FRAMES 8u
@@ -49,7 +49,6 @@ UAC_State_t g_uac_state;
 static uint8_t          g_h2t_buf[UAC_H2T_FIFO_FRAMES * UAC_ISO_PACKET_SIZE];
 static volatile uint8_t g_h2t_wr = 0;
 static volatile uint8_t g_h2t_rd = 0;
-static volatile uint8_t g_h2t_count = 0;
 static volatile uint8_t g_h2t_started = 0;
 static uint8_t          g_h2t_last[UAC_ISO_PACKET_SIZE];
 
@@ -57,7 +56,6 @@ static uint8_t          g_h2t_last[UAC_ISO_PACKET_SIZE];
 static uint8_t          g_t2h_buf[UAC_T2H_FIFO_FRAMES * UAC_USBD_ISO_PACKET_SIZE];
 static volatile uint8_t g_t2h_wr = 0;
 static volatile uint8_t g_t2h_rd = 0;
-static volatile uint8_t g_t2h_count = 0;
 static volatile uint8_t g_t2h_started = 0;
 static uint8_t          g_t2h_last[UAC_USBD_ISO_PACKET_SIZE];
 
@@ -69,6 +67,20 @@ static const uint8_t g_silence_64 [UAC_USBD_ISO_PACKET_SIZE];
 static uint8_t          g_usbfs_loop_48k[UAC_ISO_PACKET_SIZE];
 static volatile uint8_t g_usbfs_loop_valid = 0;
 #endif
+
+static uint8_t h2t_level(void)
+{
+    uint8_t wr = g_h2t_wr;
+    uint8_t rd = g_h2t_rd;
+    return (uint8_t)((wr + UAC_H2T_FIFO_FRAMES - rd) % UAC_H2T_FIFO_FRAMES);
+}
+
+static uint8_t t2h_level(void)
+{
+    uint8_t wr = g_t2h_wr;
+    uint8_t rd = g_t2h_rd;
+    return (uint8_t)((wr + UAC_T2H_FIFO_FRAMES - rd) % UAC_T2H_FIFO_FRAMES);
+}
 
 /*============================================================================
  * up_sample_3x
@@ -134,8 +146,8 @@ void UAC_Init(void)
     memset(g_usbfs_loop_48k, 0, sizeof(g_usbfs_loop_48k));
     g_usbfs_loop_valid = 0;
 #endif
-    g_h2t_wr = 0; g_h2t_rd = 0; g_h2t_count = 0;
-    g_t2h_wr = 0; g_t2h_rd = 0; g_t2h_count = 0;
+    g_h2t_wr = 0; g_h2t_rd = 0;
+    g_t2h_wr = 0; g_t2h_rd = 0;
     g_h2t_started = 0;
     g_t2h_started = 0;
 }
@@ -178,17 +190,16 @@ void UAC_USBFS_EP5_TxDone(void)
 #endif
 
     if (!g_h2t_started) {
-        if (g_h2t_count >= UAC_H2T_START_LEVEL)
+        if (h2t_level() >= UAC_H2T_START_LEVEL)
             g_h2t_started = 1;
     }
 
-    if (g_h2t_started && g_h2t_count > 0u) {
+    if (g_h2t_started && g_h2t_rd != g_h2t_wr) {
         memcpy(USBFS_EP5_Buf,
                g_h2t_buf + ((uint16_t)g_h2t_rd * UAC_ISO_PACKET_SIZE),
                UAC_ISO_PACKET_SIZE);
         memcpy(g_h2t_last, USBFS_EP5_Buf, UAC_ISO_PACKET_SIZE);
         g_h2t_rd = (uint8_t)((g_h2t_rd + 1u) % UAC_H2T_FIFO_FRAMES);
-        g_h2t_count--;
     } else if (g_h2t_started) {
         memcpy(USBFS_EP5_Buf, g_h2t_last, UAC_ISO_PACKET_SIZE);
         g_h2t_started = 0;
@@ -240,12 +251,13 @@ void UAC_USBFS_EP6_RxDone(uint16_t len)
         down_sample_3x(tmp, dst);
     }
 
-    g_t2h_wr = (uint8_t)((g_t2h_wr + 1u) % UAC_T2H_FIFO_FRAMES);
-    if (g_t2h_count < UAC_T2H_FIFO_FRAMES) {
-        g_t2h_count++;
-    } else {
-        /* Overflow: drop oldest frame to keep stream live. */
-        g_t2h_rd = (uint8_t)((g_t2h_rd + 1u) % UAC_T2H_FIFO_FRAMES);
+    {
+        uint8_t next = (uint8_t)((g_t2h_wr + 1u) % UAC_T2H_FIFO_FRAMES);
+        if (next == g_t2h_rd) {
+            /* Full: drop oldest frame to keep stream live. */
+            g_t2h_rd = (uint8_t)((g_t2h_rd + 1u) % UAC_T2H_FIFO_FRAMES);
+        }
+        g_t2h_wr = next;
     }
 }
 
@@ -261,15 +273,14 @@ void UAC_USBD_EP3_TxDone(void)
     const uint8_t *src;
 
     if (!g_t2h_started) {
-        if (g_t2h_count >= UAC_T2H_START_LEVEL)
+        if (t2h_level() >= UAC_T2H_START_LEVEL)
             g_t2h_started = 1;
     }
 
-    if (g_t2h_started && g_t2h_count > 0u) {
+    if (g_t2h_started && g_t2h_rd != g_t2h_wr) {
         src = g_t2h_buf + ((uint16_t)g_t2h_rd * UAC_USBD_ISO_PACKET_SIZE);
         memcpy(g_t2h_last, src, UAC_USBD_ISO_PACKET_SIZE);
         g_t2h_rd = (uint8_t)((g_t2h_rd + 1u) % UAC_T2H_FIFO_FRAMES);
-        g_t2h_count--;
     } else if (g_t2h_started) {
         src = g_t2h_last;
         g_t2h_started = 0;
@@ -323,12 +334,13 @@ void UAC_USBD_EP4_RxDone(uint16_t len)
 
     up_sample_3x(usbd_tmp, dst);
 
-    g_h2t_wr = (uint8_t)((g_h2t_wr + 1u) % UAC_H2T_FIFO_FRAMES);
-    if (g_h2t_count < UAC_H2T_FIFO_FRAMES) {
-        g_h2t_count++;
-    } else {
-        /* Overflow: drop oldest frame to keep stream live. */
-        g_h2t_rd = (uint8_t)((g_h2t_rd + 1u) % UAC_H2T_FIFO_FRAMES);
+    {
+        uint8_t next = (uint8_t)((g_h2t_wr + 1u) % UAC_H2T_FIFO_FRAMES);
+        if (next == g_h2t_rd) {
+            /* Full: drop oldest frame to keep stream live. */
+            g_h2t_rd = (uint8_t)((g_h2t_rd + 1u) % UAC_H2T_FIFO_FRAMES);
+        }
+        g_h2t_wr = next;
     }
 
     /* Do NOT call SetEPRxStatus(ENDP5, EP_RX_VALID) here!
