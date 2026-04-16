@@ -41,9 +41,9 @@ UAC_State_t g_uac_state;
 #define UAC_TEST_TARGET_LOOPBACK 0u
 
 #define UAC_H2T_FIFO_FRAMES 8u
-#define UAC_T2H_FIFO_FRAMES 8u
+#define UAC_T2H_FIFO_FRAMES 16u
 #define UAC_H2T_START_LEVEL 3u
-#define UAC_T2H_START_LEVEL 3u
+#define UAC_T2H_START_LEVEL 6u
 #define UAC_H2T_HIGH_WATER  (UAC_H2T_FIFO_FRAMES - 2u)
 #define UAC_T2H_HIGH_WATER  (UAC_T2H_FIFO_FRAMES - 2u)
 
@@ -68,6 +68,7 @@ static volatile uint32_t g_t2h_underrun_cnt = 0;
 static volatile uint32_t g_t2h_overflow_cnt = 0;
 static volatile uint32_t g_t2h_hold_cnt = 0;
 static volatile uint32_t g_t2h_drop_cnt = 0;
+static volatile uint8_t  g_t2h_miss_streak = 0;
 
 /* ── Silence frames ────────────────────────────────────────────────────────── */
 static const uint8_t g_silence_192[UAC_ISO_PACKET_SIZE];
@@ -174,6 +175,7 @@ void UAC_Init(void)
     g_t2h_overflow_cnt = 0;
     g_t2h_hold_cnt = 0;
     g_t2h_drop_cnt = 0;
+    g_t2h_miss_streak = 0;
 }
 
 /*============================================================================
@@ -326,14 +328,24 @@ void UAC_USBD_EP3_TxDone(void)
 
         if (level == 0u) {
             g_t2h_underrun_cnt++;
-            src = g_silence_64;
+            if (g_t2h_miss_streak == 0u) {
+                /* Conceal a one-frame timing miss with the previous frame.
+                 * If misses continue, fall back to silence to avoid pumping. */
+                src = g_t2h_last;
+                g_t2h_hold_cnt++;
+            } else {
+                src = g_silence_64;
+            }
+            g_t2h_miss_streak++;
         } else {
             src = g_t2h_buf + ((uint16_t)g_t2h_rd * UAC_USBD_ISO_PACKET_SIZE);
             memcpy(g_t2h_last, src, UAC_USBD_ISO_PACKET_SIZE);
             g_t2h_rd = (uint8_t)((g_t2h_rd + 1u) % UAC_T2H_FIFO_FRAMES);
+            g_t2h_miss_streak = 0;
         }
     } else {
         src = g_silence_64;
+        g_t2h_miss_streak = 0;
     }
 
     UserToPMABufferCopy((uint8_t *)src, ENDP4_ISO_TXADDR, UAC_USBD_ISO_PACKET_SIZE);
