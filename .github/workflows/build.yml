@@ -162,32 +162,12 @@ jobs:
         if-no-files-found: error
         path: ${{ env.BUILD_DIR }}\openterface-km-firmware-kvmgo.hex
 
-    - name: Upload KVMGo diagnostics
-      uses: actions/upload-artifact@v4
-      with:
-        name: openterface-km-firmware-kvmgo-diagnostics
-        if-no-files-found: error
-        path: |
-          ${{ env.BUILD_DIR }}\openterface-km-firmware-kvmgo.elf
-          ${{ env.BUILD_DIR }}\openterface-km-firmware-kvmgo.map
-          ${{ env.BUILD_DIR }}\openterface-km-firmware-kvmgo.siz
-
     - name: Upload Mini-KVM v1.2 firmware
       uses: actions/upload-artifact@v4
       with:
         name: openterface-km-firmware-mini-kvm-v1.2
         if-no-files-found: error
         path: ${{ env.BUILD_DIR }}\openterface-km-firmware-mini-kvm.hex
-
-    - name: Upload Mini-KVM v1.2 diagnostics
-      uses: actions/upload-artifact@v4
-      with:
-        name: openterface-km-firmware-mini-kvm-v1.2-diagnostics
-        if-no-files-found: error
-        path: |
-          ${{ env.BUILD_DIR }}\openterface-km-firmware-mini-kvm.elf
-          ${{ env.BUILD_DIR }}\openterface-km-firmware-mini-kvm.map
-          ${{ env.BUILD_DIR }}\openterface-km-firmware-mini-kvm.siz
 
     - name: Upload KeyMod v1.0 BLE + UAC firmware
       uses: actions/upload-artifact@v4
@@ -196,12 +176,3 @@ jobs:
         if-no-files-found: error
         path: ${{ env.BUILD_DIR }}\openterface-km-firmware-keymod-ble-uac.hex
 
-    - name: Upload KeyMod v1.0 BLE + UAC diagnostics
-      uses: actions/upload-artifact@v4
-      with:
-        name: openterface-km-firmware-keymod-v1.0-ble-uac-diagnostics
-        if-no-files-found: error
-        path: |
-          ${{ env.BUILD_DIR }}\openterface-km-firmware-keymod-ble-uac.elf
-          ${{ env.BUILD_DIR }}\openterface-km-firmware-keymod-ble-uac.map
-          ${{ env.BUILD_DIR }}\openterface-km-firmware-keymod-ble-uac.siz

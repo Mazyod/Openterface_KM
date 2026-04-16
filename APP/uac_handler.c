@@ -34,20 +34,26 @@
 /* ── global UAC state ─────────────────────────────────────────────────────── */
 UAC_State_t g_uac_state;
 
-#define UAC_H2T_FIFO_FRAMES 4u
-#define UAC_T2H_FIFO_FRAMES 4u
+#define UAC_H2T_FIFO_FRAMES 8u
+#define UAC_T2H_FIFO_FRAMES 8u
+#define UAC_H2T_START_LEVEL 3u
+#define UAC_T2H_START_LEVEL 3u
 
 /* ── Host→Target bridge  (USBD EP5 OUT → USBFS EP5 IN) ────────────────────── */
 static uint8_t          g_h2t_buf[UAC_H2T_FIFO_FRAMES * UAC_ISO_PACKET_SIZE];
 static volatile uint8_t g_h2t_wr = 0;
 static volatile uint8_t g_h2t_rd = 0;
 static volatile uint8_t g_h2t_count = 0;
+static volatile uint8_t g_h2t_started = 0;
+static uint8_t          g_h2t_last[UAC_ISO_PACKET_SIZE];
 
 /* ── Target→Host bridge  (USBFS EP6 OUT → USBD EP4 IN) ───────────────────── */
 static uint8_t          g_t2h_buf[UAC_T2H_FIFO_FRAMES * UAC_USBD_ISO_PACKET_SIZE];
 static volatile uint8_t g_t2h_wr = 0;
 static volatile uint8_t g_t2h_rd = 0;
 static volatile uint8_t g_t2h_count = 0;
+static volatile uint8_t g_t2h_started = 0;
+static uint8_t          g_t2h_last[UAC_USBD_ISO_PACKET_SIZE];
 
 /* ── Silence frames ────────────────────────────────────────────────────────── */
 static const uint8_t g_silence_192[UAC_ISO_PACKET_SIZE];
@@ -111,8 +117,12 @@ void UAC_Init(void)
      * cannot be heard as noise before the first real frame arrives.     */
     memset(g_h2t_buf, 0, sizeof(g_h2t_buf));
     memset(g_t2h_buf, 0, sizeof(g_t2h_buf));
+    memset(g_h2t_last, 0, sizeof(g_h2t_last));
+    memset(g_t2h_last, 0, sizeof(g_t2h_last));
     g_h2t_wr = 0; g_h2t_rd = 0; g_h2t_count = 0;
     g_t2h_wr = 0; g_t2h_rd = 0; g_t2h_count = 0;
+    g_h2t_started = 0;
+    g_t2h_started = 0;
 }
 
 /*============================================================================
@@ -139,12 +149,21 @@ void UAC_USBFS_EP5_Preload(void)
  *===========================================================================*/
 void UAC_USBFS_EP5_TxDone(void)
 {
-    if (g_h2t_count > 0u) {
+    if (!g_h2t_started) {
+        if (g_h2t_count >= UAC_H2T_START_LEVEL)
+            g_h2t_started = 1;
+    }
+
+    if (g_h2t_started && g_h2t_count > 0u) {
         memcpy(USBFS_EP5_Buf,
                g_h2t_buf + ((uint16_t)g_h2t_rd * UAC_ISO_PACKET_SIZE),
                UAC_ISO_PACKET_SIZE);
+        memcpy(g_h2t_last, USBFS_EP5_Buf, UAC_ISO_PACKET_SIZE);
         g_h2t_rd = (uint8_t)((g_h2t_rd + 1u) % UAC_H2T_FIFO_FRAMES);
         g_h2t_count--;
+    } else if (g_h2t_started) {
+        memcpy(USBFS_EP5_Buf, g_h2t_last, UAC_ISO_PACKET_SIZE);
+        g_h2t_started = 0;
     } else {
         memcpy(USBFS_EP5_Buf, g_silence_192, UAC_ISO_PACKET_SIZE);
     }
@@ -203,10 +222,19 @@ void UAC_USBD_EP3_TxDone(void)
 {
     const uint8_t *src;
 
-    if (g_t2h_count > 0u) {
+    if (!g_t2h_started) {
+        if (g_t2h_count >= UAC_T2H_START_LEVEL)
+            g_t2h_started = 1;
+    }
+
+    if (g_t2h_started && g_t2h_count > 0u) {
         src = g_t2h_buf + ((uint16_t)g_t2h_rd * UAC_USBD_ISO_PACKET_SIZE);
+        memcpy(g_t2h_last, src, UAC_USBD_ISO_PACKET_SIZE);
         g_t2h_rd = (uint8_t)((g_t2h_rd + 1u) % UAC_T2H_FIFO_FRAMES);
         g_t2h_count--;
+    } else if (g_t2h_started) {
+        src = g_t2h_last;
+        g_t2h_started = 0;
     } else {
         src = g_silence_64;
     }
