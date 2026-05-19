@@ -682,14 +682,32 @@ const uint8_t MyManuInfo[ ] =
 /* Product Information */
 const uint8_t MyProdInfo[ ]  =
 {
-    0x0E, // Descriptor length (7 chars * 2 + 2)
+    0x32, // Descriptor length (24 chars * 2 + 2)
     0x03, // Descriptor type (STRING)
-    'K', 0,  // KeyMod
+    'O', 0,
+    'p', 0,
     'e', 0,
-    'y', 0,
-    'M', 0,
-    'o', 0,
-    'd', 0
+    'n', 0,
+    't', 0,
+    'e', 0,
+    'r', 0,
+    'f', 0,
+    'a', 0,
+    'c', 0,
+    'e', 0,
+    ' ', 0,
+    'T', 0,
+    'a', 0,
+    'r', 0,
+    'g', 0,
+    'e', 0,
+    't', 0,
+    ' ', 0,
+    'A', 0,
+    'u', 0,
+    'd', 0,
+    'i', 0,
+    'o', 0
 };
 
 /* Serial Number Information */
