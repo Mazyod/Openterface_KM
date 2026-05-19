@@ -224,7 +224,10 @@ void USBD_SetInterface_Impl(void)
              * and Windows does not show the device in the audio mixer.  */
             static const uint8_t silence[64] = {0};
             UserToPMABufferCopy((uint8_t*)silence, ENDP4_ISO_TXADDR, 64);
-            SetEPTxCount(ENDP4, 64);
+            UserToPMABufferCopy((uint8_t*)silence, ENDP4_ISO_TXADDR1, 64);
+            SetEPDblBuffCount(ENDP4, EP_DBUF_IN, 64);
+            _ClearDTOG_RX(ENDP4);
+            _ClearDTOG_TX(ENDP4);
             SetEPTxStatus(ENDP4, EP_TX_VALID);
         }
         else
@@ -305,10 +308,11 @@ void USBD_Reset(void)
   _ClearDTOG_RX(ENDP3);
 
 #ifdef ENABLE_UAC
-  /* EP4: UAC ISO IN (Host audio → Target PC), single-buffer 64 B, disabled until alt=1 */
+  /* EP4: UAC ISO IN (Host audio → Target PC), double-buffered 64 B, disabled until alt=1 */
   SetEPType(ENDP4, EP_ISOCHRONOUS);
-  SetEPTxAddr(ENDP4, ENDP4_ISO_TXADDR);
-  SetEPTxCount(ENDP4, 0);
+  SetEPDoubleBuff(ENDP4);
+  SetEPDblBuffAddr(ENDP4, ENDP4_ISO_TXADDR, ENDP4_ISO_TXADDR1);
+  SetEPDblBuffCount(ENDP4, EP_DBUF_IN, 64);
   _ClearDTOG_RX(ENDP4);
   _ClearDTOG_TX(ENDP4);
   SetEPTxStatus(ENDP4, EP_TX_DIS);
@@ -316,7 +320,7 @@ void USBD_Reset(void)
 
   SetEPType(ENDP5, EP_BULK);
   SetEPRxAddr(ENDP5, ENDP5_BULK_RXADDR);
-  SetEPRxCount(ENDP5, 32);
+  SetEPRxCount(ENDP5, 16);
   _ClearDTOG_RX(ENDP5);
   _ClearDTOG_TX(ENDP5);
   SetEPRxStatus(ENDP5, EP_RX_VALID);

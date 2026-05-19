@@ -126,7 +126,7 @@
 #define UAC_USBFS_EP_IN_ADDR    0x85    /* EP5 IN  */
 #define UAC_USBFS_EP_OUT_ADDR   0x06    /* EP6 OUT */
 #define UAC_USBD_EP_IN_ADDR     0x84    /* EP4 IN  (EP3 reserved for CDC Bulk IN) */
-#define UAC_USBD_EP_OUT_ADDR    0x02    /* EP2 OUT (diagnostic render OUT path) */
+#define UAC_USBD_EP_OUT_ADDR    0x02    /* EP2 OUT */
 
 /* -----------------------------------------------------------------------
  * Helper macro: encode 3-byte little-endian sample rate

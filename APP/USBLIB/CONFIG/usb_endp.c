@@ -111,7 +111,7 @@ void EP4_OUT_Callback(void)
     UAC_USBD_EP4_RxDone(len);
     /* Keep ISO OUT RX status untouched, but refresh PMA receive count
      * so the next frame always has buffer space. */
-    SetEPRxCount(ENDP5, UAC_USBD_ISO_PACKET_SIZE);
+    SetEPRxCount(ENDP5, DEF_USBD_MAX_PACK_SIZE);
 #endif
 }
 
@@ -153,6 +153,10 @@ uint8_t USBD_ENDPx_DataUp( uint8_t endp, uint8_t *pbuf, uint16_t len )
 {
 	if( endp == ENDP3 )
 	{
+        if( len > DEF_USBD_MAX_PACK_SIZE )
+        {
+            return USB_ERROR;
+        }
 		if (USBD_Endp3_Busy)
 		{
 			return USB_ERROR;

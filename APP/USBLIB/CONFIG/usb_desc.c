@@ -78,7 +78,7 @@ const uint8_t  USBD_ConfigDescriptor[] = {
     0x05,                           // bDescriptorType (Endpoint)
     0x81,                           // bEndpointAddress (IN/D2H)
     0x03,                           // bmAttributes (Interrupt)
-    0x40, 0x00,                     // wMaxPacketSize 64
+    0x10, 0x00,                     // wMaxPacketSize 16 (PMA reserved for double-buffered UAC audio)
     0x01,                           // bInterval 1 (unit depends on device speed)
 
     /* Interface 1 (data interface) descriptor */
@@ -97,7 +97,7 @@ const uint8_t  USBD_ConfigDescriptor[] = {
     0x05,                           // bDescriptorType (Endpoint)
     0x05,                           // bEndpointAddress (OUT/H2D)
     0x02,                           // bmAttributes (Bulk)
-    0x20, 0x00,                     // wMaxPacketSize 32 (reduced to free PMA for UAC EP5)
+    0x10, 0x00,                     // wMaxPacketSize 16 (PMA reserved for double-buffered UAC audio)
     0x00,                           // bInterval 0
 
     /* Endpoint descriptor — CDC bulk IN */
@@ -105,7 +105,7 @@ const uint8_t  USBD_ConfigDescriptor[] = {
     0x05,                           // bDescriptorType (Endpoint)
     0x83,                           // bEndpointAddress (IN/D2H)
     0x02,                           // bmAttributes (Bulk)
-    0x20, 0x00,                     // wMaxPacketSize 32 (reduced to free PMA for UAC EP5)
+    0x10, 0x00,                     // wMaxPacketSize 16 (PMA reserved for double-buffered UAC audio)
     0x00,                           // bInterval 0
 
     #ifdef ENABLE_UAC

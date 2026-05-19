@@ -28,7 +28,7 @@
 #define USB_ENDPOINT_DESCRIPTOR_TYPE            0x05
 
 #define DEF_USBD_UEP0_SIZE          64           
-#define DEF_USBD_MAX_PACK_SIZE      64                              
+#define DEF_USBD_MAX_PACK_SIZE      16
        
 #define USBD_SIZE_DEVICE_DESC        18
 #ifdef ENABLE_UAC

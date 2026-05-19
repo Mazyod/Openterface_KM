@@ -54,9 +54,9 @@ UAC_State_t g_uac_state;
 #define UAC_H2T_FIFO_FRAMES 32u
 #define UAC_T2H_FIFO_FRAMES 16u
 #define UAC_H2T_START_LEVEL 4u
-#define UAC_T2H_START_LEVEL 1u
+#define UAC_T2H_START_LEVEL 4u
 #define UAC_H2T_HIGH_WATER  (UAC_H2T_FIFO_FRAMES - 1u)
-#define UAC_T2H_HIGH_WATER  (UAC_T2H_FIFO_FRAMES - 3u)
+#define UAC_T2H_HIGH_WATER  (UAC_T2H_FIFO_FRAMES - 1u)
 
 /* ── Host→Target bridge  (USBD EP2 OUT → USBFS EP5 IN) ────────────────────── */
 static uint8_t          g_h2t_buf[UAC_H2T_FIFO_FRAMES * UAC_ISO_PACKET_SIZE];
@@ -82,8 +82,7 @@ static uint8_t          g_t2h_last[UAC_USBD_ISO_PACKET_SIZE];
 static volatile uint32_t g_t2h_underrun_cnt = 0;
 static volatile uint32_t g_t2h_overflow_cnt = 0;
 static volatile uint32_t g_t2h_drop_cnt = 0;
-static volatile uint32_t g_t2h_hold_cnt = 0;
-static volatile uint8_t  g_t2h_miss_streak = 0;
+static volatile uint8_t  g_t2h_ep4_pong = 0;
 
 /* ── Silence frames ────────────────────────────────────────────────────────── */
 static const uint8_t g_silence_192[UAC_ISO_PACKET_SIZE];
@@ -130,6 +129,22 @@ static void h2t_convert_frame(const uint8_t *src, uint8_t *dst)
         d[ 8] = s[0]; d[ 9] = s[1]; d[10] = s[2]; d[11] = s[3];
     }
 #endif
+}
+
+static void usbd_ep4_write_frame(const uint8_t *src)
+{
+    uint16_t pma_addr = g_t2h_ep4_pong ? ENDP4_ISO_TXADDR1 : ENDP4_ISO_TXADDR;
+
+    UserToPMABufferCopy((uint8_t *)src, pma_addr, UAC_USBD_ISO_PACKET_SIZE);
+    SetEPDblBuffCount(ENDP4, EP_DBUF_IN, UAC_USBD_ISO_PACKET_SIZE);
+    if (g_uac_state.usbd_as_in_alt) {
+        FreeUserBuffer(ENDP4, EP_DBUF_IN);
+        SetEPTxStatus(ENDP4, EP_TX_VALID);
+        g_t2h_ep4_pong ^= 1u;
+    } else {
+        SetEPTxStatus(ENDP4, EP_TX_DIS);
+        g_t2h_ep4_pong = 0;
+    }
 }
 
 static void t2h_convert_frame(const uint8_t *src, uint8_t *dst)
@@ -233,8 +248,7 @@ void UAC_Init(void)
     g_t2h_underrun_cnt = 0;
     g_t2h_overflow_cnt = 0;
     g_t2h_drop_cnt = 0;
-    g_t2h_hold_cnt = 0;
-    g_t2h_miss_streak = 0;
+    g_t2h_ep4_pong = 0;
 }
 
 /*============================================================================
@@ -265,8 +279,7 @@ void UAC_T2H_Reset(void)
     g_t2h_underrun_cnt = 0;
     g_t2h_overflow_cnt = 0;
     g_t2h_drop_cnt = 0;
-    g_t2h_hold_cnt = 0;
-    g_t2h_miss_streak = 0;
+    g_t2h_ep4_pong = 0;
 }
 
 /*============================================================================
@@ -414,36 +427,21 @@ void UAC_USBD_EP3_TxDone(void)
         if (level == 0u) {
             /* True underrun: repeat last good frame as concealment. */
             g_t2h_underrun_cnt++;
-            if (g_t2h_miss_streak == 0u) {
-                /* Conceal a one-frame timing miss with the previous frame.
-                 * If misses continue, fall back to silence to avoid pumping. */
-                src = g_t2h_last;
-                g_t2h_hold_cnt++;
-            } else {
-                src = g_silence_64;
-            }
-            g_t2h_miss_streak++;
+            src = g_t2h_last;
         } else {
             src = g_t2h_buf + ((uint16_t)g_t2h_rd * UAC_USBD_ISO_PACKET_SIZE);
             memcpy(g_t2h_last, src, UAC_USBD_ISO_PACKET_SIZE);
             g_t2h_rd = (uint8_t)((g_t2h_rd + 1u) % UAC_T2H_FIFO_FRAMES);
-            g_t2h_miss_streak = 0;
         }
     } else {
         src = g_silence_64;
-        g_t2h_miss_streak = 0;
     }
 
-    UserToPMABufferCopy((uint8_t *)src, ENDP4_ISO_TXADDR, UAC_USBD_ISO_PACKET_SIZE);
-    SetEPTxCount(ENDP4, UAC_USBD_ISO_PACKET_SIZE);
     /* Re-arm EP4 only while the host has selected alt-setting 1.
      * Without this guard, a stray EP4_IN_Callback at alt=0 (e.g. during
      * enumeration) would unconditionally re-arm EP4, causing a runaway loop
      * that pumps stale PMA data to the host as audible noise. */
-    if (g_uac_state.usbd_as_in_alt)
-        SetEPTxStatus(ENDP4, EP_TX_VALID);
-    else
-        SetEPTxStatus(ENDP4, EP_TX_DIS);
+    usbd_ep4_write_frame(src);
 }
 
 /*============================================================================

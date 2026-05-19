@@ -27,7 +27,7 @@ extern "C" {
 /* Serial buffer related definitions */
 #define DEF_UARTx_RX_BUF_LEN       ( 4 * 512 )                                  /* Serial x receive buffer size */
 #define DEF_UARTx_TX_BUF_LEN       ( 2 * 512 )                                  /* Serial x transmit buffer size */
-#define DEF_USB_FS_PACK_LEN        64                                           /* USB full speed mode packet size for serial x data */
+#define DEF_USB_FS_PACK_LEN        16                                           /* USBD CDC packet size constrained by UAC PMA layout */
 #define DEF_UARTx_TX_BUF_NUM_MAX   ( DEF_UARTx_TX_BUF_LEN / DEF_USB_FS_PACK_LEN ) /* Serial x transmit buffer size */
 
 /* Serial port receive timeout related macro definition */
