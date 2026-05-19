@@ -682,20 +682,8 @@ const uint8_t MyManuInfo[ ] =
 /* Product Information */
 const uint8_t MyProdInfo[ ]  =
 {
-    0x32, // Descriptor length (24 chars * 2 + 2)
+    0x1A, // Descriptor length (12 chars * 2 + 2)
     0x03, // Descriptor type (STRING)
-    'O', 0,
-    'p', 0,
-    'e', 0,
-    'n', 0,
-    't', 0,
-    'e', 0,
-    'r', 0,
-    'f', 0,
-    'a', 0,
-    'c', 0,
-    'e', 0,
-    ' ', 0,
     'T', 0,
     'a', 0,
     'r', 0,

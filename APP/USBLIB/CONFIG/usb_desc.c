@@ -23,7 +23,7 @@ const uint8_t  USBD_DeviceDescriptor[] = {
     DEF_USBD_UEP0_SIZE,             // bMaxPacketSize0
     0x86, 0x1A,                     // idVendor
     0x0C, 0xFE,                     // idProduct
-    0x03, 0x01,                     // bcdDevice
+    0x04, 0x01,                     // bcdDevice
     0x01,                           // iManufacturer
     0x02,                           // iProduct
     0x00,                           // iSerialNumber
@@ -307,7 +307,6 @@ const uint8_t USBD_StringVendor[USBD_SIZE_STRING_VENDOR] = {
 const uint8_t USBD_StringProduct[USBD_SIZE_STRING_PRODUCT] = {
     USBD_SIZE_STRING_PRODUCT,
     USB_STRING_DESCRIPTOR_TYPE,
-    'O', 0, 'p', 0, 'e', 0, 'n', 0, 't', 0, 'e', 0, 'r', 0, 'f', 0, 'a', 0, 'c', 0, 'e', 0, ' ', 0,
     'H', 0, 'o', 0, 's', 0, 't', 0, ' ', 0,
     'A', 0, 'u', 0, 'd', 0, 'i', 0, 'o', 0};
 
@@ -321,7 +320,6 @@ uint8_t USBD_StringSerial[USBD_SIZE_STRING_SERIAL] = {
 const uint8_t USBD_StringAudioFunction[USBD_SIZE_STRING_AUDIO_FUNC] = {
     USBD_SIZE_STRING_AUDIO_FUNC,
     USB_STRING_DESCRIPTOR_TYPE,
-    'O', 0, 'p', 0, 'e', 0, 'n', 0, 't', 0, 'e', 0, 'r', 0, 'f', 0, 'a', 0, 'c', 0, 'e', 0, ' ', 0,
     'H', 0, 'o', 0, 's', 0, 't', 0, ' ', 0,
     'A', 0, 'u', 0, 'd', 0, 'i', 0, 'o', 0
 };
