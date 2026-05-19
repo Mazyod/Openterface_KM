@@ -13,6 +13,7 @@
 #include "usb_desc.h"
 #include "usb_mem.h"
 #include "hw_config.h"
+#include "../../include/Version_selection.h"
 #include "usb_istr.h"
 #include "usb_pwr.h"
 #include "usb_prop.h"
@@ -47,6 +48,11 @@ void EP1_IN_Callback (void)
  */
 void EP2_OUT_Callback (void)
 {
+
+#ifdef ENABLE_UAC
+    uint16_t len = GetEPRxCount(ENDP2);
+    UAC_USBD_EP4_RxDone(len);
+#else
 	uint32_t len;
     len = GetEPRxCount( EP2_OUT & 0x7F );
     PMAToUserBufferCopy( &UART2_Tx_Buf[ ( Uart.Tx_LoadNum * DEF_USB_FS_PACK_LEN ) ], GetEPRxAddr( EP2_OUT & 0x7F ), len );
@@ -66,6 +72,7 @@ void EP2_OUT_Callback (void)
     {
         SetEPRxValid( ENDP2 );
     }
+#endif
 }
 /*********************************************************************
  * @fn      EP3_IN_Callback
@@ -97,22 +104,10 @@ void EP4_IN_Callback(void)
 #endif
 }
 
-/*********************************************************************
- * @fn      EP5_OUT_Callback
- *
- * @brief   Endpoint 5 OUT — ISO OUT packet received from host.
- *          Called by the USB interrupt when a 1 ms ISO OUT token completes
- *          on EP5 (Target PC microphone → Host PC path).
- *          Reads the received byte-count from the EP5 status register and
- *          forwards it to UAC_USBD_EP4_RxDone() which copies the audio data
- *          from PMA into the ping-pong buffer and re-arms EP5.
- *
- * @return  none
- */
-void EP5_OUT_Callback(void)
+void EP4_OUT_Callback(void)
 {
 #ifdef ENABLE_UAC
-    uint16_t len = GetEPRxCount(ENDP5);
+    uint16_t len = GetEPRxCount(ENDP4);
     UAC_USBD_EP4_RxDone(len);
     /* Keep ISO OUT RX status untouched, but refresh PMA receive count
      * so the next frame always has buffer space. */
@@ -120,6 +115,28 @@ void EP5_OUT_Callback(void)
 #endif
 }
 
+void EP5_OUT_Callback(void)
+{
+	uint32_t len;
+    len = GetEPRxCount( ENDP5 );
+    PMAToUserBufferCopy( &UART2_Tx_Buf[ ( Uart.Tx_LoadNum * DEF_USB_FS_PACK_LEN ) ], GetEPRxAddr( ENDP5 ), len );
+    Uart.Tx_PackLen[ Uart.Tx_LoadNum ] = len;
+    Uart.Tx_LoadNum++;
+    if( Uart.Tx_LoadNum >= DEF_UARTx_TX_BUF_NUM_MAX )
+    {
+        Uart.Tx_LoadNum = 0x00;
+    }
+    Uart.Tx_RemainNum++;
+
+	if( Uart.Tx_RemainNum >= ( DEF_UARTx_TX_BUF_NUM_MAX - 2 ) )
+    {
+        Uart.USB_Down_StopFlag = 0x01;
+    }
+    else
+    {
+        SetEPRxValid( ENDP5 );
+    }
+}
 
 /*********************************************************************
  * @fn      USBD_ENDPx_DataUp

@@ -211,12 +211,13 @@ void USBD_SetInterface_Impl(void)
     uint8_t alt   = pInformation->USBwValue0;
 
 #ifdef ENABLE_UAC
-    /* IF3 = AudioStreaming IN (EP4 ISO IN, 0x84 — Target mic → Host PC)
+    /* IF3 = AudioStreaming IN (EP4 ISO IN, 0x84 �?Target mic �?Host PC)
      * Host opens this interface to receive microphone audio.           */
     if (iface == 3)
     {
         if (alt == 1)
         {
+        UAC_T2H_Reset();
             /* Prime EP4 with a silence frame so the first ISO IN token
              * from Windows gets a valid (zero) payload immediately.
              * Without this the endpoint never produces its first packet
@@ -233,19 +234,22 @@ void USBD_SetInterface_Impl(void)
         }
         g_uac_state.usbd_as_in_alt = alt;
     }
-    /* IF4 = AudioStreaming OUT (EP5 ISO OUT, 0x05 — Host PC → Target spk)
+    /* IF4 = AudioStreaming OUT (EP2 ISO OUT, 0x02 �?Host PC �?Target spk)
      * Host opens this interface to send playback audio.               */
     else if (iface == 4)
     {
         if (alt == 1)
         {
-            /* Activate EP5 ISO OUT: arm for reception */
-            SetEPRxCount(ENDP5, 64);
-            SetEPRxStatus(ENDP5, EP_RX_VALID);
+        UAC_H2T_Reset();
+          /* Activate EP2 ISO OUT double buffer: arm both PMA slots. */
+          SetEPDblBuffCount(ENDP2, EP_DBUF_OUT, 64);
+          _ClearDTOG_RX(ENDP2);
+          _ClearDTOG_TX(ENDP2);
+            SetEPRxStatus(ENDP2, EP_RX_VALID);
         }
         else
         {
-            SetEPRxStatus(ENDP5, EP_RX_DIS);
+            SetEPRxStatus(ENDP2, EP_RX_DIS);
         }
         g_uac_state.usbd_as_out_alt = alt;
     }
@@ -284,11 +288,12 @@ void USBD_Reset(void)
   _ClearDTOG_TX(ENDP1);
   _ClearDTOG_RX(ENDP1);
 
-  SetEPType(ENDP2, EP_BULK);
+  SetEPType(ENDP2, EP_ISOCHRONOUS);
+  SetEPDoubleBuff(ENDP2);
   SetEPTxStatus(ENDP2, EP_TX_DIS);
-  SetEPRxAddr(ENDP2, ENDP2_RXADDR);
-  SetEPRxCount(ENDP2, 32);          /* ACM: 32B (PMA space shared with UAC EPs) */
-  SetEPRxStatus(ENDP2, EP_RX_VALID); /* CDC-ACM: always active */
+  SetEPDblBuffAddr(ENDP2, ENDP2_ISO_RXADDR, ENDP2_ISO_RXADDR1);
+  SetEPDblBuffCount(ENDP2, EP_DBUF_OUT, 64);
+  SetEPRxStatus(ENDP2, EP_RX_DIS);
   _ClearDTOG_RX(ENDP2);
   _ClearDTOG_TX(ENDP2);
 
@@ -309,13 +314,12 @@ void USBD_Reset(void)
   SetEPTxStatus(ENDP4, EP_TX_DIS);
   SetEPRxStatus(ENDP4, EP_RX_DIS);
 
-  /* EP5: UAC ISO OUT (Target PC mic → Host), single-buffer 64 B, disabled until alt=1 */
-  SetEPType(ENDP5, EP_ISOCHRONOUS);
-  SetEPRxAddr(ENDP5, ENDP5_ISO_RXADDR);
-  SetEPRxCount(ENDP5, 64);
+  SetEPType(ENDP5, EP_BULK);
+  SetEPRxAddr(ENDP5, ENDP5_BULK_RXADDR);
+  SetEPRxCount(ENDP5, 32);
   _ClearDTOG_RX(ENDP5);
   _ClearDTOG_TX(ENDP5);
-  SetEPRxStatus(ENDP5, EP_RX_DIS);  /* disabled until host selects alt=1 */
+  SetEPRxStatus(ENDP5, EP_RX_VALID);
   SetEPTxStatus(ENDP5, EP_TX_DIS);
 
   /* Clear UAC bridge buffers and state flags so stale audio data from a
@@ -399,7 +403,7 @@ RESULT USBD_Get_Interface_Setting(uint8_t Interface, uint8_t AlternateSetting)
    *   IF1: CDC Data              — alt 0 only
    *   IF2: AudioControl          — alt 0 only
    *   IF3: AS IN  (EP4 ISO IN)   — alt 0+1
-   *   IF4: AS OUT (EP5 ISO OUT)  — alt 0+1 */
+  *   IF4: AS OUT (EP2 ISO OUT)  — alt 0+1 */
   if (Interface <= 2)
   {
     if (AlternateSetting > 0)
@@ -463,6 +467,22 @@ uint8_t *USB_CDC_SetLineCoding( uint16_t Length )
 }
 
 
+/* UAC 1.0 sampling frequency buffer used for GET_CUR / SET_CUR responses.
+ * Value = 16000 Hz in 24-bit little-endian (UAC format).
+ * Both GET and SET share this buffer: SET overwrites it (value is ignored). */
+static uint8_t uac_sam_freq[3] = { 0x40, 0x3E, 0x00 };  /* 0x003E40 = 16000 */
+
+/* CopyRoutine for UAC sampling-frequency class requests (GET and SET). */
+static uint8_t *UAC_GetSamFreq(uint16_t Length)
+{
+    if (Length == 0) {
+        /* First call: report available data length. */
+        pInformation->Ctrl_Info.Usb_wLength = sizeof(uac_sam_freq);
+        return NULL;
+    }
+    return uac_sam_freq;
+}
+
 /*********************************************************************
  * @fn      USBD_Data_Setup
  *
@@ -496,6 +516,26 @@ RESULT USBD_Data_Setup(uint8_t RequestNo)
       return USB_UNSUPPORT;
     }
   }
+#ifdef ENABLE_UAC
+  /* UAC 1.0 class-to-endpoint requests: GET_CUR/SET_CUR for sampling frequency.
+   * bRequestType recipient bits = 0x02 (endpoint), type bits = 0x20 (class).
+   * Windows usbaudio.sys sends these after SET_INTERFACE(alt=1) to confirm the
+   * active sampling rate.  Respond with the fixed 16 kHz value. */
+  else if (Type_Recipient == (CLASS_REQUEST | ENDPOINT_RECIPIENT))
+  {
+    uint8_t endpoint = pInformation->USBwIndex0;
+    uint8_t control = pInformation->USBwValue1;
+    if ((control == 0x01) &&
+        (endpoint == UAC_USBD_EP_IN_ADDR || endpoint == UAC_USBD_EP_OUT_ADDR))
+    {
+      CopyRoutine = &UAC_GetSamFreq;
+    }
+    else
+    {
+      return USB_UNSUPPORT;
+    }
+  }
+#endif
   if (CopyRoutine)
   {
     pInformation->Ctrl_Info.CopyData = CopyRoutine;

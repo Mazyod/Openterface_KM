@@ -16,6 +16,7 @@
 /*********************************************************************
  * INCLUDES
  */
+#include "include/Version_selection.h"
 #ifdef ENABLE_BLE
 #include <ch32v20x_usbfs_device.h>
 #include "config.h"

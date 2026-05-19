@@ -12,8 +12,6 @@
 *******************************************************************************/ 
 #ifndef __USB_TYPE_H
 #define __USB_TYPE_H
-#include "debug.h"
-#include "usb_conf.h"
 #include <stdbool.h>
 #ifndef NULL
 #define NULL ((void *)0)

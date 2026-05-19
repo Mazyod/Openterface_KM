@@ -5,13 +5,13 @@
  * ┌─────────────────────────────────────────────────────────────────────────┐
  * │  Signal flow (from USB-Host perspective)                                │
  * │                                                                         │
- * │  Host PC mic  ──USBD EP5 OUT──► h2t_buf ──USBFS EP5 IN──► Target spk   │
+ * │  Host PC mic  ──USBD EP2 OUT──► h2t_buf ──USBFS EP5 IN──► Target spk   │
  * │  Target mic   ─USBFS EP6 OUT──► t2h_buf ──USBD EP4 IN──►  Host PC spk  │
  * │                                                                         │
  * │  USBFS (Target PC side):  EP5 ISO IN   64 B/ms  16 kHz stereo 16-bit   │
  * │                           EP6 ISO OUT  64 B/ms  16 kHz stereo 16-bit   │
  * │  USBD  (Host PC side):    EP4 ISO IN   64 B/ms  16 kHz stereo 16-bit   │
- * │                           EP5 ISO OUT  64 B/ms  16 kHz stereo 16-bit   │
+ * │                           EP2 ISO OUT  64 B/ms  16 kHz stereo 16-bit   │
  * └─────────────────────────────────────────────────────────────────────────┘
  *
  * Bridge mode:
@@ -28,7 +28,7 @@
 
 #include "ch32v20x_usbfs_device.h"   /* USBFS_EP5_Buf, USBFS_EP6_Buf, USBFSD */
 #include "usb_lib.h"                  /* USBD SetEP helpers                    */
-#include "usb_conf.h"                 /* ENDP4_ISO_TXADDR, ENDP5_ISO_RXADDR    */
+#include "usb_conf.h"                 /* ENDP4_ISO_TXADDR, ENDP2_ISO_RXADDR    */
 #include <string.h>
 
 /* ── global UAC state ─────────────────────────────────────────────────────── */
@@ -40,14 +40,25 @@ UAC_State_t g_uac_state;
  *   0 = normal bridge mode */
 #define UAC_TEST_TARGET_LOOPBACK 0u
 
-#define UAC_H2T_FIFO_FRAMES 8u
-#define UAC_T2H_FIFO_FRAMES 16u
-#define UAC_H2T_START_LEVEL 3u
-#define UAC_T2H_START_LEVEL 6u
-#define UAC_H2T_HIGH_WATER  (UAC_H2T_FIFO_FRAMES - 2u)
-#define UAC_T2H_HIGH_WATER  (UAC_T2H_FIFO_FRAMES - 2u)
+/* Diagnostic: while no USBD EP2 OUT playback frames are arriving, transmit a
+ * fallback tone on USBFS EP5 IN. Once H2T frames arrive, transmit the actual
+ * bridge stream. Test by playing 1 kHz into USB Serial speaker and recording
+ * KeyMod mic:
+ *   500 Hz = USBD IF4 alt=1 was not selected.
+ *   625 Hz = IF4 is active, but EP2 OUT callback has not fired.
+ *   750 Hz = EP2 OUT callback fired, but only zero-length packets arrived.
+ *   875 Hz = EP2 OUT callback delivered data but FIFO has not started.
+ *   1 kHz  = EP2 OUT frames are arriving and the bridge producer is alive. */
+#define UAC_TEST_H2T_RX_FALLBACK_TONE 0u
 
-/* ── Host→Target bridge  (USBD EP5 OUT → USBFS EP5 IN) ────────────────────── */
+#define UAC_H2T_FIFO_FRAMES 32u
+#define UAC_T2H_FIFO_FRAMES 16u
+#define UAC_H2T_START_LEVEL 4u
+#define UAC_T2H_START_LEVEL 1u
+#define UAC_H2T_HIGH_WATER  (UAC_H2T_FIFO_FRAMES - 1u)
+#define UAC_T2H_HIGH_WATER  (UAC_T2H_FIFO_FRAMES - 3u)
+
+/* ── Host→Target bridge  (USBD EP2 OUT → USBFS EP5 IN) ────────────────────── */
 static uint8_t          g_h2t_buf[UAC_H2T_FIFO_FRAMES * UAC_ISO_PACKET_SIZE];
 static volatile uint8_t g_h2t_wr = 0;
 static volatile uint8_t g_h2t_rd = 0;
@@ -55,10 +66,14 @@ static volatile uint8_t g_h2t_started = 0;
 static uint8_t          g_h2t_last[UAC_ISO_PACKET_SIZE];
 static volatile uint32_t g_h2t_underrun_cnt = 0;
 static volatile uint32_t g_h2t_overflow_cnt = 0;
-static volatile uint32_t g_h2t_hold_cnt = 0;
 static volatile uint32_t g_h2t_drop_cnt = 0;
+static volatile uint8_t  g_h2t_ep5_out_seen = 0;
+static volatile uint8_t  g_h2t_ep5_zero_seen = 0;
+static volatile uint8_t  g_h2t_ep5_data_seen = 0;
+static volatile uint8_t  g_h2t_ep2_pong = 0;
 
 /* ── Target→Host bridge  (USBFS EP6 OUT → USBD EP4 IN) ───────────────────── */
+/* Buffer size = UAC_T2H_FIFO_FRAMES × UAC_USBD_ISO_PACKET_SIZE (scales with define) */
 static uint8_t          g_t2h_buf[UAC_T2H_FIFO_FRAMES * UAC_USBD_ISO_PACKET_SIZE];
 static volatile uint8_t g_t2h_wr = 0;
 static volatile uint8_t g_t2h_rd = 0;
@@ -66,8 +81,8 @@ static volatile uint8_t g_t2h_started = 0;
 static uint8_t          g_t2h_last[UAC_USBD_ISO_PACKET_SIZE];
 static volatile uint32_t g_t2h_underrun_cnt = 0;
 static volatile uint32_t g_t2h_overflow_cnt = 0;
-static volatile uint32_t g_t2h_hold_cnt = 0;
 static volatile uint32_t g_t2h_drop_cnt = 0;
+static volatile uint32_t g_t2h_hold_cnt = 0;
 static volatile uint8_t  g_t2h_miss_streak = 0;
 
 /* ── Silence frames ────────────────────────────────────────────────────────── */
@@ -147,6 +162,47 @@ static void t2h_convert_frame(const uint8_t *src, uint8_t *dst)
 #endif
 }
 
+#if UAC_TEST_H2T_RX_FALLBACK_TONE
+static uint8_t h2t_diag_mode(void)
+{
+    if (!g_uac_state.usbd_as_out_alt)
+        return 0u;
+    if (!g_h2t_ep5_out_seen)
+        return 1u;
+    if (!g_h2t_ep5_data_seen && g_h2t_ep5_zero_seen)
+        return 2u;
+    return 3u;
+}
+
+static void fill_h2t_fallback_tone(uint8_t *dst, uint8_t mode)
+{
+    static uint8_t phase = 0;
+    static const int16_t sine32[32] = {
+        0, 6393, 12539, 18204, 23170, 27245, 30273, 32137,
+        32767, 32137, 30273, 27245, 23170, 18204, 12539, 6393,
+        0, -6393, -12539, -18204, -23170, -27245, -30273, -32137,
+        -32767, -32137, -30273, -27245, -23170, -18204, -12539, -6393
+    };
+
+    for (uint8_t frame = 0; frame < (UAC_ISO_PACKET_SIZE / 4u); frame++) {
+        uint8_t index = phase & 0x1Fu;
+        int16_t sample = sine32[index];
+        dst[(frame * 4u) + 0u] = (uint8_t)((uint16_t)sample & 0xFFu);
+        dst[(frame * 4u) + 1u] = (uint8_t)(((uint16_t)sample >> 8) & 0xFFu);
+        dst[(frame * 4u) + 2u] = dst[(frame * 4u) + 0u];
+        dst[(frame * 4u) + 3u] = dst[(frame * 4u) + 1u];
+
+        phase = (uint8_t)(phase + 1u);
+        if (mode >= 1u && ((frame & 0x03u) == 0u))
+            phase = (uint8_t)(phase + 1u);
+        if (mode >= 2u && ((frame & 0x01u) == 0u))
+            phase = (uint8_t)(phase + 1u);
+        if (mode >= 3u && ((frame & 0x03u) != 0u))
+            phase = (uint8_t)(phase + 1u);
+    }
+}
+#endif
+
 /*============================================================================
  * UAC_Init
  *===========================================================================*/
@@ -169,12 +225,47 @@ void UAC_Init(void)
     g_t2h_started = 0;
     g_h2t_underrun_cnt = 0;
     g_h2t_overflow_cnt = 0;
-    g_h2t_hold_cnt = 0;
     g_h2t_drop_cnt = 0;
+    g_h2t_ep5_out_seen = 0;
+    g_h2t_ep5_zero_seen = 0;
+    g_h2t_ep5_data_seen = 0;
+    g_h2t_ep2_pong = 0;
     g_t2h_underrun_cnt = 0;
     g_t2h_overflow_cnt = 0;
-    g_t2h_hold_cnt = 0;
     g_t2h_drop_cnt = 0;
+    g_t2h_hold_cnt = 0;
+    g_t2h_miss_streak = 0;
+}
+
+/*============================================================================
+ * UAC_H2T_Reset  — reset host→target FIFO (call on USBD AS-OUT alt change)
+ *===========================================================================*/
+void UAC_H2T_Reset(void)
+{
+    g_h2t_wr = 0; g_h2t_rd = 0;
+    g_h2t_started = 0;
+    memset(g_h2t_last, 0, sizeof(g_h2t_last));
+    g_h2t_underrun_cnt = 0;
+    g_h2t_overflow_cnt = 0;
+    g_h2t_drop_cnt = 0;
+    g_h2t_ep5_out_seen = 0;
+    g_h2t_ep5_zero_seen = 0;
+    g_h2t_ep5_data_seen = 0;
+    g_h2t_ep2_pong = 0;
+}
+
+/*============================================================================
+ * UAC_T2H_Reset  — reset target→host FIFO (call on USBFS AS-IN alt change)
+ *===========================================================================*/
+void UAC_T2H_Reset(void)
+{
+    g_t2h_wr = 0; g_t2h_rd = 0;
+    g_t2h_started = 0;
+    memset(g_t2h_last, 0, sizeof(g_t2h_last));
+    g_t2h_underrun_cnt = 0;
+    g_t2h_overflow_cnt = 0;
+    g_t2h_drop_cnt = 0;
+    g_t2h_hold_cnt = 0;
     g_t2h_miss_streak = 0;
 }
 
@@ -188,6 +279,7 @@ void UAC_Init(void)
 void UAC_USBFS_EP5_Preload(void)
 {
     memset(USBFS_EP5_Buf, 0, UAC_ISO_PACKET_SIZE);
+    USBFSD->UEP5_DMA = (uint32_t)USBFS_EP5_Buf;
 }
 
 /*============================================================================
@@ -208,7 +300,6 @@ void UAC_USBFS_EP5_TxDone(void)
     } else {
         memcpy(USBFS_EP5_Buf, g_silence_192, UAC_ISO_PACKET_SIZE);
     }
-
     USBFSD->UEP5_TX_LEN  = UAC_ISO_PACKET_SIZE;
     USBFSD->UEP5_TX_CTRL = (USBFSD->UEP5_TX_CTRL & ~USBFS_UEP_T_RES_MASK)
                            | USBFS_UEP_T_RES_NONE;
@@ -223,17 +314,9 @@ void UAC_USBFS_EP5_TxDone(void)
     if (g_h2t_started) {
         uint8_t level = h2t_level();
 
-        /* Too much queued data means producer clock is slightly faster.
-         * Drop one old frame occasionally to keep latency bounded. */
-        if (level >= UAC_H2T_HIGH_WATER && g_h2t_rd != g_h2t_wr) {
-            g_h2t_rd = (uint8_t)((g_h2t_rd + 1u) % UAC_H2T_FIFO_FRAMES);
-            g_h2t_drop_cnt++;
-            level = h2t_level();
-        }
-
         if (level == 0u) {
             g_h2t_underrun_cnt++;
-            memcpy(USBFS_EP5_Buf, g_silence_192, UAC_ISO_PACKET_SIZE);
+            memcpy(USBFS_EP5_Buf, g_h2t_last, UAC_ISO_PACKET_SIZE);
         } else {
             memcpy(USBFS_EP5_Buf,
                    g_h2t_buf + ((uint16_t)g_h2t_rd * UAC_ISO_PACKET_SIZE),
@@ -242,11 +325,14 @@ void UAC_USBFS_EP5_TxDone(void)
             g_h2t_rd = (uint8_t)((g_h2t_rd + 1u) % UAC_H2T_FIFO_FRAMES);
         }
     } else {
+#if UAC_TEST_H2T_RX_FALLBACK_TONE
+    fill_h2t_fallback_tone(USBFS_EP5_Buf, h2t_diag_mode());
+#else
         memcpy(USBFS_EP5_Buf, g_silence_192, UAC_ISO_PACKET_SIZE);
+#endif
     }
 
     USBFSD->UEP5_TX_LEN  = UAC_ISO_PACKET_SIZE;
-    /* Re-arm: ISO IN must use T_RES_NONE (no ACK handshake expected from host). */
     USBFSD->UEP5_TX_CTRL = (USBFSD->UEP5_TX_CTRL & ~USBFS_UEP_T_RES_MASK)
                            | USBFS_UEP_T_RES_NONE;
 }
@@ -258,7 +344,7 @@ void UAC_USBFS_EP5_TxDone(void)
  * DMA deposited data into USBFS_EP6_Buf (single buffer, BUF_MOD=0).
  * Convert and publish into g_t2h_buf for USBD EP4 IN.
  *
- * Single-buffer mode: data is always at USBFS_EP6_Buf[0].
+ * Single-buffer mode: data is always at USBFS_EP6_Buf.
  * No ping-pong half tracking is needed.
  *===========================================================================*/
 void UAC_USBFS_EP6_RxDone(uint16_t len)
@@ -266,7 +352,7 @@ void UAC_USBFS_EP6_RxDone(uint16_t len)
     if (len == 0)
         return;
 
-    const uint8_t *src = USBFS_EP6_Buf;   /* single buffer, always offset 0 */
+    const uint8_t *src = USBFS_EP6_Buf;
 
 #if UAC_TEST_TARGET_LOOPBACK
     if (len >= UAC_ISO_PACKET_SIZE) {
@@ -291,7 +377,6 @@ void UAC_USBFS_EP6_RxDone(uint16_t len)
     {
         uint8_t next = (uint8_t)((g_t2h_wr + 1u) % UAC_T2H_FIFO_FRAMES);
         if (next == g_t2h_rd) {
-            /* Full: drop oldest frame to keep stream live. */
             g_t2h_rd = (uint8_t)((g_t2h_rd + 1u) % UAC_T2H_FIFO_FRAMES);
             g_t2h_overflow_cnt++;
         }
@@ -327,6 +412,7 @@ void UAC_USBD_EP3_TxDone(void)
         }
 
         if (level == 0u) {
+            /* True underrun: repeat last good frame as concealment. */
             g_t2h_underrun_cnt++;
             if (g_t2h_miss_streak == 0u) {
                 /* Conceal a one-frame timing miss with the previous frame.
@@ -361,53 +447,83 @@ void UAC_USBD_EP3_TxDone(void)
 }
 
 /*============================================================================
- * UAC_USBD_EP4_RxDone   (USBD EP5 ISO OUT complete)
+ * UAC_USBD_EP4_RxDone   (USBD EP2 ISO OUT complete)
  *
  * The Host PC just sent one mic frame (Host PC mic OUT direction).
- * PMA holds UAC_USBD_ISO_PACKET_SIZE (64 B) at ENDP5_ISO_RXADDR.
+ * PMA holds UAC_USBD_ISO_PACKET_SIZE (64 B) at ENDP2_ISO_RXADDR.
  * Convert and publish into g_h2t_buf for USBFS EP5 IN.
  *
  * For ISO OUT endpoints on CH32V20x USBD (STM32-compatible USB IP):
  *   - The hardware sets EP_CTR_RX after each received ISO packet.
  *   - CTR_LP clears EP_CTR_RX and calls this callback.
- *   - For EP_ISOCHRONOUS type, STAT_RX bits are SW_BUF toggle bits, NOT
- *     NAK/VALID status.  Calling SetEPRxStatus(EP_RX_VALID) after each
- *     packet would TOGGLE the buffer-select bit, making every other packet
- *     land at an uninitialised PMA address → alternating silence/garbage.
- *   - Correct behaviour: do NOT call SetEPRxStatus here.
- *   - RX count is refreshed in EP5_OUT_Callback after each packet so the
- *     next ISO OUT frame always has PMA space, while RX status bits stay
- *     untouched to avoid SW_BUF toggle side effects.
+ * EP2 is configured as a hardware double-buffered ISO OUT endpoint.  The
+ * callback copies whichever PMA slot completed, then FreeUserBuffer() releases
+ * that slot back to USB hardware for the next frame. Do not call
+ * SetEPRxStatus() here; double-buffered EP2 is re-armed by FreeUserBuffer().
  *===========================================================================*/
 void UAC_USBD_EP4_RxDone(uint16_t len)
 {
+    uint8_t done = g_h2t_ep2_pong;
+    uint16_t len0 = GetEPDblBuf0Count(ENDP2);
+    uint16_t len1 = GetEPDblBuf1Count(ENDP2);
+    uint16_t pma_addr;
+
+    (void)len;
+    g_h2t_ep5_out_seen = 1;
+
+    if (done == 0u) {
+        len = len0;
+        pma_addr = ENDP2_ISO_RXADDR;
+    } else {
+        len = len1;
+        pma_addr = ENDP2_ISO_RXADDR1;
+    }
+
+    if (len == 0u) {
+        if (done == 0u && len1 != 0u) {
+            done = 1u;
+            len = len1;
+            pma_addr = ENDP2_ISO_RXADDR1;
+        } else if (done != 0u && len0 != 0u) {
+            done = 0u;
+            len = len0;
+            pma_addr = ENDP2_ISO_RXADDR;
+        }
+        g_h2t_ep2_pong = done;
+    }
+
     if (len == 0) {
-        /* Zero-length ISO packet: host pausing — don't touch EP status */
+        g_h2t_ep5_zero_seen = 1;
+        if (g_uac_state.usbd_as_out_alt)
+            FreeUserBuffer(ENDP2, EP_DBUF_OUT);
+        g_h2t_ep2_pong = (uint8_t)(g_h2t_ep2_pong ^ 1u);
         return;
     }
+
+    g_h2t_ep5_data_seen = 1;
 
     static uint8_t usbd_tmp[UAC_USBD_ISO_PACKET_SIZE];
     uint16_t copy_len = (len < UAC_USBD_ISO_PACKET_SIZE) ? len : UAC_USBD_ISO_PACKET_SIZE;
     memset(usbd_tmp, 0, UAC_USBD_ISO_PACKET_SIZE);
-    PMAToUserBufferCopy(usbd_tmp, ENDP5_ISO_RXADDR, copy_len);
+    PMAToUserBufferCopy(usbd_tmp, pma_addr, copy_len);
+
+    if (g_uac_state.usbd_as_out_alt)
+        FreeUserBuffer(ENDP2, EP_DBUF_OUT);
+    g_h2t_ep2_pong = (uint8_t)(g_h2t_ep2_pong ^ 1u);
 
     uint8_t *dst = g_h2t_buf + ((uint16_t)g_h2t_wr * UAC_ISO_PACKET_SIZE);
-
     h2t_convert_frame(usbd_tmp, dst);
 
     {
         uint8_t next = (uint8_t)((g_h2t_wr + 1u) % UAC_H2T_FIFO_FRAMES);
         if (next == g_h2t_rd) {
-            /* Full: drop oldest frame to keep stream live. */
             g_h2t_rd = (uint8_t)((g_h2t_rd + 1u) % UAC_H2T_FIFO_FRAMES);
             g_h2t_overflow_cnt++;
         }
         g_h2t_wr = next;
     }
 
-    /* Do NOT call SetEPRxStatus(ENDP5, EP_RX_VALID) here!
-     * On EP_ISOCHRONOUS endpoints the STAT_RX field is a SW_BUF toggle,
-     * not a NAK/VALID control. */
+    /* Double-buffered EP2 is re-armed by FreeUserBuffer(). */
 }
 
 #endif /* ENABLE_UAC */

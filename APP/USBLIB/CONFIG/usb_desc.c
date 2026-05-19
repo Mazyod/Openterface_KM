@@ -9,6 +9,7 @@
 *******************************************************************************/
 #include "usb_lib.h"
 #include "usb_desc.h"
+#include "../../include/Version_selection.h"
 #include "../../include/uac_desc.h"
 
 /* USB Device Descriptors */
@@ -22,7 +23,7 @@ const uint8_t  USBD_DeviceDescriptor[] = {
     DEF_USBD_UEP0_SIZE,             // bMaxPacketSize0
     0x86, 0x1A,                     // idVendor
     0x0C, 0xFE,                     // idProduct
-    0x00, 0x01,                     // bcdDevice
+    0x03, 0x01,                     // bcdDevice
     0x01,                           // iManufacturer
     0x02,                           // iProduct
     0x00,                           // iSerialNumber
@@ -94,7 +95,7 @@ const uint8_t  USBD_ConfigDescriptor[] = {
     /* Endpoint descriptor — CDC bulk OUT */
     0x07,                           // bLength
     0x05,                           // bDescriptorType (Endpoint)
-    0x02,                           // bEndpointAddress (OUT/H2D)
+    0x05,                           // bEndpointAddress (OUT/H2D)
     0x02,                           // bmAttributes (Bulk)
     0x20, 0x00,                     // wMaxPacketSize 32 (reduced to free PMA for UAC EP5)
     0x00,                           // bInterval 0
@@ -121,7 +122,7 @@ const uint8_t  USBD_ConfigDescriptor[] = {
     0x02,                           // bFirstInterface: 2
     0x03,                           // bInterfaceCount: 3 (IF2+IF3+IF4)
     0x01,                           // bFunctionClass: Audio
-    0x00,                           // bFunctionSubClass
+    0x01,                           // bFunctionSubClass: AudioControl
     0x00,                           // bFunctionProtocol
     0x00,                           // iFunction
 
@@ -171,7 +172,7 @@ const uint8_t  USBD_ConfigDescriptor[] = {
     0x00,                           // iTerminal
 
     /* CS Interface: Input Terminal 3 — USB Streaming IN (Host PC playback → Target spk)
-     * This terminal feeds EP5 ISO OUT (host→device).
+    * This terminal feeds EP2 ISO OUT (host→device).
      * bTerminalLink in IF4 CS AS General points here (0x03). */
     0x0C,                           // bLength
     USB_DESC_TYPE_CS_INTERFACE,     // bDescriptorType
@@ -222,12 +223,12 @@ const uint8_t  USBD_ConfigDescriptor[] = {
     0x01, 0x00, 0x00,               // bInterval=1ms, bRefresh=0, bSynchAddr=0
 
     /* CS Endpoint */
-    0x07, USB_DESC_TYPE_CS_ENDPOINT, UAC_EP_GENERAL, 0x00, 0x00, 0x00, 0x00,
+    0x07, USB_DESC_TYPE_CS_ENDPOINT, UAC_EP_GENERAL, 0x01, 0x00, 0x00, 0x00,
 
     /* ================================================================
      * IF4: AudioStreaming OUT — Target→Host (microphone capture)
      *   alt0 = zero-bandwidth (no EP)
-     *   alt1 = active, EP5 ISO OUT 64 bytes/ms (16kHz stereo 16-bit)
+    *   alt1 = active, EP2 ISO OUT 64 bytes/ms (16kHz stereo 16-bit)
      * ================================================================ */
 
     /* IF4 alt0 — zero-bandwidth */
@@ -249,7 +250,7 @@ const uint8_t  USBD_ConfigDescriptor[] = {
     0x00, 0x00,                     // bInterfaceProtocol, iInterface
 
     /* CS Interface: AS General — linked to IT3 (USB Streaming IN = Render path)
-     * EP5 ISO OUT receives playback audio from Host PC to play on Target. */
+    * EP2 ISO OUT receives playback audio from Host PC to play on Target. */
     0x07,                           // bLength
     USB_DESC_TYPE_CS_INTERFACE,     // bDescriptorType
     UAC_AS_GENERAL,                 // bDescriptorSubtype
@@ -268,16 +269,16 @@ const uint8_t  USBD_ConfigDescriptor[] = {
     0x01,                           // bSamFreqType: 1 frequency
     UAC_SR_B0(UAC_USBD_SAMPLE_RATE), UAC_SR_B1(UAC_USBD_SAMPLE_RATE), UAC_SR_B2(UAC_USBD_SAMPLE_RATE),
 
-    /* Endpoint: EP5 ISO OUT — single buffer, 64 bytes/ms */
+    /* Endpoint: EP2 ISO OUT — single buffer, 64 bytes/ms */
     0x09,                           // bLength
     0x05,                           // bDescriptorType (Endpoint)
-    UAC_USBD_EP_OUT_ADDR,           // bEndpointAddress: EP5 OUT (0x05)
-    0x01,                           // bmAttributes: Isochronous
+    UAC_USBD_EP_OUT_ADDR,           // bEndpointAddress: EP2 OUT (0x02)
+    0x09,                           // bmAttributes: Isochronous, Adaptive
     0x40, 0x00,                     // wMaxPacketSize: 64
     0x01, 0x00, 0x00,               // bInterval=1ms, bRefresh=0, bSynchAddr=0
 
     /* CS Endpoint */
-    0x07, USB_DESC_TYPE_CS_ENDPOINT, UAC_EP_GENERAL, 0x00, 0x00, 0x00, 0x00,
+    0x07, USB_DESC_TYPE_CS_ENDPOINT, UAC_EP_GENERAL, 0x01, 0x00, 0x00, 0x00,
 #endif
 
 };
@@ -306,13 +307,39 @@ const uint8_t USBD_StringVendor[USBD_SIZE_STRING_VENDOR] = {
 const uint8_t USBD_StringProduct[USBD_SIZE_STRING_PRODUCT] = {
     USBD_SIZE_STRING_PRODUCT,
     USB_STRING_DESCRIPTOR_TYPE,
-    'U', 0, 'S', 0, 'B', 0, ' ', 0, 'S', 0, 'e', 0, 'r', 0, 'i', 0, 'a', 0, 'l', 0};
+    'O', 0, 'p', 0, 'e', 0, 'n', 0, 't', 0, 'e', 0, 'r', 0, 'f', 0, 'a', 0, 'c', 0, 'e', 0, ' ', 0,
+    'H', 0, 'o', 0, 's', 0, 't', 0, ' ', 0,
+    'A', 0, 'u', 0, 'd', 0, 'i', 0, 'o', 0};
 
 /* USB Device String Serial */
 uint8_t USBD_StringSerial[USBD_SIZE_STRING_SERIAL] = {
 	USBD_SIZE_STRING_SERIAL,          
 	USB_STRING_DESCRIPTOR_TYPE,                   
 	'0', 0, '1', 0, '2', 0, '3', 0, '4', 0, '5', 0 , '6', 0, '7', 0, '8', 0, '9', 0
+};
+
+const uint8_t USBD_StringAudioFunction[USBD_SIZE_STRING_AUDIO_FUNC] = {
+    USBD_SIZE_STRING_AUDIO_FUNC,
+    USB_STRING_DESCRIPTOR_TYPE,
+    'O', 0, 'p', 0, 'e', 0, 'n', 0, 't', 0, 'e', 0, 'r', 0, 'f', 0, 'a', 0, 'c', 0, 'e', 0, ' ', 0,
+    'H', 0, 'o', 0, 's', 0, 't', 0, ' ', 0,
+    'A', 0, 'u', 0, 'd', 0, 'i', 0, 'o', 0
+};
+
+const uint8_t USBD_StringSpeaker[USBD_SIZE_STRING_SPEAKER] = {
+    USBD_SIZE_STRING_SPEAKER,
+    USB_STRING_DESCRIPTOR_TYPE,
+    'O', 0, 'P', 0, 'F', 0, ' ', 0,
+    'H', 0, 'O', 0, 'S', 0, 'T', 0, ' ', 0,
+    'A', 0, '-', 0, 'O', 0, 'U', 0, 'T', 0
+};
+
+const uint8_t USBD_StringMicrophone[USBD_SIZE_STRING_MICROPHONE] = {
+    USBD_SIZE_STRING_MICROPHONE,
+    USB_STRING_DESCRIPTOR_TYPE,
+    'O', 0, 'P', 0, 'F', 0, ' ', 0,
+    'H', 0, 'O', 0, 'S', 0, 'T', 0, ' ', 0,
+    'A', 0, '-', 0, 'I', 0, 'N', 0
 };
 
 

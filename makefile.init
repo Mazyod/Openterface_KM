@@ -1,0 +1,10 @@
+# makefile.init — persistent build flags for MRS (MounRiver Studio).
+# This file is included by obj/makefile and build/makefile before any
+# auto-generated rules, so flags defined here are always present even
+# after MRS regenerates subdir.mk files.
+#
+# MRS includes this via:  -include ../makefile.init  (from inside obj/ or build/)
+
+# ── Feature flags ────────────────────────────────────────────────────────────
+# Inject as extra CFLAGS so every .c file in every subdir sees them.
+CFLAGS += -DENABLE_UAC -DENABLE_BLE

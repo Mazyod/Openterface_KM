@@ -10,3 +10,5 @@ obj/
 *.bin
 tools/wchisp_c
 .DS_Store
+.venv/
+stdout

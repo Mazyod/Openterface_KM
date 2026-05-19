@@ -15,6 +15,7 @@
 #include "hw_config.h"
 #include "usb_type.h"
 #include "usb_regs.h"
+#include "usb_conf.h"
 #include "usb_def.h"
 #include "usb_core.h"
 #include "usb_init.h"

@@ -4,7 +4,7 @@
  *
  * Signal flow (from USB-Host perspective):
  *
- *   Host PC mic  ──USBD EP5 OUT──► g_h2t_buf ──USBFS EP5 IN──► Target spk
+ *   Host PC mic  ──USBD EP2 OUT──► g_h2t_buf ──USBFS EP5 IN──► Target spk
  *   Target mic   ─USBFS EP6 OUT──► g_t2h_buf ──USBD EP4 IN──►  Host PC spk
  *
  * Sample-rate bridge:
@@ -31,6 +31,18 @@ extern "C" {
  *         Call once at startup, after USB peripheral init.
  */
 void UAC_Init(void);
+
+/**
+ * @brief  Reset only the host→target FIFO state (wr/rd/started).
+ *         Call when USBD AS-OUT interface alt-setting changes.
+ */
+void UAC_H2T_Reset(void);
+
+/**
+ * @brief  Reset only the target→host FIFO state (wr/rd/started).
+ *         Call when USBFS AS-IN interface alt-setting changes.
+ */
+void UAC_T2H_Reset(void);
 
 /* ── USBFS-side callbacks (called from USBFS_IRQHandler) ─────────────────── */
 
@@ -63,7 +75,7 @@ void UAC_USBFS_EP6_RxDone(uint16_t len);
 void UAC_USBD_EP3_TxDone(void);
 
 /**
- * @brief  Called when USBD EP5 ISO OUT transfer completes (EP5_OUT_Callback).
+ * @brief  Called when USBD EP2 ISO OUT transfer completes (EP2_OUT_Callback).
  * @param  len  Number of bytes received from the Host PC mic.
  *         Converts and stores one frame in h2t bridge buffer.
  */

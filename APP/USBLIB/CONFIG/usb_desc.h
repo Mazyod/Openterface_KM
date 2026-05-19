@@ -18,6 +18,7 @@
 #endif
 	 
 #include "ch32v20x.h"
+#include "../../include/Version_selection.h"
 	 
 	 
 #define USB_DEVICE_DESCRIPTOR_TYPE              0x01
@@ -39,8 +40,11 @@
 #endif
 #define USBD_SIZE_STRING_LANGID      4
 #define USBD_SIZE_STRING_VENDOR      14
-#define USBD_SIZE_STRING_PRODUCT     22
+#define USBD_SIZE_STRING_PRODUCT     46
 #define USBD_SIZE_STRING_SERIAL      22
+#define USBD_SIZE_STRING_AUDIO_FUNC  46
+#define USBD_SIZE_STRING_SPEAKER     30
+#define USBD_SIZE_STRING_MICROPHONE  28
 
 extern const uint8_t USBD_DeviceDescriptor[USBD_SIZE_DEVICE_DESC];
 extern const uint8_t USBD_ConfigDescriptor[USBD_SIZE_CONFIG_DESC];
@@ -48,6 +52,9 @@ extern const uint8_t USBD_StringLangID [USBD_SIZE_STRING_LANGID];
 extern const uint8_t USBD_StringVendor [USBD_SIZE_STRING_VENDOR];
 extern const uint8_t USBD_StringProduct[USBD_SIZE_STRING_PRODUCT];
 extern uint8_t USBD_StringSerial [USBD_SIZE_STRING_SERIAL];
+extern const uint8_t USBD_StringAudioFunction[USBD_SIZE_STRING_AUDIO_FUNC];
+extern const uint8_t USBD_StringSpeaker[USBD_SIZE_STRING_SPEAKER];
+extern const uint8_t USBD_StringMicrophone[USBD_SIZE_STRING_MICROPHONE];
 
 #ifdef __cplusplus
 }

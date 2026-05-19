@@ -12,6 +12,8 @@
 *******************************************************************************/ 
 #include "usb_lib.h"
 
+#define USB_SIL_INTERRUPT_MASK (CNTR_CTRM | CNTR_WKUPM | CNTR_SUSPM | CNTR_ERRM | CNTR_SOFM | CNTR_ESOFM | CNTR_RESETM)
+
 
 /*******************************************************************************
  * @fn         USB_SIL_Init
@@ -23,7 +25,7 @@
 uint32_t USB_SIL_Init(void)
 {
   _SetISTR(0);
-  wInterrupt_Mask = IMR_MSK;
+  wInterrupt_Mask = USB_SIL_INTERRUPT_MASK;
   _SetCNTR(wInterrupt_Mask);
 	
   return 0;

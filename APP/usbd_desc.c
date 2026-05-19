@@ -304,7 +304,7 @@ const uint8_t MyCfgDescr[ ] =
     0x07,                                                   // bLength
     USB_DESC_TYPE_CS_ENDPOINT,                              // bDescriptorType
     UAC_EP_GENERAL,                                         // bDescriptorSubtype
-    0x00,                                                   // bmAttributes: none
+    0x01,                                                   // bmAttributes: sampling frequency control
     0x00,                                                   // bLockDelayUnits
     0x00, 0x00,                                             // wLockDelay
 
@@ -355,7 +355,7 @@ const uint8_t MyCfgDescr[ ] =
     0x09,                                                   // bLength
     0x05,                                                   // bDescriptorType (Endpoint)
     UAC_USBFS_EP_OUT_ADDR,                                  // bEndpointAddress: 0x06 (EP6 OUT)
-    0x01,                                                   // bmAttributes: Isochronous
+    0x09,                                                   // bmAttributes: Isochronous, Adaptive
     UAC_SR_B0(UAC_ISO_PACKET_SIZE), UAC_SR_B1(UAC_ISO_PACKET_SIZE), // wMaxPacketSize
     0x01,                                                   // bInterval: 1 ms
     0x00,                                                   // bRefresh
@@ -365,7 +365,7 @@ const uint8_t MyCfgDescr[ ] =
     0x07,                                                   // bLength
     USB_DESC_TYPE_CS_ENDPOINT,                              // bDescriptorType
     UAC_EP_GENERAL,                                         // bDescriptorSubtype
-    0x00,                                                   // bmAttributes: none
+    0x01,                                                   // bmAttributes: sampling frequency control
     0x00,                                                   // bLockDelayUnits
     0x00, 0x00                                              // wLockDelay
 #endif /* ENABLE_UAC */
@@ -682,15 +682,14 @@ const uint8_t MyManuInfo[ ] =
 /* Product Information */
 const uint8_t MyProdInfo[ ]  =
 {
-    0x0F, // Descriptor length (7 chars * 2 + 2)
+    0x0E, // Descriptor length (7 chars * 2 + 2)
     0x03, // Descriptor type (STRING)
     'K', 0,  // KeyMod
     'e', 0,
     'y', 0,
     'M', 0,
     'o', 0,
-    'd', 0,
-    'T', 0
+    'd', 0
 };
 
 /* Serial Number Information */

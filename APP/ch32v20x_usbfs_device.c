@@ -53,11 +53,9 @@ __attribute__ ((aligned(4))) uint8_t USBFS_EP3_Buf[ DEF_USB_EP3_FS_SIZE ];    //
 __attribute__ ((aligned(4))) uint8_t USBFS_EP4_Buf[ DEF_USB_EP4_FS_SIZE ];    //ep4_in(64) - Media keys
 
 #ifdef ENABLE_UAC
-/* UAC ISO endpoint buffers: single buffer (BUF_MOD=0), 192 bytes each.
- * NOTE: WCH USBFS BUF_MOD ping-pong hard-wires the second-half offset to
- * 64 bytes, not TX_LEN. For 192-byte ISO packets BUF_MOD must NOT be used. */
-__attribute__ ((aligned(4))) uint8_t USBFS_EP5_Buf[ UAC_ISO_PACKET_SIZE ];     //ep5_in  ISO TX (Target→Host spk)
-__attribute__ ((aligned(4))) uint8_t USBFS_EP6_Buf[ UAC_ISO_PACKET_SIZE ];     //ep6_out ISO RX (Host mic→Target)
+/* UAC ISO endpoint buffers: single-buffer, 64 bytes each. */
+__attribute__ ((aligned(4))) uint8_t USBFS_EP5_Buf[ UAC_ISO_PACKET_SIZE ];     //ep5_in  ISO TX
+__attribute__ ((aligned(4))) uint8_t USBFS_EP6_Buf[ UAC_ISO_PACKET_SIZE ];     //ep6_out ISO RX
 #endif /* ENABLE_UAC */
 
 /* USB IN Endpoint Busy Flag */
@@ -226,9 +224,7 @@ void USBFS_Device_Endp_Init( void )
     USBFSD->UEP3_DMA = (uint32_t)USBFS_EP3_Buf;
     USBFSD->UEP4_DMA = (uint32_t)USBFS_EP4_Buf;
 #ifdef ENABLE_UAC
-    /* EP5 DMA: single 192-byte TX buffer; software swaps DMA pointer each frame */
     USBFSD->UEP5_DMA = (uint32_t)USBFS_EP5_Buf;
-    /* EP6 DMA: single 192-byte RX buffer; copied out in UAC_USBFS_EP6_RxDone  */
     USBFSD->UEP6_DMA = (uint32_t)USBFS_EP6_Buf;
 #endif /* ENABLE_UAC */
 
@@ -527,6 +523,17 @@ void USBFS_IRQHandler( void )
                                             Keyboard_SetLEDStatus(USBFS_EP0_Buf[ 0 ]);
                                             USBFS_SetupReqLen = 0;
                                             break;
+#ifdef ENABLE_UAC
+                                        case 0x01:  /* UAC SET_CUR */
+                                            if( ( ( USBFS_SetupReqType & USB_REQ_RECIP_MASK ) == USB_REQ_RECIP_ENDP ) &&
+                                                ( (uint8_t)( USBFS_SetupReqIndex & 0xFF ) == UAC_USBFS_EP_IN_ADDR ||
+                                                  (uint8_t)( USBFS_SetupReqIndex & 0xFF ) == UAC_USBFS_EP_OUT_ADDR ) &&
+                                                ( (uint8_t)( USBFS_SetupReqValue >> 8 ) == 0x01 ) )
+                                            {
+                                                USBFS_SetupReqLen = 0;
+                                            }
+                                            break;
+#endif /* ENABLE_UAC */
                                         default:
                                             break;
                                     }
@@ -682,7 +689,32 @@ void USBFS_IRQHandler( void )
                                 break;
 
                             default:
-                                errflag = 0xFF;
+#ifdef ENABLE_UAC
+                                                                /* UAC 1.0 endpoint sampling-frequency control. */
+                                                                if( ( ( USBFS_SetupReqType & USB_REQ_RECIP_MASK ) == USB_REQ_RECIP_ENDP ) &&
+                                                                        ( (uint8_t)( USBFS_SetupReqIndex & 0xFF ) == UAC_USBFS_EP_IN_ADDR ||
+                                                                            (uint8_t)( USBFS_SetupReqIndex & 0xFF ) == UAC_USBFS_EP_OUT_ADDR ) &&
+                                                                        ( (uint8_t)( USBFS_SetupReqValue >> 8 ) == 0x01 ) &&
+                                                                        ( USBFS_SetupReqCode >= 0x81 && USBFS_SetupReqCode <= 0x84 ) )
+                                {
+                                    USBFS_EP0_Buf[0] = 0x40;  /* 16000 Hz = 0x003E40, LSB first */
+                                    USBFS_EP0_Buf[1] = 0x3E;
+                                    USBFS_EP0_Buf[2] = 0x00;
+                                    if( USBFS_SetupReqLen > 3 ) USBFS_SetupReqLen = 3;
+                                }
+                                                                else if( ( ( USBFS_SetupReqType & USB_REQ_RECIP_MASK ) == USB_REQ_RECIP_ENDP ) &&
+                                                                                 ( (uint8_t)( USBFS_SetupReqIndex & 0xFF ) == UAC_USBFS_EP_IN_ADDR ||
+                                                                                     (uint8_t)( USBFS_SetupReqIndex & 0xFF ) == UAC_USBFS_EP_OUT_ADDR ) &&
+                                                                                 ( (uint8_t)( USBFS_SetupReqValue >> 8 ) == 0x01 ) &&
+                                                                                 ( USBFS_SetupReqCode == 0x01 ) )
+                                {
+                                                                        /* SET_CUR data stage is accepted in the EP0 OUT handler. */
+                                }
+                                else
+#endif /* ENABLE_UAC */
+                                {
+                                    errflag = 0xFF;
+                                }
                                 break;
                         }
                     }

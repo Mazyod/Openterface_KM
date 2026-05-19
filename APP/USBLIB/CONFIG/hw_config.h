@@ -12,7 +12,8 @@
 #ifndef __HW_CONFIG_H
 #define __HW_CONFIG_H
 
-#include "usb_type.h" 
+#include "usb_type.h"
+#include "ch32v20x.h"   /* FunctionalState, ENABLE/DISABLE */
  
 #ifdef	DEBUG
 #define printf_usb(X...) printf(X)

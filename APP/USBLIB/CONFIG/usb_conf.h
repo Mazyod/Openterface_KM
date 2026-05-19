@@ -31,17 +31,19 @@
  *   EP0 RX:  0x040~0x07F  (64B)
  *   EP0 TX:  0x080~0x0BF  (64B)
  *   EP1 TX:  0x0C0~0x0DF  (32B)  CDC interrupt IN
- *   EP2 RX:  0x0E0~0x0FF  (32B)  CDC bulk OUT  [max packet 32B]
+ *   EP5 RX:  0x0E0~0x0FF  (32B)  CDC bulk OUT  [max packet 32B]
  *   EP3 TX:  0x100~0x11F  (32B)  CDC bulk IN   [max packet 32B]
  *   EP4 TX:  0x120~0x15F  (64B)  UAC ISO IN  (MCU→Host, mic path)
- *   EP5 RX:  0x160~0x19F  (64B)  UAC ISO OUT (Host→MCU, spk path)
- *   Total:   0x1A0 = 416B < 512B ✓
+ *   EP2 RX0: 0x160~0x19F  (64B)  UAC ISO OUT (Host→MCU, spk path)
+ *   EP2 RX1: 0x1A0~0x1DF  (64B)  UAC ISO OUT double-buffer test
+ *   Total:   0x1E0 = 480B < 512B ✓
  * CDC bulk bandwidth: 32B/packet × 1000 pkt/s = 32 KB/s > 115200bps (11.5 KB/s) ✓ */
 #define ENDP1_TXADDR        (0xC0)                          /* 32B, CDC int   */
-#define ENDP2_RXADDR        (0xE0)                          /* 32B, CDC bulk OUT */
+#define ENDP5_BULK_RXADDR   (0xE0)                          /* 32B, CDC bulk OUT */
 #define ENDP3_TXADDR        (0x100)                         /* 32B, ACM bulk IN  */
 #define ENDP4_ISO_TXADDR    (0x120)                         /* 64B, UAC ISO IN   */
-#define ENDP5_ISO_RXADDR    (0x160)                         /* 64B, UAC ISO OUT  */
+#define ENDP2_ISO_RXADDR    (0x160)                         /* 64B, UAC ISO OUT buffer 0 */
+#define ENDP2_ISO_RXADDR1   (0x1A0)                         /* 64B, UAC ISO OUT buffer 1 */
 
 /* Serial data endpoint for CDC-ACM. */
 #define USBD_SERIAL_ENDP       ENDP3
@@ -78,8 +80,8 @@
 #define  EP1_OUT_Callback   NOP_Process
 // #define  EP2_OUT_Callback   NOP_Process
 #define  EP3_OUT_Callback   NOP_Process
-#define  EP4_OUT_Callback   NOP_Process
-// #define  EP5_OUT_Callback   NOP_Process  /* EP5 ISO OUT active -- handled in usb_endp.c */
+// #define  EP4_OUT_Callback   NOP_Process  /* EP4 ISO OUT handled in usb_endp.c */
+// #define  EP5_OUT_Callback   NOP_Process  /* CDC bulk OUT relocated to EP5 */
 #define  EP6_OUT_Callback   NOP_Process
 #define  EP7_OUT_Callback   NOP_Process
 

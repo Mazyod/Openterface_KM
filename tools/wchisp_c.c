@@ -1,3 +1,8 @@
+/* wchisp_c.c is a HOST-side utility (requires libusb).
+ * Guard the entire file so it silently compiles to nothing when
+ * cross-compiled for RISC-V firmware targets. */
+#ifndef __riscv
+
 #include <errno.h>
 #include <libusb.h>
 #include <stdint.h>
@@ -632,3 +637,5 @@ int main(int argc, char **argv)
 
     return flash_firmware(argv[1]);
 }
+
+#endif /* __riscv */

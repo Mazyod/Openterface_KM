@@ -15,10 +15,10 @@
  *   IF6  AudioStreaming OUT  → EP6 ISO OUT (Host --> MCU, i.e. Host playback)
  *
  * Interface layout on USBD (Target side):
- *   CDC occupies: EP1 INT IN, EP2 BULK OUT, EP3 BULK IN
+ *   CDC occupies: EP1 INT IN, EP5 BULK OUT, EP3 BULK IN
  *   IF2  AudioControl          (no EP)
  *   IF3  AudioStreaming IN   → EP4 ISO IN  (Target <-- MCU, i.e. Host audio)
- *   IF4  AudioStreaming OUT  → EP5 ISO OUT (Target --> MCU, i.e. Target audio)
+ *   IF4  AudioStreaming OUT  → EP2 ISO OUT (Target --> MCU, i.e. Target audio)
  *******************************************************************************/
 
 #ifndef __UAC_DESC_H
@@ -121,12 +121,12 @@
 /* -----------------------------------------------------------------------
  * Endpoint numbers used for UAC
  * USBFS side: EP5 IN (ISO), EP6 OUT (ISO)
- * USBD  side: EP3 IN (ISO), EP4 OUT (ISO)
+ * USBD  side: EP4 IN, EP2 OUT (ISO)
  * --------------------------------------------------------------------- */
 #define UAC_USBFS_EP_IN_ADDR    0x85    /* EP5 IN  */
 #define UAC_USBFS_EP_OUT_ADDR   0x06    /* EP6 OUT */
 #define UAC_USBD_EP_IN_ADDR     0x84    /* EP4 IN  (EP3 reserved for CDC Bulk IN) */
-#define UAC_USBD_EP_OUT_ADDR    0x05    /* EP5 OUT */
+#define UAC_USBD_EP_OUT_ADDR    0x02    /* EP2 OUT (diagnostic render OUT path) */
 
 /* -----------------------------------------------------------------------
  * Helper macro: encode 3-byte little-endian sample rate
