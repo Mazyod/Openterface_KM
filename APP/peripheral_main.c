@@ -22,6 +22,7 @@
 #include "Version_selection.h"
 #include "include/uac_handler.h"
 #include "include/acm_bridge.h"
+#include "include/ecm_bridge.h"
 
 /*********************************************************************
  * GLOBAL TYPEDEFS
@@ -75,6 +76,8 @@ void Main_Circulation(void)
         USB_SendFromQueues();
     #if USB_WORK_MODE_BRIDGE_ACM
         ACM_Bridge_Poll();
+    #elif USB_WORK_MODE_BRIDGE_ECM
+        ECM_Bridge_Poll();
     #endif
 
 

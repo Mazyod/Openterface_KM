@@ -36,7 +36,9 @@ const uint8_t  USBD_ConfigDescriptor[] = {
     0x09,                           // bLength
     0x02,                           // bDescriptorType
     USBD_SIZE_CONFIG_DESC & 0xFF, USBD_SIZE_CONFIG_DESC >> 8, // wTotalLength
-#ifdef ENABLE_UAC
+#if USB_WORK_MODE_HAS_HOST_CDC_ECM
+    0x02,                           // bNumInterfaces: CDC-ECM only
+#elif defined(ENABLE_UAC)
     0x05,                           // bNumInterfaces: ACM(2) + UAC(3) = 5
 #else
     0x02,                           // bNumInterfaces: CDC-ACM only
@@ -46,7 +48,8 @@ const uint8_t  USBD_ConfigDescriptor[] = {
     0x80,                           // bmAttributes: Bus Powered; Remote Wakeup
     0x32,                           // MaxPower: 100mA
 
-    /* IAD: CDC (IF0=comm + IF1=data) */
+#if USB_WORK_MODE_HAS_HOST_CDC_ACM
+    /* IAD: CDC ACM (IF0=comm + IF1=data) */
     0x08,                           // bLength
     0x0B,                           // bDescriptorType (IAD)
     0x00,                           // bFirstInterface: 0
@@ -107,6 +110,84 @@ const uint8_t  USBD_ConfigDescriptor[] = {
     0x02,                           // bmAttributes (Bulk)
     0x10, 0x00,                     // wMaxPacketSize 16 (PMA reserved for double-buffered UAC audio)
     0x00,                           // bInterval 0
+
+#elif USB_WORK_MODE_HAS_HOST_CDC_ECM
+    /* IAD: CDC ECM (IF0=comm + IF1=data) */
+    0x08,                           // bLength
+    0x0B,                           // bDescriptorType (IAD)
+    0x00,                           // bFirstInterface: 0
+    0x02,                           // bInterfaceCount: 2
+    0x02,                           // bFunctionClass: Communications
+    0x06,                           // bFunctionSubClass: Ethernet Networking Control Model
+    0x00,                           // bFunctionProtocol
+    0x00,                           // iFunction
+
+    /* Interface 0: CDC ECM communication */
+    0x09,                           // bLength
+    0x04,                           // bDescriptorType (Interface)
+    0x00,                           // bInterfaceNumber 0
+    0x00,                           // bAlternateSetting
+    0x01,                           // bNumEndpoints 1
+    0x02,                           // bInterfaceClass (Communications)
+    0x06,                           // bInterfaceSubClass (Ethernet Networking Control Model)
+    0x00,                           // bInterfaceProtocol
+    0x00,                           // iInterface
+
+    /* CDC ECM Functional Descriptors */
+    0x05, 0x24, 0x00, 0x10, 0x01,   // Header, CDC 1.10
+    0x05, 0x24, 0x06, 0x00, 0x01,   // Union: control IF0, data IF1
+    0x0D, 0x24, 0x0F, 0x04,         // Ethernet Networking, iMACAddress=4
+    0x00, 0x00, 0x00, 0x00,         // bmEthernetStatistics
+    0xEA, 0x05,                     // wMaxSegmentSize: 1514
+    0x00, 0x00,                     // wNumberMCFilters: none
+    0x00,                           // bNumberPowerFilters
+
+    /* Interrupt notification endpoint */
+    0x07,                           // bLength
+    0x05,                           // bDescriptorType (Endpoint)
+    0x81,                           // bEndpointAddress (IN/D2H)
+    0x03,                           // bmAttributes (Interrupt)
+    0x10, 0x00,                     // wMaxPacketSize 16
+    0x01,                           // bInterval
+
+    /* Interface 1: CDC ECM data, alt 0 idle */
+    0x09,                           // bLength
+    0x04,                           // bDescriptorType (Interface)
+    0x01,                           // bInterfaceNumber 1
+    0x00,                           // bAlternateSetting
+    0x00,                           // bNumEndpoints
+    0x0A,                           // bInterfaceClass (Data Interface)
+    0x00,                           // bInterfaceSubClass
+    0x00,                           // bInterfaceProtocol
+    0x00,                           // iInterface
+
+    /* Interface 1: CDC ECM data, alt 1 active */
+    0x09,                           // bLength
+    0x04,                           // bDescriptorType (Interface)
+    0x01,                           // bInterfaceNumber 1
+    0x01,                           // bAlternateSetting
+    0x02,                           // bNumEndpoints
+    0x0A,                           // bInterfaceClass (Data Interface)
+    0x00,                           // bInterfaceSubClass
+    0x00,                           // bInterfaceProtocol
+    0x00,                           // iInterface
+
+    /* Endpoint descriptor — CDC ECM bulk OUT */
+    0x07,                           // bLength
+    0x05,                           // bDescriptorType (Endpoint)
+    0x05,                           // bEndpointAddress (OUT/H2D)
+    0x02,                           // bmAttributes (Bulk)
+    0x10, 0x00,                     // wMaxPacketSize 16
+    0x00,                           // bInterval
+
+    /* Endpoint descriptor — CDC ECM bulk IN */
+    0x07,                           // bLength
+    0x05,                           // bDescriptorType (Endpoint)
+    0x83,                           // bEndpointAddress (IN/D2H)
+    0x02,                           // bmAttributes (Bulk)
+    0x10, 0x00,                     // wMaxPacketSize 16
+    0x00,                           // bInterval
+#endif
 
     #ifdef ENABLE_UAC
     /* ====== UAC 1.0 — USBD (Target) side ================================
@@ -338,6 +419,13 @@ const uint8_t USBD_StringMicrophone[USBD_SIZE_STRING_MICROPHONE] = {
     'O', 0, 'P', 0, 'F', 0, ' ', 0,
     'H', 0, 'O', 0, 'S', 0, 'T', 0, ' ', 0,
     'A', 0, '-', 0, 'I', 0, 'N', 0
+};
+
+const uint8_t USBD_StringEcmMac[USBD_SIZE_STRING_ECM_MAC] = {
+    USBD_SIZE_STRING_ECM_MAC,
+    USB_STRING_DESCRIPTOR_TYPE,
+    '0', 0, '2', 0, '0', 0, '0', 0, '0', 0, '0', 0,
+    '0', 0, '0', 0, '0', 0, '0', 0, '0', 0, '2', 0
 };
 
 

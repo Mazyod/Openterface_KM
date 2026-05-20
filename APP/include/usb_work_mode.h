@@ -32,8 +32,4 @@
 #define USB_WORK_MODE_BRIDGE_ACM           (USB_WORK_MODE == USB_WORK_MODE_HID_ACM_BRIDGE)
 #define USB_WORK_MODE_BRIDGE_ECM           (USB_WORK_MODE == USB_WORK_MODE_HID_ECM_BRIDGE)
 
-#if USB_WORK_MODE_BRIDGE_ECM
-#error USB_WORK_MODE_HID_ECM_BRIDGE is planned but not implemented yet.
-#endif
-
 #endif /* USB_WORK_MODE_H */

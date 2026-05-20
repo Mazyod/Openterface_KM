@@ -7,6 +7,7 @@
 C_SRCS += \
 ../APP/RingMem.c \
 ../APP/acm_bridge.c \
+../APP/ecm_bridge.c \
 ../APP/RGB.c \
 ../APP/sd_switch.c \
 ../APP/DS18B20.c \
@@ -27,6 +28,7 @@ C_SRCS += \
 C_DEPS += \
 ./APP/RingMem.d \
 ./APP/acm_bridge.d \
+./APP/ecm_bridge.d \
 ./APP/RGB.d \
 ./APP/sd_switch.d \
 ./APP/DS18B20.d \
@@ -47,6 +49,7 @@ C_DEPS += \
 OBJS += \
 ./APP/RingMem.o \
 ./APP/acm_bridge.o \
+./APP/ecm_bridge.o \
 ./APP/RGB.o \
 ./APP/sd_switch.o \
 ./APP/DS18B20.o \

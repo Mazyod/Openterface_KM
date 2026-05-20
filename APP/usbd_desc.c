@@ -49,6 +49,9 @@ const uint8_t MyCfgDescr[ ] =
 #elif USB_WORK_MODE_HAS_TARGET_CDC_ACM
     0xAF, 0x00,                                             // wTotalLength: 175 = 0x00AF (100 HID + 9 cfg + 66 CDC ACM)
     0x06,                                                   // bNumInterfaces: 4 HID + 2 CDC ACM = 6
+#elif USB_WORK_MODE_HAS_TARGET_CDC_ECM
+    0xBC, 0x00,                                             // wTotalLength: 188 = 0x00BC (100 HID + 9 cfg + 79 CDC ECM)
+    0x06,                                                   // bNumInterfaces: 4 HID + 2 CDC ECM = 6
 #else
     0x6D, 0x00,                                             // wTotalLength: 109 = 0x006D (9 cfg + 4*25 HID)
     0x04,                                                   // bNumInterfaces: 4 HID only
@@ -234,6 +237,85 @@ const uint8_t MyCfgDescr[ ] =
     0x00,                                                   // bInterval
 
 #endif /* USB_WORK_MODE_HAS_TARGET_CDC_ACM */
+
+#if USB_WORK_MODE_HAS_TARGET_CDC_ECM
+    /* IAD: CDC ECM (IF4=comm + IF5=data) */
+    0x08,                                                   // bLength
+    0x0B,                                                   // bDescriptorType (IAD)
+    0x04,                                                   // bFirstInterface
+    0x02,                                                   // bInterfaceCount
+    0x02,                                                   // bFunctionClass: Communications
+    0x06,                                                   // bFunctionSubClass: Ethernet Networking Control Model
+    0x00,                                                   // bFunctionProtocol
+    0x00,                                                   // iFunction
+
+    /* Interface Descriptor: CDC ECM Communication (IF4) */
+    0x09,                                                   // bLength
+    0x04,                                                   // bDescriptorType
+    0x04,                                                   // bInterfaceNumber
+    0x00,                                                   // bAlternateSetting
+    0x01,                                                   // bNumEndpoints
+    0x02,                                                   // bInterfaceClass: Communications
+    0x06,                                                   // bInterfaceSubClass: Ethernet Networking Control Model
+    0x00,                                                   // bInterfaceProtocol
+    0x00,                                                   // iInterface
+
+    /* CDC ECM Functional Descriptors */
+    0x05, 0x24, 0x00, 0x10, 0x01,                           // Header, CDC 1.10
+    0x05, 0x24, 0x06, 0x04, 0x05,                           // Union: control IF4, data IF5
+    0x0D, 0x24, 0x0F, 0x04,                                 // Ethernet Networking, iMACAddress=4
+    0x00, 0x00, 0x00, 0x00,                                 // bmEthernetStatistics
+    0xEA, 0x05,                                             // wMaxSegmentSize: 1514
+    0x00, 0x00,                                             // wNumberMCFilters: none
+    0x00,                                                   // bNumberPowerFilters
+
+    /* Endpoint Descriptor: CDC ECM notification EP5 IN */
+    0x07,                                                   // bLength
+    0x05,                                                   // bDescriptorType
+    0x85,                                                   // bEndpointAddress: EP5 IN
+    0x03,                                                   // bmAttributes: Interrupt
+    0x10, 0x00,                                             // wMaxPacketSize
+    0x10,                                                   // bInterval: 16mS
+
+    /* Interface Descriptor: CDC ECM Data (IF5 alt 0, idle) */
+    0x09,                                                   // bLength
+    0x04,                                                   // bDescriptorType
+    0x05,                                                   // bInterfaceNumber
+    0x00,                                                   // bAlternateSetting
+    0x00,                                                   // bNumEndpoints
+    0x0A,                                                   // bInterfaceClass: Data
+    0x00,                                                   // bInterfaceSubClass
+    0x00,                                                   // bInterfaceProtocol
+    0x00,                                                   // iInterface
+
+    /* Interface Descriptor: CDC ECM Data (IF5 alt 1, active) */
+    0x09,                                                   // bLength
+    0x04,                                                   // bDescriptorType
+    0x05,                                                   // bInterfaceNumber
+    0x01,                                                   // bAlternateSetting
+    0x02,                                                   // bNumEndpoints
+    0x0A,                                                   // bInterfaceClass: Data
+    0x00,                                                   // bInterfaceSubClass
+    0x00,                                                   // bInterfaceProtocol
+    0x00,                                                   // iInterface
+
+    /* Endpoint Descriptor: CDC ECM data OUT EP6 */
+    0x07,                                                   // bLength
+    0x05,                                                   // bDescriptorType
+    0x06,                                                   // bEndpointAddress: EP6 OUT
+    0x02,                                                   // bmAttributes: Bulk
+    0x40, 0x00,                                             // wMaxPacketSize
+    0x00,                                                   // bInterval
+
+    /* Endpoint Descriptor: CDC ECM data IN EP7 */
+    0x07,                                                   // bLength
+    0x05,                                                   // bDescriptorType
+    0x87,                                                   // bEndpointAddress: EP7 IN
+    0x02,                                                   // bmAttributes: Bulk
+    0x40, 0x00,                                             // wMaxPacketSize
+    0x00,                                                   // bInterval,
+
+#endif /* USB_WORK_MODE_HAS_TARGET_CDC_ECM */
 
 #ifdef ENABLE_UAC
     /* ====== UAC 1.0 — USBFS (Target PC) side ============================
@@ -443,6 +525,8 @@ const uint8_t MyCfgDescr[ ] =
 typedef char MyCfgDescr_SizeCheck[(sizeof(MyCfgDescr) == 274) ? 1 : -1];
 #elif USB_WORK_MODE_HAS_TARGET_CDC_ACM
 typedef char MyCfgDescr_SizeCheck[(sizeof(MyCfgDescr) == 175) ? 1 : -1];
+#elif USB_WORK_MODE_HAS_TARGET_CDC_ECM
+typedef char MyCfgDescr_SizeCheck[(sizeof(MyCfgDescr) == 188) ? 1 : -1];
 #else
 typedef char MyCfgDescr_SizeCheck[(sizeof(MyCfgDescr) == 109) ? 1 : -1];
 #endif
@@ -780,5 +864,24 @@ const uint8_t  MySerNumInfo[ ] =
     '0', 0,
     '7', 0,
     '2', 0,
+    '1', 0
+};
+
+/* CDC ECM MAC address string: ASCII hex, no separators. */
+const uint8_t MyEcmMacInfo[ ] =
+{
+    0x1A,
+    0x03,
+    '0', 0,
+    '2', 0,
+    '0', 0,
+    '0', 0,
+    '0', 0,
+    '0', 0,
+    '0', 0,
+    '0', 0,
+    '0', 0,
+    '0', 0,
+    '0', 0,
     '1', 0
 };

@@ -20,7 +20,9 @@
 #include "UART.h"
 #include "../../include/uac_handler.h"
 #include "../../include/acm_bridge.h"
+#include "../../include/ecm_bridge.h"
 
+uint8_t USBD_Endp1_Busy;
 uint8_t USBD_Endp3_Busy;
 uint16_t USB_Rx_Cnt=0; 
 
@@ -33,7 +35,7 @@ uint16_t USB_Rx_Cnt=0;
  */
 void EP1_IN_Callback (void)
 {
-    (void)0;
+    USBD_Endp1_Busy = 0;
 }
 
 
@@ -130,6 +132,18 @@ void EP5_OUT_Callback(void)
     ACM_Bridge_HostRxDone( buf, (uint16_t)len );
     SetEPRxCount( ENDP5, DEF_USBD_MAX_PACK_SIZE );
     SetEPRxValid( ENDP5 );
+#elif USB_WORK_MODE_BRIDGE_ECM
+    uint8_t buf[DEF_USBD_MAX_PACK_SIZE];
+    uint32_t len;
+    len = GetEPRxCount( ENDP5 );
+    if( len > DEF_USBD_MAX_PACK_SIZE )
+    {
+        len = DEF_USBD_MAX_PACK_SIZE;
+    }
+    PMAToUserBufferCopy( buf, GetEPRxAddr( ENDP5 ), len );
+    ECM_Bridge_HostRxDone( buf, (uint16_t)len );
+    SetEPRxCount( ENDP5, DEF_USBD_MAX_PACK_SIZE );
+    SetEPRxValid( ENDP5 );
 #else
 	uint32_t len;
     len = GetEPRxCount( ENDP5 );
@@ -166,7 +180,21 @@ void EP5_OUT_Callback(void)
  */
 uint8_t USBD_ENDPx_DataUp( uint8_t endp, uint8_t *pbuf, uint16_t len )
 {
-	if( endp == ENDP3 )
+    if( endp == ENDP1 )
+    {
+        if( len > DEF_USBD_MAX_PACK_SIZE )
+        {
+            return USB_ERROR;
+        }
+        if (USBD_Endp1_Busy)
+        {
+            return USB_ERROR;
+        }
+        USB_SIL_Write( EP1_IN, pbuf, len );
+        USBD_Endp1_Busy = 1;
+        SetEPTxStatus( ENDP1, EP_TX_VALID );
+    }
+    else if( endp == ENDP3 )
 	{
         if( len > DEF_USBD_MAX_PACK_SIZE )
         {

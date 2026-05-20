@@ -20,7 +20,7 @@ ENABLE_UAC ?= 1
 #   hid_acm        = target HID only, host CDC ACM
 #   hid_uac_acm    = target HID+UAC, host CDC ACM+UAC bridge (default)
 #   hid_acm_bridge = target CDC ACM enumeration scaffold + host CDC ACM
-#   hid_ecm_bridge = planned target/host CDC ECM bridge, not implemented yet
+#   hid_ecm_bridge = target/host CDC ECM enumeration scaffold
 USB_WORK_MODE ?= $(if $(filter 0,$(ENABLE_UAC)),hid_acm,hid_uac_acm)
 
 ifeq ($(USB_WORK_MODE),hid_acm)
@@ -33,7 +33,8 @@ else ifeq ($(USB_WORK_MODE),hid_acm_bridge)
 USB_WORK_MODE_ID := 3
 USB_WORK_MODE_ENABLE_UAC := 0
 else ifeq ($(USB_WORK_MODE),hid_ecm_bridge)
-$(error USB_WORK_MODE=hid_ecm_bridge is planned but not implemented yet)
+USB_WORK_MODE_ID := 4
+USB_WORK_MODE_ENABLE_UAC := 0
 else
 $(error Unsupported USB_WORK_MODE '$(USB_WORK_MODE)')
 endif
@@ -184,7 +185,7 @@ $(BUILD_CONFIG_STAMP): FORCE
 		printf 'BLE_BUFF_MAX_LEN=%s\n' "$(BLE_BUFF_MAX_LEN)"; \
 		printf 'BLE_TX_NUM_EVENT=%s\n' "$(BLE_TX_NUM_EVENT)"; \
 	} > "$@.tmp"
-	@if test ! -f "$@" || ! cmp -s "$@.tmp" "$@"; then \
+	@if test ! -f "$@" || test "$$(cat "$@.tmp")" != "$$(cat "$@")"; then \
 		mv "$@.tmp" "$@"; \
 	else \
 		rm -f "$@.tmp"; \

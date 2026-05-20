@@ -81,6 +81,7 @@
 #define DEF_USBD_MANU_DESC_LEN        ( (uint16_t)MyManuInfo[ 0 ] )
 #define DEF_USBD_PROD_DESC_LEN        ( (uint16_t)MyProdInfo[ 0 ] )
 #define DEF_USBD_SN_DESC_LEN          ( (uint16_t)MySerNumInfo[ 0 ] )
+#define DEF_USBD_ECM_MAC_DESC_LEN     ( (uint16_t)MyEcmMacInfo[ 0 ] )
 #define DEF_USBD_QUALFY_DESC_LEN      ( (uint16_t)MyQuaDesc[ 0 ])
 #define DEF_USBD_BOS_DESC_LEN         0
 #define DEF_USBD_FS_OTH_DESC_LEN      0
@@ -100,5 +101,6 @@ extern const uint8_t MyLangDescr[ ];
 extern const uint8_t MyManuInfo[ ];
 extern const uint8_t MyProdInfo[ ];
 extern const uint8_t MySerNumInfo[ ];
+extern const uint8_t MyEcmMacInfo[ ];
 
 #endif

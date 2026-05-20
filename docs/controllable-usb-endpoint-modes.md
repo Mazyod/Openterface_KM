@@ -156,10 +156,10 @@ The initial code change adds this model and maps the existing UAC build flag ont
 
 ### Phase 5: Mode 4 ECM Bridge
 
-1. Add target-side CDC ECM descriptors and class requests.
-2. Add host-side CDC ECM descriptors and class requests.
-3. Add Ethernet frame queues with explicit frame boundaries.
-4. Implement packet filter state, MAC string handling, and basic statistics.
+1. Add target-side CDC ECM descriptors and class requests. Initial enumeration scaffold done.
+2. Add host-side CDC ECM descriptors and class requests. Initial enumeration scaffold done.
+3. Add Ethernet frame queues with explicit frame boundaries. Pending.
+4. Implement packet filter state, MAC string handling, and basic statistics. Basic packet-filter state, MAC strings, and zeroed statistics responses are in place; real statistics are pending frame forwarding.
 5. Verify enumeration on ECM-capable hosts first. Stock Windows is expected not to bind CDC ECM as a NIC.
 
 ### Phase 6: Persistent Runtime Selection
@@ -199,4 +199,6 @@ Current implementation status:
 - Mode 3 builds with target CDC ACM descriptors, class requests, endpoint re-arm, and byte bridge forwarding.
 - Mode 3 has a Windows serial bridge test script at `tools/test_acm_bridge_windows.ps1`.
 - Mode 3 passed Windows transfer validation with `tools/test_acm_bridge_windows.ps1` across 5 baud rates, 4 payload sizes, 2 iterations, and both directions.
-- Mode 4 remains rejected at compile time until its target/host ECM descriptors, endpoint setup, and bridge handlers exist.
+- Mode 4 now builds with target/host CDC ECM descriptors, MAC address strings, basic ECM EP0 request handling, bulk endpoint setup, network-connection/speed-change notifications, and a frame-preserving bridge queue between target EP6/EP7 and host EP5/EP3.
+- Mode 4 flashed on Windows enumerates target HID interfaces successfully and exposes target/upstream CDC ECM control interfaces as `USB\Class_02&SubClass_06&Prot_00`; Windows reports failed driver install and no network adapter, as expected for stock CDC ECM.
+- Mode 4 frame forwarding still needs validation on an ECM-capable host because stock Windows does not bind a CDC ECM network adapter.
