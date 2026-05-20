@@ -46,6 +46,9 @@ const uint8_t MyCfgDescr[ ] =
 #ifdef ENABLE_UAC
     0x12, 0x01,                                             // wTotalLength: 274 = 0x0112 (100 HID + 9 cfg + 165 UAC)
     0x07,                                                   // bNumInterfaces: 4 HID + 1 AC + 2 AS = 7
+#elif USB_WORK_MODE_HAS_TARGET_CDC_ACM
+    0xAF, 0x00,                                             // wTotalLength: 175 = 0x00AF (100 HID + 9 cfg + 66 CDC ACM)
+    0x06,                                                   // bNumInterfaces: 4 HID + 2 CDC ACM = 6
 #else
     0x6D, 0x00,                                             // wTotalLength: 109 = 0x006D (9 cfg + 4*25 HID)
     0x04,                                                   // bNumInterfaces: 4 HID only
@@ -166,6 +169,71 @@ const uint8_t MyCfgDescr[ ] =
     0x03,                                                   // bmAttributes (Interrupt)
     0x08, 0x00,                                             // wMaxPacketSize
     0x0A,                                                   // bInterval: 10mS
+
+#if USB_WORK_MODE_HAS_TARGET_CDC_ACM
+    /* IAD: CDC ACM (IF4=comm + IF5=data) */
+    0x08,                                                   // bLength
+    0x0B,                                                   // bDescriptorType (IAD)
+    0x04,                                                   // bFirstInterface
+    0x02,                                                   // bInterfaceCount
+    0x02,                                                   // bFunctionClass: Communications
+    0x02,                                                   // bFunctionSubClass: Abstract Control Model
+    0x01,                                                   // bFunctionProtocol: AT Commands
+    0x00,                                                   // iFunction
+
+    /* Interface Descriptor: CDC ACM Communication (IF4) */
+    0x09,                                                   // bLength
+    0x04,                                                   // bDescriptorType
+    0x04,                                                   // bInterfaceNumber
+    0x00,                                                   // bAlternateSetting
+    0x01,                                                   // bNumEndpoints
+    0x02,                                                   // bInterfaceClass: Communications
+    0x02,                                                   // bInterfaceSubClass: Abstract Control Model
+    0x01,                                                   // bInterfaceProtocol: AT Commands
+    0x00,                                                   // iInterface
+
+    /* CDC Functional Descriptors */
+    0x05, 0x24, 0x00, 0x10, 0x01,                           // Header, CDC 1.10
+    0x05, 0x24, 0x01, 0x00, 0x05,                           // Call Management, data IF5
+    0x04, 0x24, 0x02, 0x02,                                 // ACM capabilities
+    0x05, 0x24, 0x06, 0x04, 0x05,                           // Union: control IF4, data IF5
+
+    /* Endpoint Descriptor: CDC notification EP5 IN */
+    0x07,                                                   // bLength
+    0x05,                                                   // bDescriptorType
+    0x85,                                                   // bEndpointAddress: EP5 IN
+    0x03,                                                   // bmAttributes: Interrupt
+    0x08, 0x00,                                             // wMaxPacketSize
+    0x10,                                                   // bInterval: 16mS
+
+    /* Interface Descriptor: CDC ACM Data (IF5) */
+    0x09,                                                   // bLength
+    0x04,                                                   // bDescriptorType
+    0x05,                                                   // bInterfaceNumber
+    0x00,                                                   // bAlternateSetting
+    0x02,                                                   // bNumEndpoints
+    0x0A,                                                   // bInterfaceClass: Data
+    0x00,                                                   // bInterfaceSubClass
+    0x00,                                                   // bInterfaceProtocol
+    0x00,                                                   // iInterface
+
+    /* Endpoint Descriptor: CDC data OUT EP6 */
+    0x07,                                                   // bLength
+    0x05,                                                   // bDescriptorType
+    0x06,                                                   // bEndpointAddress: EP6 OUT
+    0x02,                                                   // bmAttributes: Bulk
+    0x40, 0x00,                                             // wMaxPacketSize
+    0x00,                                                   // bInterval
+
+    /* Endpoint Descriptor: CDC data IN EP7 */
+    0x07,                                                   // bLength
+    0x05,                                                   // bDescriptorType
+    0x87,                                                   // bEndpointAddress: EP7 IN
+    0x02,                                                   // bmAttributes: Bulk
+    0x40, 0x00,                                             // wMaxPacketSize
+    0x00,                                                   // bInterval
+
+#endif /* USB_WORK_MODE_HAS_TARGET_CDC_ACM */
 
 #ifdef ENABLE_UAC
     /* ====== UAC 1.0 — USBFS (Target PC) side ============================
@@ -373,6 +441,8 @@ const uint8_t MyCfgDescr[ ] =
 
 #ifdef ENABLE_UAC
 typedef char MyCfgDescr_SizeCheck[(sizeof(MyCfgDescr) == 274) ? 1 : -1];
+#elif USB_WORK_MODE_HAS_TARGET_CDC_ACM
+typedef char MyCfgDescr_SizeCheck[(sizeof(MyCfgDescr) == 175) ? 1 : -1];
 #else
 typedef char MyCfgDescr_SizeCheck[(sizeof(MyCfgDescr) == 109) ? 1 : -1];
 #endif

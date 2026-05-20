@@ -1,5 +1,7 @@
 param(
-    [switch]$Clean
+    [switch]$Clean,
+    [ValidateSet('hid_acm', 'hid_uac_acm', 'hid_acm_bridge', 'hid_ecm_bridge')]
+    [string]$UsbWorkMode = 'hid_uac_acm'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -44,7 +46,7 @@ try {
         }
     }
 
-    & mingw32-make -f makefile -j1 main-build
+    & mingw32-make -f makefile -j1 main-build "USB_WORK_MODE=$UsbWorkMode"
     exit $LASTEXITCODE
 }
 finally {

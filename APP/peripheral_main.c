@@ -21,6 +21,7 @@
 #include "km_ring.h"
 #include "Version_selection.h"
 #include "include/uac_handler.h"
+#include "include/acm_bridge.h"
 
 /*********************************************************************
  * GLOBAL TYPEDEFS
@@ -72,6 +73,9 @@ void Main_Circulation(void)
         USB_DataRx_To_KMHandle();
         //Keyboard and mouse control code sending loop
         USB_SendFromQueues();
+    #if USB_WORK_MODE_BRIDGE_ACM
+        ACM_Bridge_Poll();
+    #endif
 
 
         //Different devices have different control pin

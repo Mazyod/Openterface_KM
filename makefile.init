@@ -5,6 +5,5 @@
 #
 # MRS includes this via:  -include ../makefile.init  (from inside obj/ or build/)
 
-# ── Feature flags ────────────────────────────────────────────────────────────
-# Inject as extra CFLAGS so every .c file in every subdir sees them.
-CFLAGS += -DENABLE_UAC -DENABLE_BLE
+# Feature flags are owned by build/makefile so USB_WORK_MODE can derive a
+# consistent descriptor/endpoint profile before every source file is compiled.

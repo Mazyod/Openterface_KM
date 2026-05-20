@@ -19,6 +19,7 @@
 #include "usb_prop.h"
 #include "UART.h"
 #include "../../include/uac_handler.h"
+#include "../../include/acm_bridge.h"
 
 uint8_t USBD_Endp3_Busy;
 uint16_t USB_Rx_Cnt=0; 
@@ -117,6 +118,19 @@ void EP4_OUT_Callback(void)
 
 void EP5_OUT_Callback(void)
 {
+#if USB_WORK_MODE_BRIDGE_ACM
+	uint8_t buf[DEF_USBD_MAX_PACK_SIZE];
+	uint32_t len;
+    len = GetEPRxCount( ENDP5 );
+    if( len > DEF_USBD_MAX_PACK_SIZE )
+    {
+        len = DEF_USBD_MAX_PACK_SIZE;
+    }
+    PMAToUserBufferCopy( buf, GetEPRxAddr( ENDP5 ), len );
+    ACM_Bridge_HostRxDone( buf, (uint16_t)len );
+    SetEPRxCount( ENDP5, DEF_USBD_MAX_PACK_SIZE );
+    SetEPRxValid( ENDP5 );
+#else
 	uint32_t len;
     len = GetEPRxCount( ENDP5 );
     PMAToUserBufferCopy( &UART2_Tx_Buf[ ( Uart.Tx_LoadNum * DEF_USB_FS_PACK_LEN ) ], GetEPRxAddr( ENDP5 ), len );
@@ -136,6 +150,7 @@ void EP5_OUT_Callback(void)
     {
         SetEPRxValid( ENDP5 );
     }
+#endif
 }
 
 /*********************************************************************

@@ -13,6 +13,36 @@ RM := rm -rf
 # Feature flags — define BEFORE includes so subdir.mk files can use them
 # BLE support: build with 'make ENABLE_BLE=0' to omit BLE (frees ~14 KB RAM)
 ENABLE_BLE ?= 1
+ENABLE_UAC_ORIGIN := $(origin ENABLE_UAC)
+ENABLE_UAC ?= 1
+
+# USB work modes:
+#   hid_acm        = target HID only, host CDC ACM
+#   hid_uac_acm    = target HID+UAC, host CDC ACM+UAC bridge (default)
+#   hid_acm_bridge = target CDC ACM enumeration scaffold + host CDC ACM
+#   hid_ecm_bridge = planned target/host CDC ECM bridge, not implemented yet
+USB_WORK_MODE ?= $(if $(filter 0,$(ENABLE_UAC)),hid_acm,hid_uac_acm)
+
+ifeq ($(USB_WORK_MODE),hid_acm)
+USB_WORK_MODE_ID := 1
+USB_WORK_MODE_ENABLE_UAC := 0
+else ifeq ($(USB_WORK_MODE),hid_uac_acm)
+USB_WORK_MODE_ID := 2
+USB_WORK_MODE_ENABLE_UAC := 1
+else ifeq ($(USB_WORK_MODE),hid_acm_bridge)
+USB_WORK_MODE_ID := 3
+USB_WORK_MODE_ENABLE_UAC := 0
+else ifeq ($(USB_WORK_MODE),hid_ecm_bridge)
+$(error USB_WORK_MODE=hid_ecm_bridge is planned but not implemented yet)
+else
+$(error Unsupported USB_WORK_MODE '$(USB_WORK_MODE)')
+endif
+
+ifeq ($(ENABLE_UAC_ORIGIN),undefined)
+ENABLE_UAC := $(USB_WORK_MODE_ENABLE_UAC)
+else ifneq ($(ENABLE_UAC),$(USB_WORK_MODE_ENABLE_UAC))
+$(error ENABLE_UAC=$(ENABLE_UAC) conflicts with USB_WORK_MODE=$(USB_WORK_MODE))
+endif
 
 HOST_CC ?= cc
 PKG_CONFIG ?= pkg-config
@@ -113,9 +143,10 @@ endif
 
 CFLAGS += -include stdint.h -include stddef.h
 CFLAGS += -Dversion=$(BOARD_VERSION)
+CFLAGS += -DUSB_WORK_MODE=$(USB_WORK_MODE_ID)
 
-# UAC support: build with 'make ENABLE_UAC=0' to omit USB Audio Class (frees EP5+EP6)
-ENABLE_UAC ?= 1
+# UAC support is derived from USB_WORK_MODE. Legacy ENABLE_UAC=0 maps to hid_acm
+# when USB_WORK_MODE is not specified.
 ifeq ($(ENABLE_UAC),1)
 CFLAGS += -DENABLE_UAC
 endif
@@ -145,6 +176,7 @@ endif
 $(BUILD_CONFIG_STAMP): FORCE
 	@{ \
 		printf 'BOARD_VERSION=%s\n' "$(BOARD_VERSION)"; \
+		printf 'USB_WORK_MODE=%s\n' "$(USB_WORK_MODE)"; \
 		printf 'ENABLE_UAC=%s\n' "$(ENABLE_UAC)"; \
 		printf 'ENABLE_BLE=%s\n' "$(ENABLE_BLE)"; \
 		printf 'BLE_NAME=%s\n' "$(BLE_NAME)"; \

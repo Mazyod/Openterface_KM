@@ -2,6 +2,7 @@
 #define VERSION_SELECTION_H
 
 #include <stdint.h>
+#include "usb_work_mode.h"
 
 /* Values:
  * 1 = kvm go
@@ -13,11 +14,12 @@
 #endif
 // Use this definition to set endpoint 3 as a touchscreen device,or an absolute mouse device
 #define EP3_USE_STYLUS
-/* USB Audio Class (UAC) support — controlled by the build system.
- * Default: enabled (ENABLE_UAC is defined via CFLAGS when ENABLE_UAC=1).
- * To build without UAC (HID-only, frees EP5+EP6):  make ENABLE_UAC=0
- * In MounRiver Studio: add -DENABLE_UAC to project compiler flags. */
-#ifndef ENABLE_UAC
+/* USB Audio Class (UAC) support is derived from USB_WORK_MODE.
+ * Mode 1 omits UAC. Mode 2 keeps the existing target/host UAC bridge. */
+#if defined(ENABLE_UAC) && !USB_WORK_MODE_HAS_TARGET_UAC
+#error ENABLE_UAC conflicts with the selected USB_WORK_MODE.
+#endif
+#if USB_WORK_MODE_HAS_TARGET_UAC
 #define ENABLE_UAC
 #endif
 

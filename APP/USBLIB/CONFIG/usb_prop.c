@@ -20,6 +20,7 @@
 #include "ch32v20x_usb.h"
 #include "../../include/uac_desc.h"
 #include "../../include/uac_handler.h"
+#include "../../include/acm_bridge.h"
 
 uint8_t Request = 0;
 
@@ -154,7 +155,9 @@ void USBD_Status_In(void)
     {
         if (Request_No == CDC_SET_LINE_CODING)
         {
+#if !USB_WORK_MODE_BRIDGE_ACM
             UART2_USB_Init();
+#endif
         }
     }
 }
@@ -291,6 +294,7 @@ void USBD_Reset(void)
   _ClearDTOG_TX(ENDP1);
   _ClearDTOG_RX(ENDP1);
 
+#ifdef ENABLE_UAC
   SetEPType(ENDP2, EP_ISOCHRONOUS);
   SetEPDoubleBuff(ENDP2);
   SetEPTxStatus(ENDP2, EP_TX_DIS);
@@ -299,6 +303,7 @@ void USBD_Reset(void)
   SetEPRxStatus(ENDP2, EP_RX_DIS);
   _ClearDTOG_RX(ENDP2);
   _ClearDTOG_TX(ENDP2);
+#endif
 
   SetEPType(ENDP3, EP_BULK);
   SetEPTxStatus(ENDP3, EP_TX_NAK);
@@ -318,22 +323,25 @@ void USBD_Reset(void)
   SetEPTxStatus(ENDP4, EP_TX_DIS);
   SetEPRxStatus(ENDP4, EP_RX_DIS);
 
-  SetEPType(ENDP5, EP_BULK);
-  SetEPRxAddr(ENDP5, ENDP5_BULK_RXADDR);
-  SetEPRxCount(ENDP5, 16);
-  _ClearDTOG_RX(ENDP5);
-  _ClearDTOG_TX(ENDP5);
-  SetEPRxStatus(ENDP5, EP_RX_VALID);
-  SetEPTxStatus(ENDP5, EP_TX_DIS);
-
   /* Clear UAC bridge buffers and state flags so stale audio data from a
    * previous session cannot be forwarded after re-enumeration.          */
   UAC_Init();
 #endif /* ENABLE_UAC */
 
+  SetEPType(ENDP5, EP_BULK);
+  SetEPRxAddr(ENDP5, ENDP5_BULK_RXADDR);
+  SetEPRxCount(ENDP5, DEF_USBD_MAX_PACK_SIZE);
+  _ClearDTOG_RX(ENDP5);
+  _ClearDTOG_TX(ENDP5);
+  SetEPRxStatus(ENDP5, EP_RX_VALID);
+  SetEPTxStatus(ENDP5, EP_TX_DIS);
+
   SetDeviceAddress(0);
 
   USBD_Endp3_Busy = 0;
+#if USB_WORK_MODE_BRIDGE_ACM
+  ACM_Bridge_Init();
+#endif
 
   bDeviceState = ATTACHED;
 }
@@ -569,8 +577,14 @@ RESULT USBD_NoData_Setup(uint8_t RequestNo)
   if (Type_Recipient == (CLASS_REQUEST | INTERFACE_RECIPIENT))
   {
     /* CDC-ACM control signals */
-    if (Request_No == CDC_SET_LINE_CTLSTE || Request_No == CDC_SEND_BREAK)
+    if (Request_No == CDC_SET_LINE_CTLSTE)
+    {
       return USB_SUCCESS;
+    }
+    if (Request_No == CDC_SEND_BREAK)
+    {
+      return USB_SUCCESS;
+    }
     return USB_UNSUPPORT;
   }             
   return USB_SUCCESS;
