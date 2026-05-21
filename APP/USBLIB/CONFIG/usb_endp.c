@@ -21,10 +21,38 @@
 #include "../../include/uac_handler.h"
 #include "../../include/acm_bridge.h"
 #include "../../include/ecm_bridge.h"
+#include "../../include/usb_mode_config.h"
+#include "../../include/usbd_composite_km.h"
 
 uint8_t USBD_Endp1_Busy;
 uint8_t USBD_Endp3_Busy;
 uint16_t USB_Rx_Cnt=0; 
+
+#if USB_WORK_MODE_COMPILES_HOST_CDC_ACM
+static uint8_t USBD_IsCh9329ModeCommandFrame(const uint8_t *buf, uint16_t len)
+{
+    uint16_t frame_len;
+    uint8_t sum = 0;
+    uint16_t i;
+
+    if (buf == 0 || len < 6) {
+        return 0;
+    }
+    if (buf[0] != CH9329_FRAME_HEAD1 || buf[1] != CH9329_FRAME_HEAD2 || buf[3] != CMD_USB_WORK_MODE) {
+        return 0;
+    }
+
+    frame_len = (uint16_t)(6u + buf[4]);
+    if (len < frame_len) {
+        return 0;
+    }
+
+    for (i = 0; i < (uint16_t)(frame_len - 1u); i++) {
+        sum = (uint8_t)(sum + buf[i]);
+    }
+    return (sum == buf[frame_len - 1u]) ? 1u : 0u;
+}
+#endif
 
 /*********************************************************************
  * @fn      EP2_IN_Callback
@@ -120,7 +148,7 @@ void EP4_OUT_Callback(void)
 
 void EP5_OUT_Callback(void)
 {
-#if USB_WORK_MODE_BRIDGE_ACM
+#if USB_WORK_MODE_COMPILES_BRIDGE_ACM || USB_WORK_MODE_COMPILES_BRIDGE_ECM
 	uint8_t buf[DEF_USBD_MAX_PACK_SIZE];
 	uint32_t len;
     len = GetEPRxCount( ENDP5 );
@@ -129,19 +157,23 @@ void EP5_OUT_Callback(void)
         len = DEF_USBD_MAX_PACK_SIZE;
     }
     PMAToUserBufferCopy( buf, GetEPRxAddr( ENDP5 ), len );
-    ACM_Bridge_HostRxDone( buf, (uint16_t)len );
-    SetEPRxCount( ENDP5, DEF_USBD_MAX_PACK_SIZE );
-    SetEPRxValid( ENDP5 );
-#elif USB_WORK_MODE_BRIDGE_ECM
-    uint8_t buf[DEF_USBD_MAX_PACK_SIZE];
-    uint32_t len;
-    len = GetEPRxCount( ENDP5 );
-    if( len > DEF_USBD_MAX_PACK_SIZE )
+    if (USB_ModeConfig_ActiveModeBridgeAcm())
     {
-        len = DEF_USBD_MAX_PACK_SIZE;
+        if (USBD_IsCh9329ModeCommandFrame( buf, (uint16_t)len )) {
+            CH9329_RxBuffer_Add( buf, (uint16_t)len );
+        }
+        else {
+            ACM_Bridge_HostRxDone( buf, (uint16_t)len );
+        }
     }
-    PMAToUserBufferCopy( buf, GetEPRxAddr( ENDP5 ), len );
-    ECM_Bridge_HostRxDone( buf, (uint16_t)len );
+    else if (USB_ModeConfig_ActiveModeBridgeEcm())
+    {
+        ECM_Bridge_HostRxDone( buf, (uint16_t)len );
+    }
+    else if (USB_ModeConfig_ActiveModeHasHostCdcAcm())
+    {
+        CH9329_RxBuffer_Add( buf, (uint16_t)len );
+    }
     SetEPRxCount( ENDP5, DEF_USBD_MAX_PACK_SIZE );
     SetEPRxValid( ENDP5 );
 #else

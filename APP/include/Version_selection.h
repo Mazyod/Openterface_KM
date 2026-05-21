@@ -16,10 +16,10 @@
 #define EP3_USE_STYLUS
 /* USB Audio Class (UAC) support is derived from USB_WORK_MODE.
  * Mode 1 omits UAC. Mode 2 keeps the existing target/host UAC bridge. */
-#if defined(ENABLE_UAC) && !USB_WORK_MODE_HAS_TARGET_UAC
+#if defined(ENABLE_UAC) && !USB_WORK_MODE_COMPILES_TARGET_UAC
 #error ENABLE_UAC conflicts with the selected USB_WORK_MODE.
 #endif
-#if USB_WORK_MODE_HAS_TARGET_UAC
+#if USB_WORK_MODE_COMPILES_TARGET_UAC
 #define ENABLE_UAC
 #endif
 

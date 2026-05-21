@@ -24,6 +24,7 @@
 #include "gattprofile.h"
 #include "peripheral.h"
 #include "ble_usb_service.h"
+#include "usbd_composite_km.h"
 
 /*********************************************************************
  * MACROS
@@ -139,6 +140,30 @@ static void peripheralRssiCB(uint16_t connHandle, int8_t rssi);
 static void peripheralChar4Notify(uint8_t *pValue, uint16_t len);
 void        ble_usb_ServiceEvt(uint16_t connection_handle, ble_usb_evt_t *p_evt);
 int         RingMem_Protection(uint8_t enable);
+
+static uint8_t Peripheral_IsCh9329ModeCommandFrame(const uint8_t *buf, uint16_t len)
+{
+    uint16_t frame_len;
+    uint8_t sum = 0;
+    uint16_t index;
+
+    if (buf == NULL || len < 6) {
+        return 0;
+    }
+    if (buf[0] != CH9329_FRAME_HEAD1 || buf[1] != CH9329_FRAME_HEAD2 || buf[3] != CMD_USB_WORK_MODE) {
+        return 0;
+    }
+
+    frame_len = (uint16_t)(6u + buf[4]);
+    if (len < frame_len) {
+        return 0;
+    }
+
+    for (index = 0; index < (uint16_t)(frame_len - 1u); index++) {
+        sum = (uint8_t)(sum + buf[index]);
+    }
+    return (sum == buf[frame_len - 1u]) ? 1u : 0u;
+}
 
 /*********************************************************************
  * PROFILE CALLBACKS
@@ -808,11 +833,18 @@ void ble_usb_ServiceEvt(uint16_t connection_handle, ble_usb_evt_t *p_evt)
         case BLE_USB_EVT_BLE_DATA_RECIEVED:
             PRINT("BLE RX DATA len:%d\r\n", p_evt->data.length);
 
-            if(RingMemWrite(&RingMemBLE, (uint8_t *)p_evt->data.p_data, p_evt->data.length) != SUCCESS)
+            if(Peripheral_IsCh9329ModeCommandFrame(p_evt->data.p_data, p_evt->data.length))
+            {
+                CH9329_RxBuffer_Add((uint8_t *)p_evt->data.p_data, p_evt->data.length);
+            }
+            else if(RingMemWrite(&RingMemBLE, (uint8_t *)p_evt->data.p_data, p_evt->data.length) != SUCCESS)
             {
                 PRINT("RingMemBLE ERR \n");
             }
-            tmos_set_event(Peripheral_TaskID, SBP_PROCESS_BLEDATA_EVT);
+            else
+            {
+                tmos_set_event(Peripheral_TaskID, SBP_PROCESS_BLEDATA_EVT);
+            }
 
             break;
         default:

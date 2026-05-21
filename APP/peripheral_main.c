@@ -23,6 +23,7 @@
 #include "include/uac_handler.h"
 #include "include/acm_bridge.h"
 #include "include/ecm_bridge.h"
+#include "include/usb_mode_config.h"
 
 /*********************************************************************
  * GLOBAL TYPEDEFS
@@ -62,6 +63,7 @@ void Main_Circulation(void)
     {   
         //rgb_state
         RGB_Update();
+        USB_ModeConfig_Poll();
         //SDcard_state
         Update_SDcard();
         //Enable Bluetooth broadcasting
@@ -74,11 +76,12 @@ void Main_Circulation(void)
         USB_DataRx_To_KMHandle();
         //Keyboard and mouse control code sending loop
         USB_SendFromQueues();
-    #if USB_WORK_MODE_BRIDGE_ACM
-        ACM_Bridge_Poll();
-    #elif USB_WORK_MODE_BRIDGE_ECM
-        ECM_Bridge_Poll();
-    #endif
+        if (USB_ModeConfig_ActiveModeBridgeAcm()) {
+            ACM_Bridge_Poll();
+        }
+        else if (USB_ModeConfig_ActiveModeBridgeEcm()) {
+            ECM_Bridge_Poll();
+        }
 
 
         //Different devices have different control pin
@@ -105,6 +108,7 @@ int main(void) {
     NVIC_PriorityGroupConfig(NVIC_PriorityGroup_1);
     SystemCoreClockUpdate();
     Delay_Init();
+    USB_ModeConfig_Init();
     //usbd_init
     USART_Printf_Init(115200);
     Set_USBConfig();

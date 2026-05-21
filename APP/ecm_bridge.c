@@ -1,13 +1,14 @@
 #include "include/ecm_bridge.h"
 #include "include/Version_selection.h"
 
-#if USB_WORK_MODE_BRIDGE_ECM
+#if USB_WORK_MODE_COMPILES_BRIDGE_ECM
 
 #include "ch32v20x_usbfs_device.h"
 #include "usb_lib.h"
 #include "usb_conf.h"
 #include "usb_desc.h"
 #include "usb_prop.h"
+#include "include/usbd_composite_km.h"
 #include <string.h>
 
 #define ECM_BRIDGE_MTU_FRAME_SIZE       1514u
@@ -17,6 +18,14 @@
 #define ECM_BRIDGE_TARGET_COMM_IF       4u
 #define ECM_BRIDGE_HOST_COMM_IF         0u
 #define ECM_BRIDGE_LINK_SPEED_BPS       12000000u
+#define ECM_ETH_TYPE_IPV4               0x0800u
+#define ECM_ETH_TYPE_VLAN               0x8100u
+#define ECM_ETH_TYPE_QINQ               0x88A8u
+#define ECM_IPV4_PROTO_TCP              0x06u
+#define ECM_ETH_HEADER_LEN              14u
+#define ECM_IPV4_MIN_HEADER_LEN         20u
+#define ECM_TCP_MIN_HEADER_LEN          20u
+#define ECM_CH9329_MIN_FRAME_LEN        6u
 
 typedef struct {
     uint8_t data[ECM_BRIDGE_MTU_FRAME_SIZE];
@@ -38,6 +47,8 @@ typedef struct {
     volatile uint32_t overflow;
 } ECM_RxFrame_t;
 
+typedef uint8_t (*ECM_FrameHandler_t)(const uint8_t *data, uint16_t len);
+
 static ECM_FrameQueue_t g_host_to_target;
 static ECM_FrameQueue_t g_target_to_host;
 static ECM_RxFrame_t g_host_rx_frame;
@@ -51,6 +62,143 @@ static uint8_t g_host_notify_state;
 
 extern uint8_t USBD_Endp1_Busy;
 extern uint8_t USBD_Endp3_Busy;
+
+static uint16_t get_be16(const uint8_t *data)
+{
+    return (uint16_t)(((uint16_t)data[0] << 8) | data[1]);
+}
+
+static uint8_t ch9329_frame_valid(const uint8_t *data, uint16_t len, uint16_t *frame_len)
+{
+    uint16_t total_len;
+    uint16_t index;
+    uint8_t checksum = 0;
+
+    if (data == 0 || len < ECM_CH9329_MIN_FRAME_LEN) {
+        return 0;
+    }
+    if (data[0] != CH9329_FRAME_HEAD1 || data[1] != CH9329_FRAME_HEAD2) {
+        return 0;
+    }
+
+    total_len = (uint16_t)(ECM_CH9329_MIN_FRAME_LEN + data[4]);
+    if (len < total_len) {
+        return 0;
+    }
+
+    for (index = 0; index < (uint16_t)(total_len - 1u); index++) {
+        checksum = (uint8_t)(checksum + data[index]);
+    }
+    if (checksum != data[total_len - 1u]) {
+        return 0;
+    }
+
+    if (frame_len != 0) {
+        *frame_len = total_len;
+    }
+    return 1;
+}
+
+static uint8_t ch9329_payload_valid(const uint8_t *payload, uint16_t payload_len)
+{
+    uint16_t offset = 0;
+    uint16_t frame_len;
+
+    if (payload_len < ECM_CH9329_MIN_FRAME_LEN) {
+        return 0;
+    }
+
+    while (offset < payload_len) {
+        if (!ch9329_frame_valid(&payload[offset], (uint16_t)(payload_len - offset), &frame_len)) {
+            return 0;
+        }
+        offset = (uint16_t)(offset + frame_len);
+    }
+
+    return 1;
+}
+
+static uint8_t tcp_payload_from_ipv4_frame(const uint8_t *frame,
+                                           uint16_t frame_len,
+                                           const uint8_t **payload,
+                                           uint16_t *payload_len)
+{
+    uint16_t eth_offset;
+    uint16_t eth_type;
+    const uint8_t *ip;
+    const uint8_t *tcp;
+    uint16_t ip_total_len;
+    uint16_t ip_header_len;
+    uint16_t tcp_segment_len;
+    uint16_t tcp_header_len;
+    uint16_t fragment;
+
+    if (frame == 0 || payload == 0 || payload_len == 0 || frame_len < ECM_ETH_HEADER_LEN) {
+        return 0;
+    }
+
+    eth_offset = ECM_ETH_HEADER_LEN;
+    eth_type = get_be16(&frame[12]);
+    while ((eth_type == ECM_ETH_TYPE_VLAN || eth_type == ECM_ETH_TYPE_QINQ) &&
+           frame_len >= (uint16_t)(eth_offset + 4u)) {
+        eth_type = get_be16(&frame[eth_offset + 2u]);
+        eth_offset = (uint16_t)(eth_offset + 4u);
+    }
+
+    if (eth_type != ECM_ETH_TYPE_IPV4 ||
+        frame_len < (uint16_t)(eth_offset + ECM_IPV4_MIN_HEADER_LEN)) {
+        return 0;
+    }
+
+    ip = &frame[eth_offset];
+    if ((ip[0] >> 4) != 4u) {
+        return 0;
+    }
+
+    ip_header_len = (uint16_t)((ip[0] & 0x0Fu) * 4u);
+    if (ip_header_len < ECM_IPV4_MIN_HEADER_LEN ||
+        frame_len < (uint16_t)(eth_offset + ip_header_len)) {
+        return 0;
+    }
+
+    ip_total_len = get_be16(&ip[2]);
+    if (ip_total_len < (uint16_t)(ip_header_len + ECM_TCP_MIN_HEADER_LEN) ||
+        frame_len < (uint16_t)(eth_offset + ip_total_len)) {
+        return 0;
+    }
+
+    fragment = get_be16(&ip[6]);
+    if ((fragment & 0x3FFFu) != 0u || ip[9] != ECM_IPV4_PROTO_TCP) {
+        return 0;
+    }
+
+    tcp = &ip[ip_header_len];
+    tcp_segment_len = (uint16_t)(ip_total_len - ip_header_len);
+    tcp_header_len = (uint16_t)((tcp[12] >> 4) * 4u);
+    if (tcp_header_len < ECM_TCP_MIN_HEADER_LEN || tcp_header_len > tcp_segment_len) {
+        return 0;
+    }
+
+    *payload = &tcp[tcp_header_len];
+    *payload_len = (uint16_t)(tcp_segment_len - tcp_header_len);
+    return (*payload_len > 0u) ? 1u : 0u;
+}
+
+static uint8_t handle_host_control_frame(const uint8_t *frame, uint16_t frame_len)
+{
+    const uint8_t *payload;
+    uint16_t payload_len;
+
+    if (!tcp_payload_from_ipv4_frame(frame, frame_len, &payload, &payload_len)) {
+        return 0;
+    }
+    if (!ch9329_payload_valid(payload, payload_len)) {
+        return 0;
+    }
+
+    CH9329_RxBuffer_Add((uint8_t *)payload, payload_len);
+    return 1;
+}
 
 static void queue_clear(ECM_FrameQueue_t *queue)
 {
@@ -111,7 +259,8 @@ static void rx_frame_append(ECM_RxFrame_t *frame,
                             ECM_FrameQueue_t *queue,
                             const uint8_t *data,
                             uint16_t len,
-                            uint16_t max_packet)
+                            uint16_t max_packet,
+                            ECM_FrameHandler_t frame_handler)
 {
     uint8_t end_of_frame = (len < max_packet) ? 1u : 0u;
 
@@ -128,7 +277,9 @@ static void rx_frame_append(ECM_RxFrame_t *frame,
 
     if (end_of_frame) {
         if (!frame->drop && frame->len > 0) {
-            (void)queue_push(queue, frame->data, frame->len);
+            if (frame_handler == 0 || !frame_handler(frame->data, frame->len)) {
+                (void)queue_push(queue, frame->data, frame->len);
+            }
         }
         frame->len = 0;
         frame->drop = 0;
@@ -309,12 +460,14 @@ void ECM_Bridge_Init(void)
 
 void ECM_Bridge_HostRxDone(const uint8_t *data, uint16_t len)
 {
-    rx_frame_append(&g_host_rx_frame, &g_host_to_target, data, len, ECM_BRIDGE_USBD_PACKET_SIZE);
+    rx_frame_append(&g_host_rx_frame, &g_host_to_target, data, len,
+                    ECM_BRIDGE_USBD_PACKET_SIZE, handle_host_control_frame);
 }
 
 void ECM_Bridge_TargetRxDone(const uint8_t *data, uint16_t len)
 {
-    rx_frame_append(&g_target_rx_frame, &g_target_to_host, data, len, ECM_BRIDGE_USBFS_PACKET_SIZE);
+    rx_frame_append(&g_target_rx_frame, &g_target_to_host, data, len,
+                    ECM_BRIDGE_USBFS_PACKET_SIZE, 0);
 }
 
 void ECM_Bridge_Poll(void)
@@ -325,4 +478,4 @@ void ECM_Bridge_Poll(void)
     poll_host_tx();
 }
 
-#endif /* USB_WORK_MODE_BRIDGE_ECM */
+#endif /* USB_WORK_MODE_COMPILES_BRIDGE_ECM */

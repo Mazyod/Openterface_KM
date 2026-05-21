@@ -90,6 +90,8 @@ The firmware supports multiple input modes for mouse emulation:
 
 This firmware implements the **CH9329 communication protocol**, which is compatible with the WCH CH9329 chipset used in the original Openterface MiniKVM. By emulating the CH9329 protocol, this firmware provides backward compatibility with the software of first generation MiniKVM, allowing seamless operation with the same command structure and interface that the original CH9329 hardware provided.
 
+For an implementation-level summary of the frame format, command map, status codes, and project-specific extensions, see [docs/ch9329-communication-protocol-summary.md](docs/ch9329-communication-protocol-summary.md).
+
 **Key Benefits**:
 - Full backward compatibility with original Openterface MiniKVM systems
 - Standardized command structure for keyboard and mouse control

@@ -3,6 +3,7 @@
 #include "usb_lib.h"
 #include "usb_desc.h"
 #include "usb_prop.h"
+#include "usb_mode_config.h"
 
 #include <string.h>
 
@@ -127,6 +128,11 @@ void USB_SendFromQueues(void) {
         if (USBFS_Endp_DataUp(DEF_UEP4, pkt->data, send_len, DEF_UEP_CPY_LOAD) == READY)
             media_queue.head = (media_queue.head + 1) % MEDIA_QUEUE_SIZE;
         else break;
+    }
+
+    if (USB_ModeConfig_ActiveModeHasHostCdcEcm()) {
+        resp_queue.head = resp_queue.tail;
+        return;
     }
 
     while (resp_queue.head != resp_queue.tail) {

@@ -69,7 +69,7 @@
 #define DEF_USBD_CONFIG_DESC_LEN   ( (uint16_t)MyCfgDescr[ 2 ] + ( (uint16_t)MyCfgDescr[ 3 ] << 8 ) )
 #define DEF_USBD_REPORT_DESC_LEN_KB       0x3E
 #define DEF_USBD_REPORT_DESC_LEN_REL_MS   0x34
-#define DEF_USBD_REPORT_DESC_LEN_MEDIA    0x76  /* 118 bytes: ACPI (ReportID=1) + Consumer Control (ReportID=2) */
+#define DEF_USBD_REPORT_DESC_LEN_MEDIA    0x8D  /* ACPI + Consumer Control + vendor Feature ReportID=0x30 */
 
 /* EP3 report descriptor length — automatically follows EP3_USE_STYLUS */
 #ifdef EP3_USE_STYLUS
@@ -102,5 +102,7 @@ extern const uint8_t MyManuInfo[ ];
 extern const uint8_t MyProdInfo[ ];
 extern const uint8_t MySerNumInfo[ ];
 extern const uint8_t MyEcmMacInfo[ ];
+const uint8_t *USBFS_GetActiveConfigDescriptorData(uint16_t *len);
+uint8_t USBFS_GetActiveConfigAttributes(void);
 
 #endif

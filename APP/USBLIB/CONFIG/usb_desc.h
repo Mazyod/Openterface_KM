@@ -31,7 +31,7 @@
 #define DEF_USBD_MAX_PACK_SIZE      16
        
 #define USBD_SIZE_DEVICE_DESC        18
-#ifdef ENABLE_UAC
+#if USB_WORK_MODE_HAS_HOST_UAC
 /* 9(cfg) + 66(CDC-ACM) + 173(UAC) = 248 */
 #define USBD_SIZE_CONFIG_DESC        248
 #elif USB_WORK_MODE_HAS_HOST_CDC_ECM
@@ -60,6 +60,8 @@ extern const uint8_t USBD_StringAudioFunction[USBD_SIZE_STRING_AUDIO_FUNC];
 extern const uint8_t USBD_StringSpeaker[USBD_SIZE_STRING_SPEAKER];
 extern const uint8_t USBD_StringMicrophone[USBD_SIZE_STRING_MICROPHONE];
 extern const uint8_t USBD_StringEcmMac[USBD_SIZE_STRING_ECM_MAC];
+const uint8_t *USBD_GetActiveConfigDescriptorData(uint16_t *len);
+uint8_t USBD_GetActiveConfigAttributes(void);
 
 #ifdef __cplusplus
 }

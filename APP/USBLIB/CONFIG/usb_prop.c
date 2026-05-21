@@ -22,10 +22,11 @@
 #include "../../include/uac_handler.h"
 #include "../../include/acm_bridge.h"
 #include "../../include/ecm_bridge.h"
+#include "../../include/usb_mode_config.h"
 
 uint8_t Request = 0;
 
-#if USB_WORK_MODE_HAS_HOST_CDC_ECM
+#if USB_WORK_MODE_COMPILES_HOST_CDC_ECM
 #define USBD_CDC_ECM_REQ_SET_MC_FILTERS  0x40u
 #define USBD_CDC_ECM_REQ_SET_PM_PATTERN  0x41u
 #define USBD_CDC_ECM_REQ_GET_PM_PATTERN  0x42u
@@ -92,7 +93,7 @@ ONE_DESCRIPTOR String_Descriptor[] =
 	{(uint8_t*)USBD_StringVendor,  USBD_SIZE_STRING_VENDOR},
 	{(uint8_t*)USBD_StringProduct, USBD_SIZE_STRING_PRODUCT},
   {(uint8_t*)USBD_StringSerial,  USBD_SIZE_STRING_SERIAL},
-#if USB_WORK_MODE_HAS_HOST_CDC_ECM
+#if USB_WORK_MODE_COMPILES_HOST_CDC_ECM
   {(uint8_t*)USBD_StringEcmMac,  USBD_SIZE_STRING_ECM_MAC},
 #endif
 };
@@ -171,9 +172,10 @@ void USBD_Status_In(void)
     {
         if (Request_No == CDC_SET_LINE_CODING)
         {
-#if !USB_WORK_MODE_BRIDGE_ACM
+            if (!USB_ModeConfig_ActiveModeBridgeAcm())
+            {
             UART2_USB_Init();
-#endif
+            }
         }
     }
 }
@@ -232,7 +234,7 @@ void USBD_SetInterface_Impl(void)
 #ifdef ENABLE_UAC
     /* IF3 = AudioStreaming IN (EP4 ISO IN, 0x84 �?Target mic �?Host PC)
      * Host opens this interface to receive microphone audio.           */
-    if (iface == 3)
+  if (USB_ModeConfig_ActiveModeHasHostUac() && iface == 3)
     {
         if (alt == 1)
         {
@@ -258,7 +260,7 @@ void USBD_SetInterface_Impl(void)
     }
     /* IF4 = AudioStreaming OUT (EP2 ISO OUT, 0x02 �?Host PC �?Target spk)
      * Host opens this interface to send playback audio.               */
-    else if (iface == 4)
+    else if (USB_ModeConfig_ActiveModeHasHostUac() && iface == 4)
     {
         if (alt == 1)
         {
@@ -288,7 +290,7 @@ void USBD_SetInterface_Impl(void)
 void USBD_Reset(void)
 {
   pInformation->Current_Configuration = 0;
-  pInformation->Current_Feature = USBD_ConfigDescriptor[7];
+  pInformation->Current_Feature = USBD_GetActiveConfigAttributes();
   pInformation->Current_Interface = 0;
 
   SetBTABLE(BTABLE_ADDRESS);
@@ -311,14 +313,17 @@ void USBD_Reset(void)
   _ClearDTOG_RX(ENDP1);
 
 #ifdef ENABLE_UAC
-  SetEPType(ENDP2, EP_ISOCHRONOUS);
-  SetEPDoubleBuff(ENDP2);
-  SetEPTxStatus(ENDP2, EP_TX_DIS);
-  SetEPDblBuffAddr(ENDP2, ENDP2_ISO_RXADDR, ENDP2_ISO_RXADDR1);
-  SetEPDblBuffCount(ENDP2, EP_DBUF_OUT, 64);
-  SetEPRxStatus(ENDP2, EP_RX_DIS);
-  _ClearDTOG_RX(ENDP2);
-  _ClearDTOG_TX(ENDP2);
+  if (USB_ModeConfig_ActiveModeHasHostUac())
+  {
+    SetEPType(ENDP2, EP_ISOCHRONOUS);
+    SetEPDoubleBuff(ENDP2);
+    SetEPTxStatus(ENDP2, EP_TX_DIS);
+    SetEPDblBuffAddr(ENDP2, ENDP2_ISO_RXADDR, ENDP2_ISO_RXADDR1);
+    SetEPDblBuffCount(ENDP2, EP_DBUF_OUT, 64);
+    SetEPRxStatus(ENDP2, EP_RX_DIS);
+    _ClearDTOG_RX(ENDP2);
+    _ClearDTOG_TX(ENDP2);
+  }
 #endif
 
   SetEPType(ENDP3, EP_BULK);
@@ -329,19 +334,22 @@ void USBD_Reset(void)
   _ClearDTOG_RX(ENDP3);
 
 #ifdef ENABLE_UAC
-  /* EP4: UAC ISO IN (Host audio → Target PC), double-buffered 64 B, disabled until alt=1 */
-  SetEPType(ENDP4, EP_ISOCHRONOUS);
-  SetEPDoubleBuff(ENDP4);
-  SetEPDblBuffAddr(ENDP4, ENDP4_ISO_TXADDR, ENDP4_ISO_TXADDR1);
-  SetEPDblBuffCount(ENDP4, EP_DBUF_IN, 64);
-  _ClearDTOG_RX(ENDP4);
-  _ClearDTOG_TX(ENDP4);
-  SetEPTxStatus(ENDP4, EP_TX_DIS);
-  SetEPRxStatus(ENDP4, EP_RX_DIS);
+  if (USB_ModeConfig_ActiveModeHasHostUac())
+  {
+    /* EP4: UAC ISO IN (Host audio → Target PC), double-buffered 64 B, disabled until alt=1 */
+    SetEPType(ENDP4, EP_ISOCHRONOUS);
+    SetEPDoubleBuff(ENDP4);
+    SetEPDblBuffAddr(ENDP4, ENDP4_ISO_TXADDR, ENDP4_ISO_TXADDR1);
+    SetEPDblBuffCount(ENDP4, EP_DBUF_IN, 64);
+    _ClearDTOG_RX(ENDP4);
+    _ClearDTOG_TX(ENDP4);
+    SetEPTxStatus(ENDP4, EP_TX_DIS);
+    SetEPRxStatus(ENDP4, EP_RX_DIS);
 
-  /* Clear UAC bridge buffers and state flags so stale audio data from a
-   * previous session cannot be forwarded after re-enumeration.          */
-  UAC_Init();
+    /* Clear UAC bridge buffers and state flags so stale audio data from a
+     * previous session cannot be forwarded after re-enumeration.          */
+    UAC_Init();
+  }
 #endif /* ENABLE_UAC */
 
   SetEPType(ENDP5, EP_BULK);
@@ -356,11 +364,14 @@ void USBD_Reset(void)
 
   USBD_Endp3_Busy = 0;
   USBD_Endp1_Busy = 0;
-#if USB_WORK_MODE_BRIDGE_ACM
-  ACM_Bridge_Init();
-#elif USB_WORK_MODE_BRIDGE_ECM
-  ECM_Bridge_Init();
-#endif
+  if (USB_ModeConfig_ActiveModeBridgeAcm())
+  {
+    ACM_Bridge_Init();
+  }
+  else if (USB_ModeConfig_ActiveModeBridgeEcm())
+  {
+    ECM_Bridge_Init();
+  }
 
   bDeviceState = ATTACHED;
 }
@@ -390,6 +401,9 @@ uint8_t *USBD_GetDeviceDescriptor(uint16_t Length)
  */
 uint8_t *USBD_GetConfigDescriptor(uint16_t Length)
 {
+  uint16_t config_len;
+  Config_Descriptor.Descriptor = (uint8_t *)USBD_GetActiveConfigDescriptorData(&config_len);
+  Config_Descriptor.Descriptor_Size = config_len;
   return Standard_GetDescriptorData(Length, &Config_Descriptor);
 }
 
@@ -428,7 +442,46 @@ uint8_t *USBD_GetStringDescriptor(uint16_t Length)
  */
 RESULT USBD_Get_Interface_Setting(uint8_t Interface, uint8_t AlternateSetting)
 {
-#if USB_WORK_MODE_HAS_HOST_CDC_ECM
+#if USB_WORK_MODE_RUNTIME_PROFILES
+  if (USB_ModeConfig_ActiveModeHasHostCdcEcm())
+  {
+    if (Interface == 0)
+    {
+      if (AlternateSetting > 0)
+        return USB_UNSUPPORT;
+    }
+    else if (Interface == 1)
+    {
+      if (AlternateSetting > 1)
+        return USB_UNSUPPORT;
+    }
+    else
+    {
+      return USB_UNSUPPORT;
+    }
+  }
+  else if (USB_ModeConfig_ActiveModeHasHostUac())
+  {
+    if (Interface <= 2)
+    {
+      if (AlternateSetting > 0)
+        return USB_UNSUPPORT;
+    }
+    else if (Interface <= 4)
+    {
+      if (AlternateSetting > 1)
+        return USB_UNSUPPORT;
+    }
+    else
+    {
+      return USB_UNSUPPORT;
+    }
+  }
+  else if (Interface > 1 || AlternateSetting > 0)
+  {
+    return USB_UNSUPPORT;
+  }
+#elif USB_WORK_MODE_HAS_HOST_CDC_ECM
   if (Interface == 0)
   {
     if (AlternateSetting > 0)
@@ -531,7 +584,7 @@ static uint8_t *UAC_GetSamFreq(uint16_t Length)
     return uac_sam_freq;
 }
 
-#if USB_WORK_MODE_HAS_HOST_CDC_ECM
+#if USB_WORK_MODE_COMPILES_HOST_CDC_ECM
 static uint8_t *USBD_CDC_ECM_GetStat(uint16_t Length)
 {
   if (Length == 0)
@@ -578,20 +631,20 @@ RESULT USBD_Data_Setup(uint8_t RequestNo)
   }
   else if (Type_Recipient == (CLASS_REQUEST | INTERFACE_RECIPIENT))
   {
-#if USB_WORK_MODE_HAS_HOST_CDC_ECM
-    if (Request_No == USBD_CDC_ECM_REQ_GET_STATISTIC || Request_No == USBD_CDC_ECM_REQ_GET_PM_PATTERN)
+#if USB_WORK_MODE_COMPILES_HOST_CDC_ECM
+  if (USB_ModeConfig_ActiveModeHasHostCdcEcm() &&
+    (Request_No == USBD_CDC_ECM_REQ_GET_STATISTIC || Request_No == USBD_CDC_ECM_REQ_GET_PM_PATTERN))
     {
       CopyRoutine = &USBD_CDC_ECM_GetStat;
     }
-    else if (Request_No == USBD_CDC_ECM_REQ_SET_MC_FILTERS || Request_No == USBD_CDC_ECM_REQ_SET_PM_PATTERN)
+    else if (USB_ModeConfig_ActiveModeHasHostCdcEcm() &&
+         (Request_No == USBD_CDC_ECM_REQ_SET_MC_FILTERS || Request_No == USBD_CDC_ECM_REQ_SET_PM_PATTERN))
     {
       CopyRoutine = &USBD_CDC_ECM_SetCtrl;
     }
-    else
+    else if (!USB_ModeConfig_ActiveModeHasHostCdcEcm())
+#endif
     {
-      return USB_UNSUPPORT;
-    }
-#else
     if (Request_No == CDC_GET_LINE_CODING)
     {
       CopyRoutine = &USB_CDC_GetLineCoding;
@@ -604,7 +657,7 @@ RESULT USBD_Data_Setup(uint8_t RequestNo)
     {
       return USB_UNSUPPORT;
     }
-#endif
+    }
   }
 #ifdef ENABLE_UAC
   /* UAC 1.0 class-to-endpoint requests: GET_CUR/SET_CUR for sampling frequency.
@@ -615,7 +668,8 @@ RESULT USBD_Data_Setup(uint8_t RequestNo)
   {
     uint8_t endpoint = pInformation->USBwIndex0;
     uint8_t control = pInformation->USBwValue1;
-    if ((control == 0x01) &&
+    if (USB_ModeConfig_ActiveModeHasHostUac() &&
+      (control == 0x01) &&
         (endpoint == UAC_USBD_EP_IN_ADDR || endpoint == UAC_USBD_EP_OUT_ADDR))
     {
       CopyRoutine = &UAC_GetSamFreq;
@@ -654,14 +708,17 @@ RESULT USBD_NoData_Setup(uint8_t RequestNo)
 
   if (Type_Recipient == (CLASS_REQUEST | INTERFACE_RECIPIENT))
   {
-#if USB_WORK_MODE_HAS_HOST_CDC_ECM
-    if (Request_No == USBD_CDC_ECM_REQ_SET_PACKET)
+#if USB_WORK_MODE_COMPILES_HOST_CDC_ECM
+    if (USB_ModeConfig_ActiveModeHasHostCdcEcm() && Request_No == USBD_CDC_ECM_REQ_SET_PACKET)
     {
       USBD_CDC_ECM_PacketFilter = pInformation->USBwValue;
       return USB_SUCCESS;
     }
-    return USB_UNSUPPORT;
-#else
+    if (USB_ModeConfig_ActiveModeHasHostCdcEcm())
+    {
+      return USB_UNSUPPORT;
+    }
+#endif
     /* CDC-ACM control signals */
     if (Request_No == CDC_SET_LINE_CTLSTE)
     {
@@ -672,7 +729,6 @@ RESULT USBD_NoData_Setup(uint8_t RequestNo)
       return USB_SUCCESS;
     }
     return USB_UNSUPPORT;
-#endif
   }             
   return USB_SUCCESS;
 }

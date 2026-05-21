@@ -22,6 +22,7 @@ C_SRCS += \
 ../APP/peripheral_main.c \
 ../APP/system_ch32v20x.c \
 ../APP/uac_handler.c \
+../APP/usb_mode_config.c \
 ../APP/usbd_compostie_km.c \
 ../APP/usbd_desc.c 
 
@@ -43,6 +44,7 @@ C_DEPS += \
 ./APP/peripheral_main.d \
 ./APP/system_ch32v20x.d \
 ./APP/uac_handler.d \
+./APP/usb_mode_config.d \
 ./APP/usbd_compostie_km.d \
 ./APP/usbd_desc.d
 
@@ -64,6 +66,7 @@ OBJS += \
 ./APP/peripheral_main.o \
 ./APP/system_ch32v20x.o \
 ./APP/uac_handler.o \
+./APP/usb_mode_config.o \
 ./APP/usbd_compostie_km.o \
 ./APP/usbd_desc.o
 

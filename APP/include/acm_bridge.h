@@ -8,7 +8,7 @@
 extern "C" {
 #endif
 
-#if USB_WORK_MODE_BRIDGE_ACM
+#if USB_WORK_MODE_COMPILES_BRIDGE_ACM
 void ACM_Bridge_Init(void);
 void ACM_Bridge_HostRxDone(const uint8_t *data, uint16_t len);
 void ACM_Bridge_TargetRxDone(const uint8_t *data, uint16_t len);

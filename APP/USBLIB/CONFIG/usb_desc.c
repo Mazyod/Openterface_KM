@@ -11,6 +11,8 @@
 #include "usb_desc.h"
 #include "../../include/Version_selection.h"
 #include "../../include/uac_desc.h"
+#include "../../include/usb_mode_config.h"
+#include <string.h>
 
 /* USB Device Descriptors */
 const uint8_t  USBD_DeviceDescriptor[] = { 
@@ -38,7 +40,7 @@ const uint8_t  USBD_ConfigDescriptor[] = {
     USBD_SIZE_CONFIG_DESC & 0xFF, USBD_SIZE_CONFIG_DESC >> 8, // wTotalLength
 #if USB_WORK_MODE_HAS_HOST_CDC_ECM
     0x02,                           // bNumInterfaces: CDC-ECM only
-#elif defined(ENABLE_UAC)
+#elif USB_WORK_MODE_HAS_HOST_UAC
     0x05,                           // bNumInterfaces: ACM(2) + UAC(3) = 5
 #else
     0x02,                           // bNumInterfaces: CDC-ACM only
@@ -189,7 +191,7 @@ const uint8_t  USBD_ConfigDescriptor[] = {
     0x00,                           // bInterval
 #endif
 
-    #ifdef ENABLE_UAC
+    #if USB_WORK_MODE_HAS_HOST_UAC
     /* ====== UAC 1.0 — USBD (Target) side ================================
      * IF2: AudioControl (1 streaming interface: IF3 only)
      * IF3: AudioStreaming IN — EP4 ISO IN (Host audio → Target, 64 B/ms)
@@ -360,13 +362,124 @@ const uint8_t  USBD_ConfigDescriptor[] = {
 
     /* CS Endpoint */
     0x07, USB_DESC_TYPE_CS_ENDPOINT, UAC_EP_GENERAL, 0x01, 0x00, 0x00, 0x00,
-#endif
+#endif /* USB_WORK_MODE_HAS_HOST_UAC */
 
 };
 
 typedef char USBD_ConfigDescriptor_SizeCheck[
     (sizeof(USBD_ConfigDescriptor) == USBD_SIZE_CONFIG_DESC) ? 1 : -1
 ];
+
+#if USB_WORK_MODE_RUNTIME_PROFILES
+#define USBD_RUNTIME_ACM_CONFIG_DESC_SIZE 75u
+#define USBD_RUNTIME_UAC_BLOCK_SIZE       (8u + UAC_USBD_BLOCK_LEN)
+#define USBD_RUNTIME_UAC_CONFIG_DESC_SIZE (USBD_RUNTIME_ACM_CONFIG_DESC_SIZE + USBD_RUNTIME_UAC_BLOCK_SIZE)
+static const uint8_t USBD_RuntimeAcmConfigDescriptor[USBD_RUNTIME_ACM_CONFIG_DESC_SIZE] = {
+    0x09, 0x02,
+    USBD_RUNTIME_ACM_CONFIG_DESC_SIZE & 0xFF, USBD_RUNTIME_ACM_CONFIG_DESC_SIZE >> 8,
+    0x02, 0x01, 0x00, 0x80, 0x32,
+
+    0x08, 0x0B, 0x00, 0x02, 0x02, 0x02, 0x01, 0x00,
+    0x09, 0x04, 0x00, 0x00, 0x01, 0x02, 0x02, 0x01, 0x00,
+    0x05, 0x24, 0x00, 0x10, 0x01,
+    0x05, 0x24, 0x01, 0x00, 0x01,
+    0x04, 0x24, 0x02, 0x02,
+    0x05, 0x24, 0x06, 0x00, 0x01,
+    0x07, 0x05, 0x81, 0x03, 0x10, 0x00, 0x01,
+
+    0x09, 0x04, 0x01, 0x00, 0x02, 0x0A, 0x00, 0x00, 0x00,
+    0x07, 0x05, 0x05, 0x02, 0x10, 0x00, 0x00,
+    0x07, 0x05, 0x83, 0x02, 0x10, 0x00, 0x00,
+};
+
+static const uint8_t USBD_RuntimeUacBlock[USBD_RUNTIME_UAC_BLOCK_SIZE] = {
+    0x08, 0x0B, 0x02, 0x03, 0x01, 0x01, 0x00, 0x00,
+    0x09, 0x04, 0x02, 0x00, 0x00, 0x01, 0x01, 0x00, 0x00,
+    0x0A, USB_DESC_TYPE_CS_INTERFACE, UAC_AC_HEADER, 0x00, 0x01,
+    0x34, 0x00, 0x02, 0x03, 0x04,
+    0x0C, USB_DESC_TYPE_CS_INTERFACE, UAC_AC_INPUT_TERMINAL, 0x01,
+    UAC_SR_B0(UAC_TERMINAL_MICROPHONE), UAC_SR_B1(UAC_TERMINAL_MICROPHONE),
+    0x00, UAC_CHANNELS, 0x03, 0x00, 0x00, 0x00,
+    0x09, USB_DESC_TYPE_CS_INTERFACE, UAC_AC_OUTPUT_TERMINAL, 0x02,
+    UAC_SR_B0(UAC_TERMINAL_USB_STREAMING), UAC_SR_B1(UAC_TERMINAL_USB_STREAMING),
+    0x00, 0x01, 0x00,
+    0x0C, USB_DESC_TYPE_CS_INTERFACE, UAC_AC_INPUT_TERMINAL, 0x03,
+    UAC_SR_B0(UAC_TERMINAL_USB_STREAMING), UAC_SR_B1(UAC_TERMINAL_USB_STREAMING),
+    0x00, UAC_CHANNELS, 0x03, 0x00, 0x00, 0x00,
+    0x09, USB_DESC_TYPE_CS_INTERFACE, UAC_AC_OUTPUT_TERMINAL, 0x04,
+    UAC_SR_B0(UAC_TERMINAL_SPEAKER), UAC_SR_B1(UAC_TERMINAL_SPEAKER),
+    0x00, 0x03, 0x00,
+    0x09, 0x04, 0x03, 0x00, 0x00, 0x01, 0x02, 0x00, 0x00,
+    0x09, 0x04, 0x03, 0x01, 0x01, 0x01, 0x02, 0x00, 0x00,
+    0x07, USB_DESC_TYPE_CS_INTERFACE, UAC_AS_GENERAL, 0x02, 0x00,
+    UAC_SR_B0(UAC_FORMAT_PCM), UAC_SR_B1(UAC_FORMAT_PCM),
+    0x0B, USB_DESC_TYPE_CS_INTERFACE, UAC_AS_FORMAT_TYPE, 0x01,
+    UAC_CHANNELS, UAC_BYTES_PER_SAMPLE, UAC_BIT_RESOLUTION, 0x01,
+    UAC_SR_B0(UAC_USBD_SAMPLE_RATE), UAC_SR_B1(UAC_USBD_SAMPLE_RATE), UAC_SR_B2(UAC_USBD_SAMPLE_RATE),
+    0x09, 0x05, UAC_USBD_EP_IN_ADDR, 0x01, 0x40, 0x00, 0x01, 0x00, 0x00,
+    0x07, USB_DESC_TYPE_CS_ENDPOINT, UAC_EP_GENERAL, 0x01, 0x00, 0x00, 0x00,
+    0x09, 0x04, 0x04, 0x00, 0x00, 0x01, 0x02, 0x00, 0x00,
+    0x09, 0x04, 0x04, 0x01, 0x01, 0x01, 0x02, 0x00, 0x00,
+    0x07, USB_DESC_TYPE_CS_INTERFACE, UAC_AS_GENERAL, 0x03, 0x00,
+    UAC_SR_B0(UAC_FORMAT_PCM), UAC_SR_B1(UAC_FORMAT_PCM),
+    0x0B, USB_DESC_TYPE_CS_INTERFACE, UAC_AS_FORMAT_TYPE, 0x01,
+    UAC_CHANNELS, UAC_BYTES_PER_SAMPLE, UAC_BIT_RESOLUTION, 0x01,
+    UAC_SR_B0(UAC_USBD_SAMPLE_RATE), UAC_SR_B1(UAC_USBD_SAMPLE_RATE), UAC_SR_B2(UAC_USBD_SAMPLE_RATE),
+    0x09, 0x05, UAC_USBD_EP_OUT_ADDR, 0x09, 0x40, 0x00, 0x01, 0x00, 0x00,
+    0x07, USB_DESC_TYPE_CS_ENDPOINT, UAC_EP_GENERAL, 0x01, 0x00, 0x00, 0x00,
+};
+
+static uint8_t USBD_RuntimeUacConfigDescriptor[USBD_RUNTIME_UAC_CONFIG_DESC_SIZE];
+static uint8_t USBD_RuntimeUacConfigBuilt;
+
+typedef char USBD_RuntimeUacBlock_SizeCheck[(sizeof(USBD_RuntimeUacBlock) == USBD_RUNTIME_UAC_BLOCK_SIZE) ? 1 : -1];
+
+static void USBD_BuildRuntimeUacConfigDescriptor(void)
+{
+    if (USBD_RuntimeUacConfigBuilt) {
+        return;
+    }
+    memcpy(USBD_RuntimeUacConfigDescriptor, USBD_RuntimeAcmConfigDescriptor, USBD_RUNTIME_ACM_CONFIG_DESC_SIZE);
+    memcpy(&USBD_RuntimeUacConfigDescriptor[USBD_RUNTIME_ACM_CONFIG_DESC_SIZE], USBD_RuntimeUacBlock, USBD_RUNTIME_UAC_BLOCK_SIZE);
+    USBD_RuntimeUacConfigDescriptor[2] = (uint8_t)USBD_RUNTIME_UAC_CONFIG_DESC_SIZE;
+    USBD_RuntimeUacConfigDescriptor[3] = (uint8_t)(USBD_RUNTIME_UAC_CONFIG_DESC_SIZE >> 8);
+    USBD_RuntimeUacConfigDescriptor[4] = 0x05;
+    USBD_RuntimeUacConfigBuilt = 1u;
+}
+#endif
+
+const uint8_t *USBD_GetActiveConfigDescriptorData(uint16_t *len)
+{
+#if USB_WORK_MODE_RUNTIME_PROFILES
+    if (USB_ModeConfig_ActiveModeHasHostCdcEcm()) {
+        if (len != 0) {
+            *len = USBD_SIZE_CONFIG_DESC;
+        }
+        return USBD_ConfigDescriptor;
+    }
+    if (USB_ModeConfig_ActiveModeHasHostUac()) {
+        USBD_BuildRuntimeUacConfigDescriptor();
+        if (len != 0) {
+            *len = USBD_RUNTIME_UAC_CONFIG_DESC_SIZE;
+        }
+        return USBD_RuntimeUacConfigDescriptor;
+    }
+    if (len != 0) {
+        *len = USBD_RUNTIME_ACM_CONFIG_DESC_SIZE;
+    }
+    return USBD_RuntimeAcmConfigDescriptor;
+#else
+    if (len != 0) {
+        *len = USBD_SIZE_CONFIG_DESC;
+    }
+    return USBD_ConfigDescriptor;
+#endif
+}
+
+uint8_t USBD_GetActiveConfigAttributes(void)
+{
+    return USBD_GetActiveConfigDescriptorData(0)[7];
+}
 
 
 /* USB String Descriptors */

@@ -1,7 +1,7 @@
 #include "include/acm_bridge.h"
 #include "include/Version_selection.h"
 
-#if USB_WORK_MODE_BRIDGE_ACM
+#if USB_WORK_MODE_COMPILES_BRIDGE_ACM
 
 #include "ch32v20x_usbfs_device.h"
 #include "usb_lib.h"
@@ -151,4 +151,4 @@ void ACM_Bridge_Poll(void)
     }
 }
 
-#endif /* USB_WORK_MODE_BRIDGE_ACM */
+#endif /* USB_WORK_MODE_COMPILES_BRIDGE_ACM */

@@ -23,6 +23,7 @@
 #include "include/uac_handler.h"
 #include "include/acm_bridge.h"
 #include "include/ecm_bridge.h"
+#include "include/usb_mode_config.h"
 /*******************************************************************************/
 /* Variable Definition */
 
@@ -47,7 +48,73 @@ volatile uint8_t  USBFS_Connect;
 volatile uint8_t  USBFS_HidIdle[ 4 ];
 volatile uint8_t  USBFS_HidProtocol[ 4 ];
 
-#if USB_WORK_MODE_HAS_TARGET_CDC_ACM
+#define USBFS_MODE_HID_IF              0x03u
+#define USBFS_MODE_HID_REPORT_ID       0x30u
+#define USBFS_HID_REPORT_TYPE_FEATURE  0x03u
+#define USBFS_MODE_HID_REPORT_LEN      DEF_USBD_UEP0_SIZE
+static uint8_t USBFS_ModeHidLastStatus = STATUS_SUCCESS;
+
+static void USBFS_ModeHid_FillReport(uint8_t *report)
+{
+    uint16_t flags = USB_ModeConfig_GetFlags();
+    uint32_t capability_mask = USB_ModeConfig_GetCapabilityMask();
+
+    memset(report, 0, USBFS_MODE_HID_REPORT_LEN);
+    report[0] = USBFS_MODE_HID_REPORT_ID;
+    report[1] = USBFS_ModeHidLastStatus;
+    report[2] = USB_ModeConfig_GetCompiledMode();
+    report[3] = USB_ModeConfig_GetActiveMode();
+    report[4] = USB_ModeConfig_GetStoredMode();
+    report[5] = USB_ModeConfig_GetStatus();
+    report[6] = (uint8_t)flags;
+    report[7] = (uint8_t)(flags >> 8);
+    report[8] = (uint8_t)capability_mask;
+    report[9] = (uint8_t)(capability_mask >> 8);
+    report[10] = (uint8_t)(capability_mask >> 16);
+    report[11] = (uint8_t)(capability_mask >> 24);
+}
+
+static void USBFS_ModeHid_HandleSetReport(uint8_t *report, uint16_t report_len)
+{
+    uint16_t requested_flags = 0;
+
+    USBFS_ModeHidLastStatus = STATUS_SUCCESS;
+    if (report_len < 2 || report[0] != USBFS_MODE_HID_REPORT_ID) {
+        USBFS_ModeHidLastStatus = STATUS_ERR_PARAM;
+        return;
+    }
+
+    switch (report[1]) {
+        case 0x00:
+            break;
+        case 0x01:
+            if (report_len < 3) {
+                USBFS_ModeHidLastStatus = STATUS_ERR_PARAM;
+            }
+            else {
+                if (report_len >= 5) {
+                    requested_flags = (uint16_t)report[3] | ((uint16_t)report[4] << 8);
+                }
+                if (!USB_ModeConfig_Write(report[2], requested_flags)) {
+                    USBFS_ModeHidLastStatus = STATUS_ERR_PARAM;
+                }
+            }
+            break;
+        case 0x02:
+            if (!USB_ModeConfig_Clear()) {
+                USBFS_ModeHidLastStatus = STATUS_ERR_FRAME;
+            }
+            break;
+        case 0x03:
+            USB_ModeConfig_RequestReboot();
+            break;
+        default:
+            USBFS_ModeHidLastStatus = STATUS_ERR_PARAM;
+            break;
+    }
+}
+
+#if USB_WORK_MODE_COMPILES_TARGET_CDC_ACM || USB_WORK_MODE_COMPILES_TARGET_CDC_ECM
 #define USBFS_CDC_ACM_IF_COMM          4u
 #define USBFS_CDC_ACM_REQ_SET_LINE     0x20u
 #define USBFS_CDC_ACM_REQ_GET_LINE     0x21u
@@ -56,7 +123,7 @@ static uint8_t USBFS_CDC_LineCoding[7] = { 0x00, 0xC2, 0x01, 0x00, 0x00, 0x00, 0
 static volatile uint16_t USBFS_CDC_ControlLineState;
 #endif
 
-#if USB_WORK_MODE_HAS_TARGET_CDC_ECM
+#if USB_WORK_MODE_COMPILES_TARGET_CDC_ECM
 #define USBFS_CDC_ECM_IF_COMM             4u
 #define USBFS_CDC_ECM_REQ_SET_MC_FILTERS  0x40u
 #define USBFS_CDC_ECM_REQ_SET_PM_PATTERN  0x41u
@@ -230,7 +297,7 @@ void USBFS_Device_Endp_Init( void )
     USBFSD->UEP4_1_MOD = USBFS_UEP1_TX_EN | USBFS_UEP4_TX_EN;
     USBFSD->UEP2_3_MOD = USBFS_UEP2_TX_EN | USBFS_UEP3_TX_EN;
 
-#ifdef ENABLE_UAC
+#if defined(ENABLE_UAC) || USB_WORK_MODE_COMPILES_TARGET_CDC_ACM || USB_WORK_MODE_COMPILES_TARGET_CDC_ECM
     /* EP5: ISO IN  (Target→Host audio).  Single buffer (BUF_MOD=0).
      * EP6: ISO OUT (Host→Target audio).  Single buffer (BUF_MOD=0).
      *
@@ -238,25 +305,44 @@ void USBFS_Device_Endp_Init( void )
      * 64 bytes regardless of TX_LEN.  For 192-byte ISO packets this would alias
      * into the wrong memory, so we must NOT use BUF_MOD for large ISO packets.
      * Software double-buffering is handled in uac_handler.c instead. */
-    USBFSD->UEP5_6_MOD = USBFS_UEP5_TX_EN | USBFS_UEP6_RX_EN;
-#elif USB_WORK_MODE_HAS_TARGET_CDC_ACM || USB_WORK_MODE_HAS_TARGET_CDC_ECM
-    USBFSD->UEP5_6_MOD = USBFS_UEP5_TX_EN | USBFS_UEP6_RX_EN;
-    USBFSD_UEP_MOD( 3 ) = USBFS_UEP7_TX_EN;
-#endif /* ENABLE_UAC */
+#ifdef ENABLE_UAC
+    if (USB_ModeConfig_ActiveModeHasTargetUac()) {
+        USBFSD->UEP5_6_MOD = USBFS_UEP5_TX_EN | USBFS_UEP6_RX_EN;
+        USBFSD_UEP_MOD( 3 ) = 0;
+    }
+    else if (USB_ModeConfig_ActiveModeHasTargetCdcAcm() || USB_ModeConfig_ActiveModeHasTargetCdcEcm()) {
+#else
+    if (USB_ModeConfig_ActiveModeHasTargetCdcAcm() || USB_ModeConfig_ActiveModeHasTargetCdcEcm()) {
+#endif
+        USBFSD->UEP5_6_MOD = USBFS_UEP5_TX_EN | USBFS_UEP6_RX_EN;
+        USBFSD_UEP_MOD( 3 ) = USBFS_UEP7_TX_EN;
+    }
+    else {
+        USBFSD->UEP5_6_MOD = 0;
+        USBFSD_UEP_MOD( 3 ) = 0;
+    }
+#endif
 
     USBFSD->UEP0_DMA = (uint32_t)USBFS_EP0_Buf;
     USBFSD->UEP1_DMA = (uint32_t)USBFS_EP1_Buf;
     USBFSD->UEP2_DMA = (uint32_t)USBFS_EP2_Buf;
     USBFSD->UEP3_DMA = (uint32_t)USBFS_EP3_Buf;
     USBFSD->UEP4_DMA = (uint32_t)USBFS_EP4_Buf;
+#if defined(ENABLE_UAC) || USB_WORK_MODE_COMPILES_TARGET_CDC_ACM || USB_WORK_MODE_COMPILES_TARGET_CDC_ECM
 #ifdef ENABLE_UAC
-    USBFSD->UEP5_DMA = (uint32_t)USBFS_EP5_Buf;
-    USBFSD->UEP6_DMA = (uint32_t)USBFS_EP6_Buf;
-#elif USB_WORK_MODE_HAS_TARGET_CDC_ACM || USB_WORK_MODE_HAS_TARGET_CDC_ECM
-    USBFSD->UEP5_DMA = (uint32_t)EP5_DatabufHD;
-    USBFSD->UEP6_DMA = (uint32_t)EP6_DatabufHD;
-    USBFSD->UEP7_DMA = (uint32_t)EP7_DatabufHD;
-#endif /* ENABLE_UAC */
+    if (USB_ModeConfig_ActiveModeHasTargetUac()) {
+        USBFSD->UEP5_DMA = (uint32_t)USBFS_EP5_Buf;
+        USBFSD->UEP6_DMA = (uint32_t)USBFS_EP6_Buf;
+    }
+    else if (USB_ModeConfig_ActiveModeHasTargetCdcAcm() || USB_ModeConfig_ActiveModeHasTargetCdcEcm()) {
+#else
+    if (USB_ModeConfig_ActiveModeHasTargetCdcAcm() || USB_ModeConfig_ActiveModeHasTargetCdcEcm()) {
+#endif
+        USBFSD->UEP5_DMA = (uint32_t)EP5_DatabufHD;
+        USBFSD->UEP6_DMA = (uint32_t)EP6_DatabufHD;
+        USBFSD->UEP7_DMA = (uint32_t)EP7_DatabufHD;
+    }
+#endif
 
     USBFSD->UEP0_RX_CTRL = USBFS_UEP_R_RES_ACK;
     USBFSD->UEP0_TX_CTRL = USBFS_UEP_T_RES_NAK;
@@ -264,19 +350,25 @@ void USBFS_Device_Endp_Init( void )
     USBFSD->UEP2_TX_CTRL = USBFS_UEP_T_RES_NAK;
     USBFSD->UEP3_TX_CTRL = USBFS_UEP_T_RES_NAK;
     USBFSD->UEP4_TX_CTRL = USBFS_UEP_T_RES_NAK;
-#ifdef ENABLE_UAC
+#if defined(ENABLE_UAC) || USB_WORK_MODE_COMPILES_TARGET_CDC_ACM || USB_WORK_MODE_COMPILES_TARGET_CDC_ECM
     /* EP5 ISO IN: NAK until alt-setting 1 activated; TX_LEN=0 initially */
-    USBFSD->UEP5_TX_LEN  = 0;
-    USBFSD->UEP5_TX_CTRL = USBFS_UEP_T_RES_NAK;
-    /* EP6 ISO OUT: NAK until host selects alt-setting 1 (USBFS IF6 alt=1) */
-    USBFSD->UEP6_RX_CTRL = USBFS_UEP_R_RES_NAK;
-#elif USB_WORK_MODE_HAS_TARGET_CDC_ACM || USB_WORK_MODE_HAS_TARGET_CDC_ECM
-    USBFSD->UEP5_TX_LEN  = 0;
-    USBFSD->UEP5_TX_CTRL = USBFS_UEP_T_RES_NAK;
-    USBFSD->UEP6_RX_CTRL = USBFS_UEP_R_RES_ACK;
-    USBFSD->UEP7_TX_LEN  = 0;
-    USBFSD->UEP7_TX_CTRL = USBFS_UEP_T_RES_NAK;
-#endif /* ENABLE_UAC */
+#ifdef ENABLE_UAC
+    if (USB_ModeConfig_ActiveModeHasTargetUac()) {
+        USBFSD->UEP5_TX_LEN  = 0;
+        USBFSD->UEP5_TX_CTRL = USBFS_UEP_T_RES_NAK;
+        USBFSD->UEP6_RX_CTRL = USBFS_UEP_R_RES_NAK;
+    }
+    else if (USB_ModeConfig_ActiveModeHasTargetCdcAcm() || USB_ModeConfig_ActiveModeHasTargetCdcEcm()) {
+#else
+    if (USB_ModeConfig_ActiveModeHasTargetCdcAcm() || USB_ModeConfig_ActiveModeHasTargetCdcEcm()) {
+#endif
+        USBFSD->UEP5_TX_LEN  = 0;
+        USBFSD->UEP5_TX_CTRL = USBFS_UEP_T_RES_NAK;
+        USBFSD->UEP6_RX_CTRL = USBFS_UEP_R_RES_ACK;
+        USBFSD->UEP7_TX_LEN  = 0;
+        USBFSD->UEP7_TX_CTRL = USBFS_UEP_T_RES_NAK;
+    }
+#endif
 
     /* Clear End-points Busy Status */
     for(uint8_t i=0; i<DEF_UEP_NUM; i++ )
@@ -528,25 +620,29 @@ void USBFS_IRQHandler( void )
                         USBFS_Endp_Busy[ DEF_UEP4 ] = 0;
                         break;
 
+#if defined(ENABLE_UAC) || USB_WORK_MODE_COMPILES_TARGET_CDC_ACM || USB_WORK_MODE_COMPILES_TARGET_CDC_ECM
+                    case USBFS_UIS_TOKEN_IN | DEF_UEP5:
 #ifdef ENABLE_UAC
-                    /* end-point 5 ISO IN complete.
-                     * WCH USBFS reports ISO IN completion as TOKEN_IN. */
-                    case USBFS_UIS_TOKEN_IN | DEF_UEP5:
-                        UAC_USBFS_EP5_TxDone();
-                        break;
-#elif USB_WORK_MODE_HAS_TARGET_CDC_ACM || USB_WORK_MODE_HAS_TARGET_CDC_ECM
-                    case USBFS_UIS_TOKEN_IN | DEF_UEP5:
+                        if (USB_ModeConfig_ActiveModeHasTargetUac()) {
+                            UAC_USBFS_EP5_TxDone();
+                        }
+                        else
+#endif
+                        {
                         USBFSD->UEP5_TX_CTRL = ( USBFSD->UEP5_TX_CTRL & ~USBFS_UEP_T_RES_MASK ) | USBFS_UEP_T_RES_NAK;
                         USBFSD->UEP5_TX_CTRL ^= USBFS_UEP_T_TOG;
                         USBFS_Endp_Busy[ DEF_UEP5 ] = 0;
+                        }
                         break;
 
+#if USB_WORK_MODE_COMPILES_TARGET_CDC_ACM || USB_WORK_MODE_COMPILES_TARGET_CDC_ECM
                     case USBFS_UIS_TOKEN_IN | DEF_UEP7:
                         USBFSD->UEP7_TX_CTRL = ( USBFSD->UEP7_TX_CTRL & ~USBFS_UEP_T_RES_MASK ) | USBFS_UEP_T_RES_NAK;
                         USBFSD->UEP7_TX_CTRL ^= USBFS_UEP_T_TOG;
                         USBFS_Endp_Busy[ DEF_UEP7 ] = 0;
                         break;
-#endif /* ENABLE_UAC */
+#endif
+#endif
 
                     default :
                         break;
@@ -568,10 +664,19 @@ void USBFS_IRQHandler( void )
                                     switch( USBFS_SetupReqCode )
                                     {
                                         case HID_SET_REPORT:
-                                            Keyboard_SetLEDStatus(USBFS_EP0_Buf[ 0 ]);
+                                            if( ( (uint8_t)( USBFS_SetupReqIndex & 0xFF ) == USBFS_MODE_HID_IF ) &&
+                                                ( (uint8_t)( USBFS_SetupReqValue >> 8 ) == USBFS_HID_REPORT_TYPE_FEATURE ) &&
+                                                ( (uint8_t)( USBFS_SetupReqValue & 0xFF ) == USBFS_MODE_HID_REPORT_ID ) )
+                                            {
+                                                USBFS_ModeHid_HandleSetReport( USBFS_EP0_Buf, USBFS_SetupReqLen );
+                                            }
+                                            else if( (uint8_t)( USBFS_SetupReqIndex & 0xFF ) == 0x00 )
+                                            {
+                                                Keyboard_SetLEDStatus(USBFS_EP0_Buf[ 0 ]);
+                                            }
                                             USBFS_SetupReqLen = 0;
                                             break;
-#if USB_WORK_MODE_HAS_TARGET_CDC_ACM
+#if USB_WORK_MODE_COMPILES_TARGET_CDC_ACM || USB_WORK_MODE_COMPILES_TARGET_CDC_ECM
                                         case USBFS_CDC_ACM_REQ_SET_LINE:
                                             if( USBFS_SetupReqLen > sizeof( USBFS_CDC_LineCoding ) )
                                             {
@@ -581,7 +686,7 @@ void USBFS_IRQHandler( void )
                                             USBFS_SetupReqLen = 0;
                                             break;
 #endif
-#if USB_WORK_MODE_HAS_TARGET_CDC_ECM
+#if USB_WORK_MODE_COMPILES_TARGET_CDC_ECM
                                         case USBFS_CDC_ECM_REQ_SET_MC_FILTERS:
                                         case USBFS_CDC_ECM_REQ_SET_PM_PATTERN:
                                             if( USBFS_SetupReqLen > sizeof( USBFS_CDC_ECM_CtrlBuf ) )
@@ -594,7 +699,8 @@ void USBFS_IRQHandler( void )
 #endif
 #ifdef ENABLE_UAC
                                         case 0x01:  /* UAC SET_CUR */
-                                            if( ( ( USBFS_SetupReqType & USB_REQ_RECIP_MASK ) == USB_REQ_RECIP_ENDP ) &&
+                                            if( USB_ModeConfig_ActiveModeHasTargetUac() &&
+                                                ( ( USBFS_SetupReqType & USB_REQ_RECIP_MASK ) == USB_REQ_RECIP_ENDP ) &&
                                                 ( (uint8_t)( USBFS_SetupReqIndex & 0xFF ) == UAC_USBFS_EP_IN_ADDR ||
                                                   (uint8_t)( USBFS_SetupReqIndex & 0xFF ) == UAC_USBFS_EP_OUT_ADDR ) &&
                                                 ( (uint8_t)( USBFS_SetupReqValue >> 8 ) == 0x01 ) )
@@ -621,25 +727,29 @@ void USBFS_IRQHandler( void )
                         }
                         break;
 
+#if defined(ENABLE_UAC) || USB_WORK_MODE_COMPILES_TARGET_CDC_ACM || USB_WORK_MODE_COMPILES_TARGET_CDC_ECM
+                    case USBFS_UIS_TOKEN_OUT | DEF_UEP6:
 #ifdef ENABLE_UAC
-                    /* end-point 6 ISO OUT complete: consume received audio frame */
-                    case USBFS_UIS_TOKEN_OUT | DEF_UEP6:
-                        UAC_USBFS_EP6_RxDone( USBFSD->RX_LEN );
-                        break;
-#elif USB_WORK_MODE_HAS_TARGET_CDC_ACM || USB_WORK_MODE_HAS_TARGET_CDC_ECM
-                    case USBFS_UIS_TOKEN_OUT | DEF_UEP6:
+                        if (USB_ModeConfig_ActiveModeHasTargetUac()) {
+                            UAC_USBFS_EP6_RxDone( USBFSD->RX_LEN );
+                        }
+                        else
+#endif
+                        {
                         if( intst & USBFS_UIS_TOG_OK )
                         {
-#if USB_WORK_MODE_HAS_TARGET_CDC_ACM
-                            ACM_Bridge_TargetRxDone( EP6_DatabufHD, USBFSD->RX_LEN );
-#elif USB_WORK_MODE_HAS_TARGET_CDC_ECM
-                            ECM_Bridge_TargetRxDone( EP6_DatabufHD, USBFSD->RX_LEN );
-#endif
+                            if (USB_ModeConfig_ActiveModeBridgeAcm()) {
+                                ACM_Bridge_TargetRxDone( EP6_DatabufHD, USBFSD->RX_LEN );
+                            }
+                            else if (USB_ModeConfig_ActiveModeBridgeEcm()) {
+                                ECM_Bridge_TargetRxDone( EP6_DatabufHD, USBFSD->RX_LEN );
+                            }
                             USBFSD->UEP6_RX_CTRL ^= USBFS_UEP_R_TOG;
                         }
                         USBFSD->UEP6_RX_CTRL = ( USBFSD->UEP6_RX_CTRL & ~USBFS_UEP_R_RES_MASK ) | USBFS_UEP_R_RES_ACK;
+                        }
                         break;
-#endif /* ENABLE_UAC */
+#endif
 
                     default:
                         break;
@@ -668,6 +778,27 @@ void USBFS_IRQHandler( void )
                         switch( USBFS_SetupReqCode )
                         {
                             case HID_SET_REPORT:
+                                if( ( (uint8_t)( USBFS_SetupReqIndex & 0xFF ) != 0x00 ) &&
+                                    !( ( (uint8_t)( USBFS_SetupReqIndex & 0xFF ) == USBFS_MODE_HID_IF ) &&
+                                       ( (uint8_t)( USBFS_SetupReqValue >> 8 ) == USBFS_HID_REPORT_TYPE_FEATURE ) &&
+                                       ( (uint8_t)( USBFS_SetupReqValue & 0xFF ) == USBFS_MODE_HID_REPORT_ID ) ) )
+                                {
+                                    errflag = 0xFF;
+                                }
+                                break;
+
+                            case HID_GET_REPORT:
+                                if( ( (uint8_t)( USBFS_SetupReqIndex & 0xFF ) == USBFS_MODE_HID_IF ) &&
+                                    ( (uint8_t)( USBFS_SetupReqValue >> 8 ) == USBFS_HID_REPORT_TYPE_FEATURE ) &&
+                                    ( (uint8_t)( USBFS_SetupReqValue & 0xFF ) == USBFS_MODE_HID_REPORT_ID ) )
+                                {
+                                    USBFS_ModeHid_FillReport( USBFS_EP0_Buf );
+                                    USBFS_SetupReqLen = USBFS_MODE_HID_REPORT_LEN;
+                                }
+                                else
+                                {
+                                    errflag = 0xFF;
+                                }
                                 break;
 
                             case HID_SET_IDLE:
@@ -770,9 +901,10 @@ void USBFS_IRQHandler( void )
                                 }
                                 break;
 
-#if USB_WORK_MODE_HAS_TARGET_CDC_ACM
+#if USB_WORK_MODE_COMPILES_TARGET_CDC_ACM || USB_WORK_MODE_COMPILES_TARGET_CDC_ECM
                             case USBFS_CDC_ACM_REQ_SET_LINE:
-                                if( ( ( USBFS_SetupReqType & USB_REQ_RECIP_MASK ) == USB_REQ_RECIP_INTERF ) &&
+                                if( USB_ModeConfig_ActiveModeHasTargetCdcAcm() &&
+                                    ( ( USBFS_SetupReqType & USB_REQ_RECIP_MASK ) == USB_REQ_RECIP_INTERF ) &&
                                     ( (uint8_t)( USBFS_SetupReqIndex & 0xFF ) == USBFS_CDC_ACM_IF_COMM ) )
                                 {
                                     if( USBFS_SetupReqLen > sizeof( USBFS_CDC_LineCoding ) )
@@ -787,7 +919,8 @@ void USBFS_IRQHandler( void )
                                 break;
 
                             case USBFS_CDC_ACM_REQ_GET_LINE:
-                                if( ( ( USBFS_SetupReqType & USB_REQ_RECIP_MASK ) == USB_REQ_RECIP_INTERF ) &&
+                                if( USB_ModeConfig_ActiveModeHasTargetCdcAcm() &&
+                                    ( ( USBFS_SetupReqType & USB_REQ_RECIP_MASK ) == USB_REQ_RECIP_INTERF ) &&
                                     ( (uint8_t)( USBFS_SetupReqIndex & 0xFF ) == USBFS_CDC_ACM_IF_COMM ) )
                                 {
                                     memcpy( USBFS_EP0_Buf, USBFS_CDC_LineCoding, sizeof( USBFS_CDC_LineCoding ) );
@@ -803,7 +936,8 @@ void USBFS_IRQHandler( void )
                                 break;
 
                             case USBFS_CDC_ACM_REQ_SET_CONTROL:
-                                if( ( ( USBFS_SetupReqType & USB_REQ_RECIP_MASK ) == USB_REQ_RECIP_INTERF ) &&
+                                if( USB_ModeConfig_ActiveModeHasTargetCdcAcm() &&
+                                    ( ( USBFS_SetupReqType & USB_REQ_RECIP_MASK ) == USB_REQ_RECIP_INTERF ) &&
                                     ( (uint8_t)( USBFS_SetupReqIndex & 0xFF ) == USBFS_CDC_ACM_IF_COMM ) )
                                 {
                                     USBFS_CDC_ControlLineState = USBFS_SetupReqValue;
@@ -816,9 +950,10 @@ void USBFS_IRQHandler( void )
                                 break;
 #endif
 
-#if USB_WORK_MODE_HAS_TARGET_CDC_ECM
+#if USB_WORK_MODE_COMPILES_TARGET_CDC_ECM
                             case USBFS_CDC_ECM_REQ_SET_PACKET:
-                                if( ( ( USBFS_SetupReqType & USB_REQ_RECIP_MASK ) == USB_REQ_RECIP_INTERF ) &&
+                                if( USB_ModeConfig_ActiveModeHasTargetCdcEcm() &&
+                                    ( ( USBFS_SetupReqType & USB_REQ_RECIP_MASK ) == USB_REQ_RECIP_INTERF ) &&
                                     ( (uint8_t)( USBFS_SetupReqIndex & 0xFF ) == USBFS_CDC_ECM_IF_COMM ) )
                                 {
                                     USBFS_CDC_ECM_PacketFilter = USBFS_SetupReqValue;
@@ -832,7 +967,8 @@ void USBFS_IRQHandler( void )
 
                             case USBFS_CDC_ECM_REQ_GET_STATISTIC:
                             case USBFS_CDC_ECM_REQ_GET_PM_PATTERN:
-                                if( ( ( USBFS_SetupReqType & USB_REQ_RECIP_MASK ) == USB_REQ_RECIP_INTERF ) &&
+                                if( USB_ModeConfig_ActiveModeHasTargetCdcEcm() &&
+                                    ( ( USBFS_SetupReqType & USB_REQ_RECIP_MASK ) == USB_REQ_RECIP_INTERF ) &&
                                     ( (uint8_t)( USBFS_SetupReqIndex & 0xFF ) == USBFS_CDC_ECM_IF_COMM ) )
                                 {
                                     memcpy( USBFS_EP0_Buf, USBFS_CDC_ECM_Stat, sizeof( USBFS_CDC_ECM_Stat ) );
@@ -849,7 +985,8 @@ void USBFS_IRQHandler( void )
 
                             case USBFS_CDC_ECM_REQ_SET_MC_FILTERS:
                             case USBFS_CDC_ECM_REQ_SET_PM_PATTERN:
-                                if( ( ( USBFS_SetupReqType & USB_REQ_RECIP_MASK ) == USB_REQ_RECIP_INTERF ) &&
+                                if( USB_ModeConfig_ActiveModeHasTargetCdcEcm() &&
+                                    ( ( USBFS_SetupReqType & USB_REQ_RECIP_MASK ) == USB_REQ_RECIP_INTERF ) &&
                                     ( (uint8_t)( USBFS_SetupReqIndex & 0xFF ) == USBFS_CDC_ECM_IF_COMM ) )
                                 {
                                     if( USBFS_SetupReqLen > sizeof( USBFS_CDC_ECM_CtrlBuf ) )
@@ -867,7 +1004,8 @@ void USBFS_IRQHandler( void )
                             default:
 #ifdef ENABLE_UAC
                                                                 /* UAC 1.0 endpoint sampling-frequency control. */
-                                                                if( ( ( USBFS_SetupReqType & USB_REQ_RECIP_MASK ) == USB_REQ_RECIP_ENDP ) &&
+                                                                if( USB_ModeConfig_ActiveModeHasTargetUac() &&
+                                                                    ( ( USBFS_SetupReqType & USB_REQ_RECIP_MASK ) == USB_REQ_RECIP_ENDP ) &&
                                                                         ( (uint8_t)( USBFS_SetupReqIndex & 0xFF ) == UAC_USBFS_EP_IN_ADDR ||
                                                                             (uint8_t)( USBFS_SetupReqIndex & 0xFF ) == UAC_USBFS_EP_OUT_ADDR ) &&
                                                                         ( (uint8_t)( USBFS_SetupReqValue >> 8 ) == 0x01 ) &&
@@ -878,7 +1016,8 @@ void USBFS_IRQHandler( void )
                                     USBFS_EP0_Buf[2] = 0x00;
                                     if( USBFS_SetupReqLen > 3 ) USBFS_SetupReqLen = 3;
                                 }
-                                                                else if( ( ( USBFS_SetupReqType & USB_REQ_RECIP_MASK ) == USB_REQ_RECIP_ENDP ) &&
+                                                                else if( USB_ModeConfig_ActiveModeHasTargetUac() &&
+                                                                                 ( ( USBFS_SetupReqType & USB_REQ_RECIP_MASK ) == USB_REQ_RECIP_ENDP ) &&
                                                                                  ( (uint8_t)( USBFS_SetupReqIndex & 0xFF ) == UAC_USBFS_EP_IN_ADDR ||
                                                                                      (uint8_t)( USBFS_SetupReqIndex & 0xFF ) == UAC_USBFS_EP_OUT_ADDR ) &&
                                                                                  ( (uint8_t)( USBFS_SetupReqValue >> 8 ) == 0x01 ) &&
@@ -912,8 +1051,7 @@ void USBFS_IRQHandler( void )
 
                                 /* get usb configuration descriptor */
                                 case USB_DESCR_TYP_CONFIG:
-                                    pUSBFS_Descr = MyCfgDescr;
-                                    len = DEF_USBD_CONFIG_DESC_LEN;
+                                    pUSBFS_Descr = USBFS_GetActiveConfigDescriptorData(&len);
                                     break;
 
                                 /* get usb hid descriptor */
@@ -1000,10 +1138,17 @@ void USBFS_IRQHandler( void )
                                             len = DEF_USBD_SN_DESC_LEN;
                                             break;
 
-#if USB_WORK_MODE_HAS_TARGET_CDC_ECM
+#if USB_WORK_MODE_COMPILES_TARGET_CDC_ECM
                                         case 0x04:
-                                            pUSBFS_Descr = MyEcmMacInfo;
-                                            len = DEF_USBD_ECM_MAC_DESC_LEN;
+                                            if( USB_ModeConfig_ActiveModeHasTargetCdcEcm() )
+                                            {
+                                                pUSBFS_Descr = MyEcmMacInfo;
+                                                len = DEF_USBD_ECM_MAC_DESC_LEN;
+                                            }
+                                            else
+                                            {
+                                                errflag = 0xFF;
+                                            }
                                             break;
 #endif
 
@@ -1091,7 +1236,7 @@ void USBFS_IRQHandler( void )
                                             USBFSD->UEP4_TX_CTRL = USBFS_UEP_T_RES_NAK;
                                             break;
 
-#if USB_WORK_MODE_HAS_TARGET_CDC_ACM
+#if USB_WORK_MODE_COMPILES_TARGET_CDC_ACM
                                         case ( DEF_UEP_IN | DEF_UEP5 ):
                                             USBFSD->UEP5_TX_CTRL = USBFS_UEP_T_RES_NAK;
                                             break;
@@ -1128,7 +1273,7 @@ void USBFS_IRQHandler( void )
                                 /* Set Device Feature */
                                 if( (uint8_t)( USBFS_SetupReqValue & 0xFF ) == USB_REQ_FEAT_REMOTE_WAKEUP )
                                 {
-                                    if( MyCfgDescr[ 7 ] & 0x20 )
+                                    if( USBFS_GetActiveConfigAttributes() & 0x20 )
                                     {
                                         /* Set Wake-up flag, device prepare to sleep */
                                         USBFS_DevSleepStatus |= 0x01;
@@ -1166,7 +1311,7 @@ void USBFS_IRQHandler( void )
                                             USBFSD->UEP4_TX_CTRL = ( USBFSD->UEP4_TX_CTRL & ~USBFS_UEP_T_RES_MASK ) | USBFS_UEP_T_RES_STALL;
                                             break;
 
-#if USB_WORK_MODE_HAS_TARGET_CDC_ACM
+#if USB_WORK_MODE_COMPILES_TARGET_CDC_ACM
                                         case ( DEF_UEP_IN | DEF_UEP5 ):
                                             USBFSD->UEP5_TX_CTRL = ( USBFSD->UEP5_TX_CTRL & ~USBFS_UEP_T_RES_MASK ) | USBFS_UEP_T_RES_STALL;
                                             break;
@@ -1199,9 +1344,9 @@ void USBFS_IRQHandler( void )
                         /* This request allows the host to select another setting for the specified interface  */
                         case USB_GET_INTERFACE:
 #ifdef ENABLE_UAC
-                            if( USBFS_SetupReqIndex == 5 )
+                            if( USB_ModeConfig_ActiveModeHasTargetUac() && USBFS_SetupReqIndex == 5 )
                                 USBFS_EP0_Buf[ 0 ] = g_uac_state.usbfs_as_in_alt;
-                            else if( USBFS_SetupReqIndex == 6 )
+                            else if( USB_ModeConfig_ActiveModeHasTargetUac() && USBFS_SetupReqIndex == 6 )
                                 USBFS_EP0_Buf[ 0 ] = g_uac_state.usbfs_as_out_alt;
                             else
 #endif /* ENABLE_UAC */
@@ -1215,7 +1360,7 @@ void USBFS_IRQHandler( void )
                         case USB_SET_INTERFACE:
 #ifdef ENABLE_UAC
                             /* UAC AudioStreaming interfaces: IF5=AS_IN (EP5), IF6=AS_OUT (EP6) */
-                            if( USBFS_SetupReqIndex == 5 )
+                            if( USB_ModeConfig_ActiveModeHasTargetUac() && USBFS_SetupReqIndex == 5 )
                             {
                                 /* IF5 alternate setting: 0=idle, 1=active ISO IN */
                                 g_uac_state.usbfs_as_in_alt = (uint8_t)(USBFS_SetupReqValue & 0xFF);
@@ -1234,7 +1379,7 @@ void USBFS_IRQHandler( void )
                                     USBFSD->UEP5_TX_CTRL = ( USBFSD->UEP5_TX_CTRL & ~USBFS_UEP_T_RES_MASK ) | USBFS_UEP_T_RES_NAK;
                                 }
                             }
-                            else if( USBFS_SetupReqIndex == 6 )
+                            else if( USB_ModeConfig_ActiveModeHasTargetUac() && USBFS_SetupReqIndex == 6 )
                             {
                                 /* IF6 alternate setting: 0=idle, 1=active ISO OUT */
                                 g_uac_state.usbfs_as_out_alt = (uint8_t)(USBFS_SetupReqValue & 0xFF);
@@ -1296,7 +1441,7 @@ void USBFS_IRQHandler( void )
                                         USBFS_EP0_Buf[ 0 ] = 0x01;
                                     }
                                 }
-#if USB_WORK_MODE_HAS_TARGET_CDC_ACM
+#if USB_WORK_MODE_COMPILES_TARGET_CDC_ACM
                                 else if( (uint8_t)( USBFS_SetupReqIndex & 0xFF ) == ( DEF_UEP_IN | DEF_UEP5 ) )
                                 {
                                     if( ( USBFSD->UEP5_TX_CTRL & USBFS_UEP_T_RES_MASK ) == USBFS_UEP_T_RES_STALL )
@@ -1388,11 +1533,12 @@ void USBFS_IRQHandler( void )
 
         USBFSD->DEV_ADDR = 0;
         USBFS_Device_Endp_Init( );
-    #if USB_WORK_MODE_BRIDGE_ACM
-        ACM_Bridge_Init();
-    #elif USB_WORK_MODE_BRIDGE_ECM
-        ECM_Bridge_Init();
-    #endif
+        if (USB_ModeConfig_ActiveModeBridgeAcm()) {
+            ACM_Bridge_Init();
+        }
+        else if (USB_ModeConfig_ActiveModeBridgeEcm()) {
+            ECM_Bridge_Init();
+        }
         USBFSD->INT_FG = USBFS_UIF_BUS_RST;
     }
     else if( intflag & USBFS_UIF_SUSPEND )

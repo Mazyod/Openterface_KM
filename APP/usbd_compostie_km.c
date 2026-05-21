@@ -11,6 +11,7 @@
 #include "CH32_TEMP.h"
 #include "km_ring.h"
 #include "Version_selection.h"
+#include "include/usb_mode_config.h"
 /*******************************************************************************/
 /* Global Variable Definition */
 
@@ -118,6 +119,63 @@ void CH9329_Cmd_GetInfo_Reply(uint8_t addr)
     CH9329_SendResponse(addr, CMD_GET_INFO , data, 8, 1);
 }
 
+static void CH9329_Cmd_USBWorkMode(uint8_t addr, uint8_t cmd_code, uint8_t *pdata, uint8_t data_len)
+{
+    uint8_t response[12];
+    uint16_t flags;
+    uint32_t capability_mask;
+    uint8_t status = STATUS_SUCCESS;
+
+    if (data_len > 0) {
+        switch (pdata[0]) {
+        case 0x00:
+            break;
+        case 0x01:
+            if (data_len < 2) {
+                status = STATUS_ERR_PARAM;
+            }
+            else {
+                uint16_t requested_flags = 0;
+                if (data_len >= 4) {
+                    requested_flags = (uint16_t)pdata[2] | ((uint16_t)pdata[3] << 8);
+                }
+                if (!USB_ModeConfig_Write(pdata[1], requested_flags)) {
+                    status = STATUS_ERR_PARAM;
+                }
+            }
+            break;
+        case 0x02:
+            if (!USB_ModeConfig_Clear()) {
+                status = STATUS_ERR_FRAME;
+            }
+            break;
+        case 0x03:
+            CH9329_SendResponse(addr, cmd_code, &status, 1, 1);
+            USB_ModeConfig_Reboot();
+            return;
+        default:
+            status = STATUS_ERR_PARAM;
+            break;
+        }
+    }
+
+    flags = USB_ModeConfig_GetFlags();
+    capability_mask = USB_ModeConfig_GetCapabilityMask();
+    response[0] = status;
+    response[1] = USB_ModeConfig_GetCompiledMode();
+    response[2] = USB_ModeConfig_GetActiveMode();
+    response[3] = USB_ModeConfig_GetStoredMode();
+    response[4] = USB_ModeConfig_GetStatus();
+    response[5] = (uint8_t)flags;
+    response[6] = (uint8_t)(flags >> 8);
+    response[7] = (uint8_t)capability_mask;
+    response[8] = (uint8_t)(capability_mask >> 8);
+    response[9] = (uint8_t)(capability_mask >> 16);
+    response[10] = (uint8_t)(capability_mask >> 24);
+    response[11] = 0;
+    CH9329_SendResponse(addr, cmd_code, response, sizeof(response), 1);
+}
+
 
 // -------------------- CH9329 Command Dispatcher --------------------
 /*********************************************************************
@@ -204,6 +262,9 @@ void CH9329_DispatchCommand(uint8_t addr, uint8_t cmd_code, uint8_t* pdata, uint
         case CMD_DS18B20_GET_TEMP:
             // Always pass length = 5 to DS18B20 command handler
             Temp_Command(addr, cmd_code, pdata, 5);
+            break;
+        case CMD_USB_WORK_MODE:
+            CH9329_Cmd_USBWorkMode(addr, cmd_code, pdata, data_len);
             break;
         //cmd=08,Get parameter configuration(Only used for matching with ch9329)
         case CMD_GET_PARA_CFG:
