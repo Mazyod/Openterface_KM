@@ -166,7 +166,7 @@ def _print_status(payload: bytes):
     print(f"  config_status: {config_status} ({', '.join(st_parts) if st_parts else 'none'})")
     print(f"  flags:         0x{flags:04X}")
 
-    supported = [str(m) for m in range(1, 5) if capability & (1 << (m - 1))]
+    supported = [str(m) for m in range(1, 5) if capability & (1 << m)]
     print(f"  capability:    0x{capability:08X} (modes: {', '.join(supported) if supported else 'none'})")
 
 
