@@ -6,6 +6,8 @@ VID_1A86 PID_FE00 HID interface, then verifies the active mode and Windows PnP
 enumeration after each reboot.
 """
 
+from __future__ import annotations
+
 import argparse
 import ctypes
 import json

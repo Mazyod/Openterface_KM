@@ -32,6 +32,8 @@ Examples::
     python tools/test_ch9329_ecm.py --iface usb0 --read
 """
 
+from __future__ import annotations
+
 import argparse
 import socket
 import struct
@@ -57,6 +59,12 @@ CH9329_CMD_USB_WORK_MODE = 0x30
 # ---------------------------------------------------------------------------
 ECM_VID = 0x1A86
 ECM_PID = 0xFE0C  # host-side CDC-ECM/ACM interface
+
+# Known CDC-ECM endpoint addresses from firmware descriptor (for fallback)
+ECM_BULK_OUT_EP = 0x05  # Bulk OUT (host→device)
+ECM_BULK_IN_EP  = 0x83  # Bulk IN  (device→host)
+ECM_INT_EP      = 0x81  # Interrupt (notification)
+ECM_DATA_IF     = 1     # CDC Data interface number
 
 # ---------------------------------------------------------------------------
 # Convenience: known CH9329 keyboard scan codes (USB HID usage codes)
@@ -268,7 +276,12 @@ def _send_ecm_frames_usb(
     verbose: bool,
     expect_response: bool = True,
 ) -> list[dict]:
-    """Send raw Ethernet frames via pyusb CDC-ECM bulk endpoints."""
+    """Send raw Ethernet frames via libusb CDC-ECM bulk endpoints.
+
+    Uses pyusb to find the device, then drops to ctypes-level libusb1
+    calls for bulk transfers. This avoids macOS's kernel CDC-ECM driver
+    from hiding endpoints from libusb's high-level API.
+    """
     try:
         import usb.core
         import usb.util
@@ -282,11 +295,16 @@ def _send_ecm_frames_usb(
             "Make sure the device is in Mode 4 (ECM) and a libusb driver is attached."
         )
 
+    # Try to find endpoints via normal pyusb enumeration
     data_if = None
     ep_out = None
     ep_in = None
     for cfg in dev:
         for intf in cfg:
+            if verbose:
+                print(f"  Interface {intf.bInterfaceNumber}: class={intf.bInterfaceClass}")
+                for ep in intf:
+                    print(f"    EP 0x{ep.bEndpointAddress:02X} {'IN' if ep.bEndpointAddress & 0x80 else 'OUT'} type={ep.bmAttributes & 0x03} size={ep.wMaxPacketSize}")
             if intf.bInterfaceClass == 10:  # CDC Data
                 for ep in intf:
                     if ep.bEndpointAddress & 0x80:
@@ -298,36 +316,172 @@ def _send_ecm_frames_usb(
         if data_if is not None:
             break
 
+    if verbose:
+        print(f"  Found CDC Data interface: {data_if is not None}")
+        print(f"  EP OUT: {ep_out is not None}, EP IN: {ep_in is not None}")
+
+    # Determine endpoints and interface number
     if data_if is None or ep_out is None:
-        sys.exit("Could not find CDC-ECM bulk OUT endpoint.")
+        if verbose:
+            print(f"  Using hardcoded endpoints (kernel driver hides them)")
+        data_if_num = ECM_DATA_IF
+        out_ep_addr = ECM_BULK_OUT_EP
+        in_ep_addr = ECM_BULK_IN_EP
+    else:
+        data_if_num = data_if.bInterfaceNumber
+        out_ep_addr = ep_out.bEndpointAddress
+        in_ep_addr = ep_in.bEndpointAddress
 
-    if dev.is_kernel_driver_active(data_if.bInterfaceNumber):
-        dev.detach_kernel_driver(data_if.bInterfaceNumber)
+    if verbose:
+        print(f"  Using EP OUT: 0x{out_ep_addr:02X}, EP IN: 0x{in_ep_addr:02X}, iface={data_if_num}")
 
-    usb.util.claim_interface(dev, data_if.bInterfaceNumber)
+    # --- Use ctypes + libusb1 directly for bulk transfers ---
+    import ctypes
+    import ctypes.util as cutil
+
+    lib_name = None
+    for candidate in [
+        '/opt/homebrew/lib/libusb-1.0.dylib',
+        '/usr/local/lib/libusb-1.0.dylib',
+        '/usr/lib/libusb-1.0.dylib',
+    ]:
+        import os.path
+        if os.path.exists(candidate):
+            lib_name = candidate
+            break
+    if lib_name is None:
+        lib_name = cutil.find_library('usb-1.0') or cutil.find_library('usb') or \
+                   cutil.find_library('libusb-1.0') or cutil.find_library('libusb') or \
+                   'libusb-1.0.so.0'
+
+    lib = ctypes.CDLL(lib_name)
+
+    # Initialize libusb context
+    libusb_ctx = ctypes.c_void_p()
+    ret = lib.libusb_init(ctypes.byref(libusb_ctx))
+    if ret != 0:
+        sys.exit(f"libusb_init failed: {ret}")
+    if verbose:
+        print(f"  libusb initialized: ctx={libusb_ctx.value}")
+
+    LIBUSB_ERROR_TIMEOUT = -7
+
+    lib.libusb_init.argtypes = [ctypes.POINTER(ctypes.c_void_p)]
+    lib.libusb_init.restype = ctypes.c_int
+    lib.libusb_exit.argtypes = [ctypes.c_void_p]
+    lib.libusb_exit.restype = None
+    lib.libusb_open.argtypes = [ctypes.c_void_p, ctypes.POINTER(ctypes.c_void_p)]
+    lib.libusb_open.restype = ctypes.c_int
+    lib.libusb_close.argtypes = [ctypes.c_void_p]
+    lib.libusb_close.restype = None
+    lib.libusb_claim_interface.argtypes = [ctypes.c_void_p, ctypes.c_int]
+    lib.libusb_claim_interface.restype = ctypes.c_int
+    lib.libusb_release_interface.argtypes = [ctypes.c_void_p, ctypes.c_int]
+    lib.libusb_release_interface.restype = ctypes.c_int
+    lib.libusb_bulk_transfer.argtypes = [
+        ctypes.c_void_p, ctypes.c_ubyte, ctypes.c_char_p,
+        ctypes.c_int, ctypes.POINTER(ctypes.c_int), ctypes.c_uint
+    ]
+    lib.libusb_bulk_transfer.restype = ctypes.c_int
+    lib.libusb_get_device_descriptor.argtypes = [
+        ctypes.c_void_p, ctypes.c_void_p
+    ]
+    lib.libusb_get_device_descriptor.restype = ctypes.c_int
+
+    # Get the raw libusb device pointer from pyusb's backend
+    ctx = dev._ctx
+    raw_dev = ctx.dev  # usb.backend.libusb1._Device
+    libusb_dev_ptr = raw_dev.devid  # int: raw libusb_device*
+
+    # Open the device
+    handle = ctypes.c_void_p()
+    ret = lib.libusb_open(libusb_dev_ptr, ctypes.byref(handle))
+    if ret != 0:
+        sys.exit(f"libusb_open failed: {ret}")
+
+    if verbose:
+        print(f"  libusb handle opened: {handle.value is not None}")
+
+    # Set auto-detach for kernel driver (libusb handles this transparently)
+    lib.libusb_set_auto_detach_kernel_driver.argtypes = [ctypes.c_void_p, ctypes.c_int]
+    lib.libusb_set_auto_detach_kernel_driver.restype = ctypes.c_int
+    lib.libusb_set_auto_detach_kernel_driver(handle.value, 1)
+
+    # Set configuration
+    lib.libusb_set_configuration.argtypes = [ctypes.c_void_p, ctypes.c_int]
+    lib.libusb_set_configuration.restype = ctypes.c_int
+    ret = lib.libusb_set_configuration(handle.value, 1)
+    if verbose:
+        print(f"  set_configuration(1): {ret}")
+
+    # Give device a moment
+    time.sleep(0.1)
+
+    # Claim interface (auto-detach will happen here if needed)
+    lib.libusb_claim_interface.argtypes = [ctypes.c_void_p, ctypes.c_int]
+    lib.libusb_claim_interface.restype = ctypes.c_int
+    ret = lib.libusb_claim_interface(handle.value, data_if_num)
+    if ret != 0:
+        if verbose:
+            print(f"  libusb_claim_interface returned {ret} (may be OK if already claimed)")
+
     responses = []
+
+    def bulk_write(addr: int, data: bytes) -> int:
+        transferred = ctypes.c_int(0)
+        ret = lib.libusb_bulk_transfer(
+            handle.value, addr,
+            ctypes.create_string_buffer(data), len(data),
+            ctypes.byref(transferred), timeout_ms
+        )
+        if ret != 0 and ret != LIBUSB_ERROR_TIMEOUT:
+            raise RuntimeError(f"libusb bulk write error: {ret}")
+        return transferred.value
+
+    def bulk_read(addr: int, size: int) -> bytes:
+        buf = ctypes.create_string_buffer(size)
+        transferred = ctypes.c_int(0)
+        ret = lib.libusb_bulk_transfer(
+            handle.value, addr, buf, size,
+            ctypes.byref(transferred), timeout_ms
+        )
+        if ret == LIBUSB_ERROR_TIMEOUT:
+            raise TimeoutError("bulk read timed out")
+        if ret != 0:
+            raise RuntimeError(f"libusb bulk read error: {ret}")
+        return bytes(buf[:transferred.value])
 
     try:
         for frame in frames:
             if verbose:
                 print(f"TX {len(frame)} bytes: {frame.hex(' ')}")
-            ep_out.write(frame, timeout=timeout_ms)
+            bulk_write(out_ep_addr, frame)
             time.sleep(0.05)
 
-        if expect_response and ep_in is not None:
+        if expect_response:
             try:
-                raw = ep_in.read(1514, timeout=timeout_ms)
-                raw = bytes(raw)
+                # Read multiple times — CDC-ECM may send ARP/notifications mixed in
+                for attempt in range(5):
+                    raw = bulk_read(in_ep_addr, 1514)
+                    if verbose:
+                        print(f"RX {len(raw)} bytes: {raw.hex(' ')}")
+                    resp = _decode_ecm_response(raw, verbose)
+                    if resp is not None:
+                        responses.append(resp)
+                        break
+                    elif verbose:
+                        print(f"  (not a CH9329 frame, waiting for response...)")
+                    time.sleep(0.1)
+                else:
+                    if verbose:
+                        print("No CH9329 response received (got non-CH9329 traffic only).")
+            except (TimeoutError, RuntimeError) as e:
                 if verbose:
-                    print(f"RX {len(raw)} bytes: {raw.hex(' ')}")
-                resp = _decode_ecm_response(raw, verbose)
-                if resp is not None:
-                    responses.append(resp)
-            except usb.core.USBTimeoutError:
-                if verbose:
-                    print("No response from device (timeout).")
+                    print(f"No response from device: {e}")
     finally:
-        usb.util.release_interface(dev, data_if.bInterfaceNumber)
+        lib.libusb_release_interface(handle.value, data_if_num)
+        lib.libusb_close(handle.value)
+        lib.libusb_exit(libusb_ctx)
 
     return responses
 

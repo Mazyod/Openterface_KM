@@ -9,6 +9,7 @@
 #include "usb_desc.h"
 #include "usb_prop.h"
 #include "include/usbd_composite_km.h"
+#include "include/km_ring.h"
 #include <string.h>
 
 #define ECM_BRIDGE_MTU_FRAME_SIZE       1514u
@@ -197,6 +198,79 @@ static uint8_t handle_host_control_frame(const uint8_t *frame, uint16_t frame_le
     }
 
     CH9329_RxBuffer_Add((uint8_t *)payload, payload_len);
+
+    /* Pop the CH9329 response (generated synchronously by the parser) and
+     * wrap it in Ethernet/IPv4/TCP so it comes back to the host through
+     * the ECM bridge's bulk IN endpoint. */
+    Resp_Report_t resp;
+    if (Queue_Pop_Response(&resp)) {
+        uint8_t out_frame[ECM_BRIDGE_MTU_FRAME_SIZE];
+        uint16_t off = 0;
+
+        /* Ethernet header: src←dst, dst←src (reverse direction) */
+        memcpy(&out_frame[off], &frame[6], 6);  /* dst = original src */
+        off += 6;
+        memcpy(&out_frame[off], &frame[0], 6);  /* src = original dst */
+        off += 6;
+        out_frame[off++] = 0x08;
+        out_frame[off++] = 0x00;  /* EtherType = IPv4 */
+
+        /* IPv4 header (20 bytes) */
+        uint16_t total_ip_len = 20 + 20 + resp.len;
+        memset(&out_frame[off], 0, 20);
+        out_frame[off + 0] = 0x45;  /* version=4, IHL=5 */
+        out_frame[off + 1] = 0x00;  /* DSCP */
+        out_frame[off + 2] = (total_ip_len >> 8) & 0xFF;
+        out_frame[off + 3] = total_ip_len & 0xFF;
+        out_frame[off + 4] = 0x00;  /* identification */
+        out_frame[off + 5] = 0x01;
+        out_frame[off + 6] = 0x40;  /* DF */
+        out_frame[off + 7] = 0x00;  /* fragment offset */
+        out_frame[off + 8] = 64;    /* TTL */
+        out_frame[off + 9] = 6;     /* protocol = TCP */
+        /* src IP = original dst IP */
+        memcpy(&out_frame[off + 12], &frame[0x1A], 4);
+        /* dst IP = original src IP */
+        memcpy(&out_frame[off + 16], &frame[0x1E], 4);
+
+        /* IPv4 checksum */
+        uint32_t ip_sum = 0;
+        for (int i = 0; i < 20; i += 2) {
+            ip_sum += (uint16_t)(out_frame[off + i] << 8) | out_frame[off + i + 1];
+        }
+        while (ip_sum >> 16) ip_sum = (ip_sum & 0xFFFF) + (ip_sum >> 16);
+        uint16_t ip_chk = (~ip_sum) & 0xFFFF;
+        out_frame[off + 10] = (ip_chk >> 8) & 0xFF;
+        out_frame[off + 11] = ip_chk & 0xFF;
+        off += 20;
+
+        /* TCP header (20 bytes) */
+        memset(&out_frame[off], 0, 20);
+        /* src port = original dst port, dst port = original src port */
+        memcpy(&out_frame[off + 0], &frame[0x22], 2);
+        memcpy(&out_frame[off + 2], &frame[0x20], 2);
+        out_frame[off + 4] = 0x00;
+        out_frame[off + 5] = 0x00;
+        out_frame[off + 6] = 0x00;
+        out_frame[off + 7] = 0x01;  /* seq */
+        out_frame[off + 8] = 0x00;
+        out_frame[off + 9] = 0x00;
+        out_frame[off + 10] = 0x00;
+        out_frame[off + 11] = 0x00;  /* ack */
+        out_frame[off + 12] = 0x50;  /* data offset = 5 (20 bytes) */
+        out_frame[off + 13] = 0x02;  /* flags = SYN */
+        out_frame[off + 14] = 0xFF;
+        out_frame[off + 15] = 0xFF;  /* window */
+        off += 20;
+
+        /* TCP payload (CH9329 response) */
+        memcpy(&out_frame[off], resp.data, resp.len);
+        off += resp.len;
+
+        /* Push to target→host queue so it comes back to the host */
+        queue_push(&g_target_to_host, out_frame, off);
+    }
+
     return 1;
 }
 
