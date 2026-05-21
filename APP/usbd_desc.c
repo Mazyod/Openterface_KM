@@ -1004,20 +1004,26 @@ const uint8_t MyManuInfo[ ] =
 /* Product Information */
 const uint8_t MyProdInfo[ ]  =
 {
-    0x1A, // Descriptor length (12 chars * 2 + 2)
+    0x26, // Descriptor length (18 chars * 2 + 2)
     0x03, // Descriptor type (STRING)
+    'O', 0,
+    'p', 0,
+    'e', 0,
+    'n', 0,
+    't', 0,
+    'e', 0,
+    'r', 0,
+    'f', 0,
+    'a', 0,
+    'c', 0,
+    'e', 0,
+    ' ', 0,
     'T', 0,
     'a', 0,
     'r', 0,
     'g', 0,
     'e', 0,
-    't', 0,
-    ' ', 0,
-    'A', 0,
-    'u', 0,
-    'd', 0,
-    'i', 0,
-    'o', 0
+    't', 0
 };
 
 /* Serial Number Information */

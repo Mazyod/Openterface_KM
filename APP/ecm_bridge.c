@@ -185,6 +185,8 @@ static uint8_t tcp_payload_from_ipv4_frame(const uint8_t *frame,
     return (*payload_len > 0u) ? 1u : 0u;
 }
 
+static uint8_t queue_push(ECM_FrameQueue_t *queue, const uint8_t *data, uint16_t len);
+
 static uint8_t handle_host_control_frame(const uint8_t *frame, uint16_t frame_len)
 {
     const uint8_t *payload;
@@ -274,21 +276,6 @@ static uint8_t handle_host_control_frame(const uint8_t *frame, uint16_t frame_le
     return 1;
 }
 
-static void queue_clear(ECM_FrameQueue_t *queue)
-{
-    queue->rd = 0;
-    queue->wr = 0;
-    queue->count = 0;
-    queue->overflow = 0;
-}
-
-static void rx_frame_clear(ECM_RxFrame_t *frame)
-{
-    frame->len = 0;
-    frame->drop = 0;
-    frame->overflow = 0;
-}
-
 static uint8_t queue_push(ECM_FrameQueue_t *queue, const uint8_t *data, uint16_t len)
 {
     if (len == 0) {
@@ -307,6 +294,21 @@ static uint8_t queue_push(ECM_FrameQueue_t *queue, const uint8_t *data, uint16_t
     }
     queue->count++;
     return 1;
+}
+
+static void queue_clear(ECM_FrameQueue_t *queue)
+{
+    queue->rd = 0;
+    queue->wr = 0;
+    queue->count = 0;
+    queue->overflow = 0;
+}
+
+static void rx_frame_clear(ECM_RxFrame_t *frame)
+{
+    frame->len = 0;
+    frame->drop = 0;
+    frame->overflow = 0;
 }
 
 static ECM_Frame_t *queue_peek(ECM_FrameQueue_t *queue)

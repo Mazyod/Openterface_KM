@@ -8,47 +8,35 @@ $ErrorActionPreference = 'Stop'
 
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $repoRoot = Split-Path -Parent $scriptDir
-$tempDir = 'C:\tmp'
 
-$buildDir = @('build', 'obj') |
-    ForEach-Object { Join-Path $repoRoot $_ } |
-    Where-Object { Test-Path (Join-Path $_ 'makefile') } |
-    Select-Object -First 1
+# Build output directory
+$buildDir = Join-Path $repoRoot "firmware_build"
 
-if (-not $buildDir) {
-    throw "No generated firmware makefile found under '$repoRoot\\build' or '$repoRoot\\obj'."
-}
+# Copy the built firmware to obj/ for MounRiver Studio compatibility
+$objDir = Join-Path $repoRoot "obj"
+if (Test-Path $objDir) {
+    $binFile = Join-Path $buildDir "openterface-km-firmware.bin"
+    $hexFile = Join-Path $buildDir "openterface-km-firmware.hex"
+    $elfFile = Join-Path $buildDir "openterface-km-firmware.elf"
 
-$toolchainPaths = @(
-    'C:\MounRiver\MounRiver_Studio2\resources\app\resources\win32\components\WCH\Toolchain\RISC-V Embedded GCC\bin',
-    'C:\Qt\Tools\mingw1120_64\bin',
-    'C:\msys64\usr\bin'
-)
-
-foreach ($pathEntry in $toolchainPaths) {
-    if (-not (Test-Path $pathEntry)) {
-        throw "Required tool path not found: $pathEntry"
+    if (Test-Path $binFile) {
+        Copy-Item $binFile (Join-Path $objDir "openterface-km-firmware.bin") -Force
+        Write-Host "Copied firmware binary to obj/"
     }
 }
 
-New-Item -ItemType Directory -Force -Path $tempDir | Out-Null
+# Run the standalone build
+$buildScript = Join-Path $scriptDir "build_firmware.sh"
+if (-not (Test-Path $buildScript)) {
+    throw "Build script not found: $buildScript"
+}
 
-$env:PATH = ($toolchainPaths -join ';') + ';' + $env:PATH
-$env:TEMP = $tempDir
-$env:TMP = $tempDir
-
-Push-Location $buildDir
-try {
-    if ($Clean) {
-        & mingw32-make -f makefile clean
-        if ($LASTEXITCODE -ne 0) {
-            exit $LASTEXITCODE
-        }
+Write-Host "Building firmware..."
+if ($Clean) {
+    if (Test-Path $buildDir) {
+        Remove-Item $buildDir -Recurse -Force
     }
+}
 
-    & mingw32-make -f makefile -j1 main-build "USB_WORK_MODE=$UsbWorkMode"
-    exit $LASTEXITCODE
-}
-finally {
-    Pop-Location
-}
+& bash $buildScript
+exit $LASTEXITCODE

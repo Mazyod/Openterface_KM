@@ -501,8 +501,8 @@ const uint8_t USBD_StringVendor[USBD_SIZE_STRING_VENDOR] = {
 const uint8_t USBD_StringProduct[USBD_SIZE_STRING_PRODUCT] = {
     USBD_SIZE_STRING_PRODUCT,
     USB_STRING_DESCRIPTOR_TYPE,
-    'H', 0, 'o', 0, 's', 0, 't', 0, ' ', 0,
-    'A', 0, 'u', 0, 'd', 0, 'i', 0, 'o', 0};
+    'O', 0, 'p', 0, 'e', 0, 'n', 0, 't', 0, 'e', 0, 'r', 0, 'f', 0, 'a', 0, 'c', 0, 'e', 0,
+    ' ', 0, 'H', 0, 'o', 0, 's', 0, 't', 0};
 
 /* USB Device String Serial */
 uint8_t USBD_StringSerial[USBD_SIZE_STRING_SERIAL] = {
@@ -514,8 +514,8 @@ uint8_t USBD_StringSerial[USBD_SIZE_STRING_SERIAL] = {
 const uint8_t USBD_StringAudioFunction[USBD_SIZE_STRING_AUDIO_FUNC] = {
     USBD_SIZE_STRING_AUDIO_FUNC,
     USB_STRING_DESCRIPTOR_TYPE,
-    'H', 0, 'o', 0, 's', 0, 't', 0, ' ', 0,
-    'A', 0, 'u', 0, 'd', 0, 'i', 0, 'o', 0
+    'O', 0, 'p', 0, 'e', 0, 'n', 0, 't', 0, 'e', 0, 'r', 0, 'f', 0, 'a', 0, 'c', 0, 'e', 0,
+    ' ', 0, 'H', 0, 'o', 0, 's', 0, 't', 0
 };
 
 const uint8_t USBD_StringSpeaker[USBD_SIZE_STRING_SPEAKER] = {
