@@ -41,9 +41,18 @@ STATUS_LABELS = {0: "OK", 1: "ERR_PARAM", 2: "ERR_FRAME"}
 
 def find_serial_port() -> str | None:
     """Find the Openterface CDC ACM serial port."""
+    # macOS patterns
     for pattern in ["/dev/cu.usbmodem*", "/dev/cu.wch*", "/dev/cu.Ch340*"]:
         for port in sorted(glob.glob(pattern)):
             return port
+    # Windows COM ports (enumerate via pyserial)
+    try:
+        import serial.tools.list_ports
+        for p in serial.tools.list_ports.comports():
+            if p.vid == VID:
+                return p.device
+    except ImportError:
+        pass
     return None
 
 
@@ -102,7 +111,7 @@ def _print_status(payload: bytes):
     print(f"  config_status: {config_status} ({', '.join(st_parts) if st_parts else 'none'})")
     print(f"  flags:         0x{flags:04X}")
 
-    supported = [str(m) for m in range(1, 5) if capability & (1 << (m - 1))]
+    supported = [str(m) for m in range(1, 5) if capability & (1 << m)]
     print(f"  capability:    0x{capability:08X} (modes: {', '.join(supported) if supported else 'none'})")
 
 
@@ -112,6 +121,7 @@ def main():
     parser.add_argument("--flags", type=lambda v: int(v, 0), default=0, help="Flags (default 0)")
     parser.add_argument("--clear", action="store_true", help="Clear stored mode")
     parser.add_argument("--reboot", action="store_true", help="Reboot after write")
+    parser.add_argument("--baud", type=int, default=115200, help="Baud rate (default 115200)")
     parser.add_argument("-v", "--verbose", action="store_true")
     args = parser.parse_args()
 
@@ -121,7 +131,7 @@ def main():
 
     print(f"Using serial port: {port}")
 
-    ser = serial.Serial(port, baudrate=9600, timeout=0.5)
+    ser = serial.Serial(port, baudrate=args.baud, timeout=0.5)
     ser.reset_input_buffer()
     ser.reset_output_buffer()
     time.sleep(0.1)
