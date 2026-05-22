@@ -362,6 +362,16 @@ void BLE_Eth_ResetParser(void);
  */
 void BLE_Eth_PushFromBridge(uint8_t conn_id, const uint8_t *data, uint16_t len);
 
+/**
+ * @brief Parse an incoming Ethernet frame from the target (ECM bridge)
+ *        and push TCP payload back to the BLE host through the matching tunnel.
+ *        Matches frame source IP:port against active connection remote IP:port.
+ * @param frame   Complete Ethernet frame (including Eth, IPv4, TCP headers).
+ * @param len     Frame length in bytes.
+ * @return true if a matching tunnel was found and data was pushed.
+ */
+bool BLE_Eth_HandleTargetFrame(const uint8_t *frame, uint16_t len);
+
 #ifdef __cplusplus
 }
 #endif

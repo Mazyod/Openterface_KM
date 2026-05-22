@@ -547,6 +547,69 @@ uint16_t BLE_Eth_GetNextTxChunk(uint8_t *buf)
     return len;
 }
 
+/* ======================== Target frame handler =========================== */
+
+static uint16_t frame_get_be16(const uint8_t *p)
+{
+    return (uint16_t)((p[0] << 8) | p[1]);
+}
+
+bool BLE_Eth_HandleTargetFrame(const uint8_t *frame, uint16_t len)
+{
+    if (!frame || len < 14u) return false;
+
+    uint16_t off = 0;
+
+    /* Parse Ethernet header (handle VLAN tags) */
+    uint16_t eth_type = frame_get_be16(&frame[12]);
+    off = 14u;
+    while ((eth_type == 0x8100u || eth_type == 0x88A8u) && off + 4u <= len) {
+        eth_type = frame_get_be16(&frame[off + 2]);
+        off += 4;
+    }
+
+    if (eth_type != 0x0800u || off + 20u > len) return false;  /* not IPv4 */
+
+    const uint8_t *ip = &frame[off];
+    if ((ip[0] >> 4) != 4u) return false;
+
+    uint16_t ip_header_len = (uint16_t)((ip[0] & 0x0Fu) * 4u);
+    if (ip_header_len < 20u || off + ip_header_len + 20u > len) return false;
+    if (ip[9] != 6u) return false;  /* not TCP */
+
+    const uint8_t *tcp = &frame[off + ip_header_len];
+    uint16_t tcp_segment_len = frame_get_be16(&ip[2]) - ip_header_len;
+    uint16_t tcp_header_len = (uint16_t)((tcp[12] >> 4) * 4u);
+    if (tcp_header_len < 20u || tcp_header_len > tcp_segment_len) return false;
+
+    uint16_t tcp_payload_len = tcp_segment_len - tcp_header_len;
+    if (tcp_payload_len == 0) return false;  /* no payload (SYN, ACK, FIN, etc.) */
+
+    /* Extract source IP and port from the frame */
+    uint8_t src_ip[4];
+    memcpy(src_ip, &ip[12], 4);
+    uint16_t src_port = frame_get_be16(&tcp[0]);
+
+    /* Match against active connections (remote_ip:remote_port == src_ip:src_port) */
+    int8_t conn_id = -1;
+    for (uint8_t i = 0; i < BLE_ETH_MAX_CONNECTIONS; i++) {
+        if (g_connections[i].active &&
+            memcmp(g_connections[i].remote_ip, src_ip, 4) == 0 &&
+            g_connections[i].remote_port == src_port) {
+            conn_id = (int8_t)i;
+            break;
+        }
+    }
+
+    if (conn_id < 0) return false;
+
+    /* Push TCP payload back to BLE host through the matching tunnel */
+    const uint8_t *tcp_payload = &tcp[tcp_header_len];
+    return BLE_Eth_PushTargetData((uint8_t)conn_id, tcp_payload, tcp_payload_len);
+}
+
+/* ======================== Public API ===================================== */
+
 void BLE_Eth_ResetParser(void)
 {
     g_parser.state = BLE_ETH_PARSER_WAIT_HEAD1;

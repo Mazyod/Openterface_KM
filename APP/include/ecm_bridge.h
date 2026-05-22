@@ -13,11 +13,13 @@ void ECM_Bridge_Init(void);
 void ECM_Bridge_HostRxDone(const uint8_t *data, uint16_t len);
 void ECM_Bridge_TargetRxDone(const uint8_t *data, uint16_t len);
 void ECM_Bridge_Poll(void);
+void ECM_Bridge_SetBleTxCallback(void (*cb)(void));
 #else
 #define ECM_Bridge_Init()                  ((void)0)
 #define ECM_Bridge_HostRxDone(data, len)   ((void)0)
 #define ECM_Bridge_TargetRxDone(data, len) ((void)0)
 #define ECM_Bridge_Poll()                  ((void)0)
+#define ECM_Bridge_SetBleTxCallback(cb)    ((void)0)
 #endif
 
 #ifdef __cplusplus

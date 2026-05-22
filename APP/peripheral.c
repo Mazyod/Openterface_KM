@@ -26,6 +26,7 @@
 #include "ble_usb_service.h"
 #include "include/ble_eth_protocol.h"
 #include "usbd_composite_km.h"
+#include "include/ecm_bridge.h"
 
 /*********************************************************************
  * MACROS
@@ -142,6 +143,7 @@ static void peripheralChar4Notify(uint8_t *pValue, uint16_t len);
 void        ble_usb_ServiceEvt(uint16_t connection_handle, ble_usb_evt_t *p_evt);
 int         RingMem_Protection(uint8_t enable);
 static void ble_eth_event_handler(ble_eth_evt_t *evt);
+static void ble_eth_tx_event_trigger(void);
 
 static uint8_t Peripheral_IsCh9329ModeCommandFrame(const uint8_t *buf, uint16_t len)
 {
@@ -322,6 +324,15 @@ void Peripheral_Init()
 
     /* Initialize BLE-Eth tunneling protocol */
     BLE_Eth_Init(ble_eth_event_handler);
+
+    /* Hook ECM bridge target frames into BLE-Eth reverse path */
+    ECM_Bridge_SetBleTxCallback(ble_eth_tx_event_trigger);
+}
+
+/* Trigger BLE-Eth TX event when target frame data is pushed via BLE */
+static void ble_eth_tx_event_trigger(void)
+{
+    tmos_set_event(Peripheral_TaskID, SBP_PROCESS_BLEETH_TX_EVT);
 }
 
 /*********************************************************************

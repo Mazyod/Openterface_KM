@@ -10,6 +10,7 @@
 #include "usb_prop.h"
 #include "include/usbd_composite_km.h"
 #include "include/km_ring.h"
+#include "include/ble_eth_protocol.h"
 #include <string.h>
 
 #define ECM_BRIDGE_MTU_FRAME_SIZE       1514u
@@ -50,6 +51,9 @@ typedef struct {
 
 typedef uint8_t (*ECM_FrameHandler_t)(const uint8_t *data, uint16_t len);
 
+/* Forward declaration */
+static uint8_t handle_target_frame(const uint8_t *data, uint16_t len);
+
 static ECM_FrameQueue_t g_host_to_target;
 static ECM_FrameQueue_t g_target_to_host;
 static ECM_RxFrame_t g_host_rx_frame;
@@ -63,6 +67,15 @@ static uint8_t g_host_notify_state;
 
 extern uint8_t USBD_Endp1_Busy;
 extern uint8_t USBD_Endp3_Busy;
+
+/* Callback invoked when target frame data is pushed to BLE.
+   Set by peripheral.c to trigger BLE TX event. */
+static void (*g_ble_tx_event_cb)(void);
+
+void ECM_Bridge_SetBleTxCallback(void (*cb)(void))
+{
+    g_ble_tx_event_cb = cb;
+}
 
 static uint16_t get_be16(const uint8_t *data)
 {
@@ -543,7 +556,17 @@ void ECM_Bridge_HostRxDone(const uint8_t *data, uint16_t len)
 void ECM_Bridge_TargetRxDone(const uint8_t *data, uint16_t len)
 {
     rx_frame_append(&g_target_rx_frame, &g_target_to_host, data, len,
-                    ECM_BRIDGE_USBFS_PACKET_SIZE, 0);
+                    ECM_BRIDGE_USBFS_PACKET_SIZE, handle_target_frame);
+}
+
+static uint8_t handle_target_frame(const uint8_t *frame, uint16_t frame_len)
+{
+    /* Try to match frame to a BLE-Eth tunnel and push TCP payload back via BLE */
+    if (BLE_Eth_HandleTargetFrame(frame, frame_len) && g_ble_tx_event_cb) {
+        g_ble_tx_event_cb();
+    }
+    /* Return 0 so the frame still goes to the g_target_to_host queue for Mac */
+    return 0;
 }
 
 void ECM_Bridge_Poll(void)
