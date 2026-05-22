@@ -10,7 +10,7 @@ $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $repoRoot = Split-Path -Parent $scriptDir
 
 # Build output directory
-$buildDir = Join-Path $repoRoot "firmware_build"
+$buildDir = Join-Path $repoRoot "build"
 
 # Copy the built firmware to obj/ for MounRiver Studio compatibility
 $objDir = Join-Path $repoRoot "obj"

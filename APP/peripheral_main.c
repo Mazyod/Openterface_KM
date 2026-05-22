@@ -131,7 +131,9 @@ int main(void) {
     }
 #endif
 #ifdef ENABLE_UAC
-    UAC_Init();
+    if (USB_ModeConfig_ActiveModeHasTargetUac()) {
+        UAC_Init();
+    }
 #endif
     Keyboard_Init();
     Mouse_Init();

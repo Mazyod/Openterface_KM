@@ -1,0 +1,306 @@
+# BLE-to-Ethernet Tunneling Protocol
+
+## Overview
+
+This protocol enables TCP tunneling over BLE using the CH9329-compatible frame format. It is designed for:
+
+- **SSH over BLE**: Tunnel TCP port 22 through a BLE connection
+- **Low-latency control traffic**: Optimized for small interactive packets
+- **Transparent crypto**: SSE/crypto is handled by the host application; this layer is pure transport
+
+The protocol runs on the CH32V203 MCU firmware and communicates with a host app (desktop/mobile) via BLE GATT characteristics.
+
+## Transport
+
+The protocol uses the existing BLE USB service characteristics:
+
+| Characteristic | UUID   | Direction | Description |
+|---------------|--------|-----------|-------------|
+| RX            | 0xFFF2 | Host->Dev | Write / Write-no-response for commands and data |
+| TX            | 0xFFF1 | Dev->Host | Notify for responses and incoming data |
+
+The BLE MTU is negotiated at connection time. The protocol fragments messages to fit within the MTU limit.
+
+## Frame Format
+
+Each frame uses the CH9329-compatible layout:
+
+| Offset | Field | Size | Description |
+|--------|-------|------|-------------|
+| 0 | Header 1 | 1 | `0x57` |
+| 1 | Header 2 | 1 | `0xAB` |
+| 2 | Address | 1 | Channel/address (reserved, use `0x00`) |
+| 3 | Command | 1 | Command byte |
+| 4 | Payload Length | 1 | `N` (0-252) |
+| 5 | Payload | N | Command-specific data |
+| 5+N | Checksum | 1 | 8-bit additive sum of bytes 0..(4+N) |
+
+### Parser Behavior
+
+- Scans for `57 AB` header sync
+- If header byte 2 is not `AB`, drops one byte and resyncs
+- Validates checksum before dispatch
+- Invalid checksum: skips the entire frame and resyncs
+
+### Response Encoding
+
+Follows the CH9329 convention:
+
+- **Positive response**: `cmd | 0x80`
+- **Error response**: `cmd | 0xC0`
+
+## Commands
+
+### Connection Management
+
+#### CONNECT (`0x10`) - Establish TCP Tunnel
+
+**Request payload (6 bytes):**
+
+| Offset | Field | Size | Description |
+|--------|-------|------|-------------|
+| 0-3 | Destination IP | 4 | Big-endian IPv4 address |
+| 4-5 | Destination Port | 2 | Big-endian port number |
+
+**Response (`0x90`) payload (2 bytes):**
+
+| Offset | Field | Size | Description |
+|--------|-------|------|-------------|
+| 0 | Connection ID | 1 | Assigned connection ID (0-1) or `0xFF` on failure |
+| 1 | Status | 1 | `0x00` = success, error code otherwise |
+
+**Example:**
+
+```
+Connect to 192.168.1.100:22
+Request : 57 AB 00 10 06 C0 A8 01 64 00 16 CS
+Response: 57 AB 00 90 02 00 00 CS   (conn_id=0, success)
+```
+
+#### DISCONNECT (`0x12`) - Close TCP Tunnel
+
+**Request payload (1 byte):**
+
+| Offset | Field | Size | Description |
+|--------|-------|------|-------------|
+| 0 | Connection ID | 1 | Connection ID to close |
+
+**Response (`0x92`) payload (2 bytes):**
+
+| Offset | Field | Size | Description |
+|--------|-------|------|-------------|
+| 0 | Connection ID | 1 | Echoed connection ID |
+| 1 | Status | 1 | `0x00` = success |
+
+**Remote-closed push notification (`0xD2`):**
+
+When the remote TCP side closes the connection, the device pushes:
+
+```
+57 AB 00 D2 01 <conn_id> CS
+```
+
+### Data Transfer
+
+#### DATA (`0x11`) - Send/Receive Tunneled Data
+
+**Request payload (fragmented):**
+
+| Offset | Field | Size | Description |
+|--------|-------|------|-------------|
+| 0 | Fragment Flags | 1 | See fragmentation section |
+| 1 | Sequence Number | 1 | Fragment sequence (0-based) |
+| 2 | Connection ID | 1 | Target connection ID |
+| 3+ | TCP Payload | N | TCP payload data to tunnel |
+
+**Response (`0x91`) payload (1 byte):**
+
+| Offset | Field | Size | Description |
+|--------|-------|------|-------------|
+| 0 | Status | 1 | `0x00` = data accepted |
+
+**Incoming data push (`0x91`):**
+
+When data arrives from the remote TCP side, the device pushes DATA frames with the same command byte (`0x91` as notification). The host app distinguishes requests from notifications by context.
+
+### Device Info
+
+#### INFO (`0x1F`) - Get Device Capabilities
+
+**Request:** No payload (length = 0)
+
+**Response (`0x9F`) payload (8 bytes):**
+
+| Offset | Field | Size | Description |
+|--------|-------|------|-------------|
+| 0 | Protocol Version | 1 | `0x01` |
+| 1 | Max Connections | 1 | Number of simultaneous tunnels (2) |
+| 2-3 | Max Fragment Payload | 2 | Big-endian, max data per fragment |
+| 4 | Features | 1 | Feature bitmask (see below) |
+| 5-7 | Reserved | 3 | Zero |
+
+**Features bitmask:**
+
+| Bit | Name | Description |
+|-----|------|-------------|
+| 0 | TCP Tunnel | TCP tunneling supported |
+| 1 | SSH Optimized | SSH traffic optimization available |
+
+## Fragmentation
+
+BLE has MTU limitations. The protocol supports fragmenting larger TCP payloads:
+
+### Fragment Flags Byte
+
+| Bit | Name | Description |
+|-----|------|-------------|
+| 7 | MORE_FRAGMENTS | 1 = more fragments follow |
+| 6 | FIRST_FRAGMENT | 1 = this is the first fragment |
+| 5-4 | Reserved | Must be 0 |
+| 3-0 | Total Count | Total number of fragments (1-15) |
+
+### Fragment Rules
+
+- **Single fragment**: `FIRST=1, MORE=0, count=1, seq=0`
+- **Multi-fragment**: First has `FIRST=1, MORE=1`, middle has `FIRST=0, MORE=1`, last has `FIRST=0, MORE=0`
+- **Max reassembled size**: 15 fragments x ~247 bytes = ~3.7 KB
+- **Out-of-order detection**: If sequence doesn't match expected, reassembly aborts
+- **Maximum data per fragment**: `BLE_ETH_MAX_PAYLOAD_LEN - 3` = 249 bytes
+
+### Fragmentation Example
+
+Sending 500 bytes of SSH data on connection 0:
+
+```
+Fragment 0 (249 bytes data):
+57 AB 00 91 02 <C2: FIRST|MORE|count=3> <seq=0> <conn_id=0> <249 bytes> CS
+
+Fragment 1 (249 bytes data):
+57 AB 00 91 02 <82: MORE|count=3> <seq=1> <conn_id=0> <249 bytes> CS
+
+Fragment 2 (2 bytes data):
+57 AB 00 91 05 <02: count=3> <seq=2> <conn_id=0> <2 bytes> CS
+```
+
+## Status Codes
+
+| Code | Name | Description |
+|------|------|-------------|
+| `0x00` | SUCCESS | Operation completed |
+| `0xE1` | TIMEOUT | Operation timed out |
+| `0xE2` | HEADER_ERR | Frame header error |
+| `0xE3` | BAD_CMD | Unsupported command |
+| `0xE4` | CHECKSUM_ERR | Checksum mismatch |
+| `0xE5` | PARAM_ERR | Invalid parameter |
+| `0xE6` | FRAME_ERR | Frame format error |
+| `0xE7` | CONN_FULL | No free connection slots |
+| `0xE8` | NO_ROUTE | Cannot reach destination |
+
+## Connection Lifecycle
+
+```
+Host                                    Device
+  |                                       |
+  |------ CONNECT (ip, port) ----------->|
+  |<----- CONNECT_RESP (conn_id) --------|
+  |                                       |
+  |------ DATA (conn_id, payload) ------>|
+  |<----- DATA_RESP (ACK) --------------|
+  |                                       |
+  |<----- DATA_PUSH (conn_id, data) -----|  (incoming from remote)
+  |------ DATA_RESP (ACK) ------------->|
+  |                                       |
+  |------ DISCONNECT (conn_id) --------->|
+  |<----- DISCONN_RESP -----------------|
+  |                                       |
+```
+
+### Timeout Behavior
+
+- If a connection is idle for more than 30 seconds, the device may close it
+- The device pushes `CONN_CLOSED` (`0xD2`) before closing
+- Host should respond with DISCONNECT to confirm
+
+## SSH Over BLE
+
+The protocol is optimized for SSH traffic:
+
+1. **Small packets**: SSH interactive sessions use small packets (typically < 100 bytes), fitting in single BLE frames
+2. **Low fragmentation**: Most SSH packets don't require fragmentation
+3. **Bidirectional**: Both directions support fragmented transfer
+4. **Transparent**: Crypto (SSH key exchange, encryption) is handled end-to-end by the SSH client and server; the MCU just tunnels raw TCP bytes
+
+### Example SSH Session Setup
+
+```
+1. Host sends CONNECT to target_ip:22
+2. Device establishes TCP connection to target
+3. Device responds with CONNECT_RESP (conn_id=0)
+4. SSH client sends SSH banner via DATA frames
+5. Device tunnels to remote SSH server
+6. Remote SSH server responds, device pushes DATA to host
+7. SSH handshake proceeds through the tunnel
+8. Encrypted SSH session runs transparently
+```
+
+## Host App Integration
+
+### Sending Data
+
+```c
+// Build a CONNECT frame
+uint8_t buf[32];
+uint8_t ip[4] = {192, 168, 1, 100};
+uint16_t frame_len = BLE_Eth_BuildConnect(buf, ip, 22);
+
+// Write to BLE characteristic
+ble_write(buf, frame_len);
+
+// Build a DATA frame (small payload)
+uint8_t ssh_data[] = "SSH-2.0-OpenSSH_8.9\r\n";
+frame_len = BLE_Eth_BuildData(buf, conn_id, ssh_data, sizeof(ssh_data));
+ble_write(buf, frame_len);
+```
+
+### Receiving Data
+
+```c
+// In BLE notification callback
+void on_ble_notify(const uint8_t *data, uint16_t len) {
+    BLE_Eth_Parse(data, len);
+}
+
+// In event callback
+void on_ble_eth_event(ble_eth_evt_t *evt) {
+    switch (evt->type) {
+    case BLE_ETH_EVT_DATA_READY:
+        // Reassembled TCP data from remote
+        tcp_send_to_host(evt->info.data.conn_id,
+                        evt->info.data.data,
+                        evt->info.data.len);
+        break;
+    case BLE_ETH_EVT_CONN_OPENED:
+        tunnel_active = true;
+        break;
+    case BLE_ETH_EVT_CONN_CLOSED:
+        tunnel_active = false;
+        break;
+    }
+}
+```
+
+## Implementation Files
+
+| File | Description |
+|------|-------------|
+| `APP/include/ble_eth_protocol.h` | Protocol definitions, types, and API declarations |
+| `APP/ble_eth_protocol.c` | Protocol implementation: parser, connection management, fragmentation |
+
+## Design Constraints
+
+- **MCU**: CH32V203 (64KB flash, 20KB RAM)
+- **Max connections**: 2 simultaneous tunnels
+- **Max fragment data**: ~247 bytes per fragment
+- **Max reassembled payload**: ~3.7 KB (15 fragments)
+- **BLE MTU**: Negotiated at connection, default 23 bytes (20 bytes payload)
+- **TX queue depth**: 4 chunks (non-blocking send)

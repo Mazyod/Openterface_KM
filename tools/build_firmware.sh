@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
 # Standalone firmware build script for Openterface KM
 # Uses the MounRiver Studio bundled toolchain
+# Source order and flags match MRS obj/ subdir.mk exactly.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-BUILD_DIR="$REPO_ROOT/firmware_build"
+BUILD_DIR="$REPO_ROOT/obj"
 
 TOOLCHAIN="C:/MounRiver/MounRiver_Studio2/resources/app/resources/win32/components/WCH/Toolchain/RISC-V Embedded GCC/bin"
 PREFIX="$TOOLCHAIN/riscv-none-embed"
@@ -15,28 +16,104 @@ OBJCOPY="$PREFIX-objcopy"
 OBJDUMP="$PREFIX-objdump"
 SIZE="$PREFIX-size"
 
-# Build configuration
-BOARD_VERSION=1
-ENABLE_UAC=1
-ENABLE_BLE=1
-BLE_NAME="KVM-GO"
-
 # MCU flags
 MARCH="-march=rv32imacxw"
 MABI="-mabi=ilp32"
 MCFLAGS="$MARCH $MABI -mcmodel=medany -msmall-data-limit=8 -mno-save-restore"
 
-# Source files
-C_SOURCES=$(find "$REPO_ROOT/APP" "$REPO_ROOT/HAL" "$REPO_ROOT/Profile" "$REPO_ROOT/SRC/Core" "$REPO_ROOT/SRC/Debug" "$REPO_ROOT/SRC/Peripheral/src" -name "*.c" 2>/dev/null | grep -v "APP/USBLIB/USB-Driver/CH32_TEMP.c" | grep -v "APP/USBLIB/USB-Driver/src/CH32_TEMP.c")
+# Source files — exact order matching MounRiver Studio obj/ subdir.mk link order.
+# MRS map file link order (from obj/BLE_USB.map):
+#   tools/wchisp_c, startup, SRC/Peripheral(20), SRC/Debug, SRC/Core,
+#   Profile(3), HAL(MCU,RTC,SLEEP), APP/USBLIB/USB-Driver/src(6),
+#   APP/USBLIB/CONFIG(6), APP/UART, APP(21).
+# MRS does NOT compile HAL/KEY.c or HAL/LED.c.
+C_SOURCES=(
+  "$REPO_ROOT/SRC/Peripheral/src/ch32v20x_adc.c"
+  "$REPO_ROOT/SRC/Peripheral/src/ch32v20x_bkp.c"
+  "$REPO_ROOT/SRC/Peripheral/src/ch32v20x_can.c"
+  "$REPO_ROOT/SRC/Peripheral/src/ch32v20x_crc.c"
+  "$REPO_ROOT/SRC/Peripheral/src/ch32v20x_dbgmcu.c"
+  "$REPO_ROOT/SRC/Peripheral/src/ch32v20x_dma.c"
+  "$REPO_ROOT/SRC/Peripheral/src/ch32v20x_exti.c"
+  "$REPO_ROOT/SRC/Peripheral/src/ch32v20x_flash.c"
+  "$REPO_ROOT/SRC/Peripheral/src/ch32v20x_gpio.c"
+  "$REPO_ROOT/SRC/Peripheral/src/ch32v20x_i2c.c"
+  "$REPO_ROOT/SRC/Peripheral/src/ch32v20x_iwdg.c"
+  "$REPO_ROOT/SRC/Peripheral/src/ch32v20x_misc.c"
+  "$REPO_ROOT/SRC/Peripheral/src/ch32v20x_opa.c"
+  "$REPO_ROOT/SRC/Peripheral/src/ch32v20x_pwr.c"
+  "$REPO_ROOT/SRC/Peripheral/src/ch32v20x_rcc.c"
+  "$REPO_ROOT/SRC/Peripheral/src/ch32v20x_rtc.c"
+  "$REPO_ROOT/SRC/Peripheral/src/ch32v20x_spi.c"
+  "$REPO_ROOT/SRC/Peripheral/src/ch32v20x_tim.c"
+  "$REPO_ROOT/SRC/Peripheral/src/ch32v20x_usart.c"
+  "$REPO_ROOT/SRC/Peripheral/src/ch32v20x_wwdg.c"
+  "$REPO_ROOT/SRC/Debug/debug.c"
+  "$REPO_ROOT/SRC/Core/core_riscv.c"
+  "$REPO_ROOT/Profile/ble_usb_service.c"
+  "$REPO_ROOT/Profile/devinfoservice.c"
+  "$REPO_ROOT/Profile/gattprofile.c"
+  "$REPO_ROOT/HAL/MCU.c"
+  "$REPO_ROOT/HAL/RTC.c"
+  "$REPO_ROOT/HAL/SLEEP.c"
+  "$REPO_ROOT/APP/USBLIB/USB-Driver/src/usb_core.c"
+  "$REPO_ROOT/APP/USBLIB/USB-Driver/src/usb_init.c"
+  "$REPO_ROOT/APP/USBLIB/USB-Driver/src/usb_int.c"
+  "$REPO_ROOT/APP/USBLIB/USB-Driver/src/usb_mem.c"
+  "$REPO_ROOT/APP/USBLIB/USB-Driver/src/usb_regs.c"
+  "$REPO_ROOT/APP/USBLIB/USB-Driver/src/usb_sil.c"
+  "$REPO_ROOT/APP/USBLIB/CONFIG/hw_config.c"
+  "$REPO_ROOT/APP/USBLIB/CONFIG/usb_desc.c"
+  "$REPO_ROOT/APP/USBLIB/CONFIG/usb_endp.c"
+  "$REPO_ROOT/APP/USBLIB/CONFIG/usb_istr.c"
+  "$REPO_ROOT/APP/USBLIB/CONFIG/usb_prop.c"
+  "$REPO_ROOT/APP/USBLIB/CONFIG/usb_pwr.c"
+  "$REPO_ROOT/APP/UART/UART.c"
+  "$REPO_ROOT/APP/CH32_TEMP.c"
+  "$REPO_ROOT/APP/DS18B20.c"
+  "$REPO_ROOT/APP/RGB.c"
+  "$REPO_ROOT/APP/RingMem.c"
+  "$REPO_ROOT/APP/acm_bridge.c"
+  "$REPO_ROOT/APP/ble_eth_protocol.c"
+  "$REPO_ROOT/APP/ch32v20x_it.c"
+  "$REPO_ROOT/APP/ch32v20x_usbfs_device.c"
+  "$REPO_ROOT/APP/ecm_bridge.c"
+  "$REPO_ROOT/APP/iwdg_auto.c"
+  "$REPO_ROOT/APP/keyboard_handler.c"
+  "$REPO_ROOT/APP/km_ring.c"
+  "$REPO_ROOT/APP/mouse_handler.c"
+  "$REPO_ROOT/APP/peripheral.c"
+  "$REPO_ROOT/APP/peripheral_main.c"
+  "$REPO_ROOT/APP/sd_switch.c"
+  "$REPO_ROOT/APP/system_ch32v20x.c"
+  "$REPO_ROOT/APP/uac_handler.c"
+  "$REPO_ROOT/APP/usb_mode_config.c"
+  "$REPO_ROOT/APP/usbd_compostie_km.c"
+  "$REPO_ROOT/APP/usbd_desc.c"
+)
 
-# Use the D8W startup file (CH32V203 with BLE)
 ASM_SOURCES="$REPO_ROOT/SRC/Startup/startup_ch32v20x_D8W.S"
 
-# Object files
-C_OBJECTS=$(echo "$C_SOURCES" | sed "s|$REPO_ROOT/|$BUILD_DIR/|; s|\.c$|.o|")
-ASM_OBJECT=$(echo "$ASM_SOURCES" | sed "s|$REPO_ROOT/|$BUILD_DIR/|; s|\.S$|.o|")
+# BLE task scheduler assembly (MRS compiles from LIB/subdir.mk)
+BLE_TASK_SRC="$REPO_ROOT/LIB/ble_task_scheduler.S"
+BLE_TASK_OBJ="$BUILD_DIR/LIB/ble_task_scheduler.o"
 
-# Include paths
+# tools/wchisp_c.c (guarded by #ifndef __riscv, compiles to empty sections)
+TOOLS_SRC="$REPO_ROOT/tools/wchisp_c.c"
+TOOLS_OBJ="$BUILD_DIR/tools/wchisp_c.o"
+
+# Object files (in same order as sources)
+C_OBJECTS=()
+for src in "${C_SOURCES[@]}"; do
+  obj="${src#$REPO_ROOT/}"
+  obj="${obj%.c}.o"
+  obj="$BUILD_DIR/$obj"
+  C_OBJECTS+=("$obj")
+done
+ASM_OBJECT="$BUILD_DIR/${ASM_SOURCES#$REPO_ROOT/}"
+ASM_OBJECT="${ASM_OBJECT%.S}.o"
+
+# Include paths — same as MRS
 INCLUDES=(
   "-I$REPO_ROOT/SRC/Core"
   "-I$REPO_ROOT/SRC/Startup"
@@ -51,25 +128,16 @@ INCLUDES=(
   "-I$REPO_ROOT/APP/USBLIB/USB-Driver/inc"
 )
 
+# Compiler flags — match MRS obj/ subdir.mk compile command exactly
 CFLAGS="$MCFLAGS -Os -fmessage-length=0 -fsigned-char -ffunction-sections -fdata-sections -fno-common -g"
 CFLAGS="$CFLAGS -include stdint.h -include stddef.h"
-CFLAGS="$CFLAGS -Dversion=$BOARD_VERSION"
-CFLAGS="$CFLAGS -DUPSTREAM_USB_MODE=1"
-CFLAGS="$CFLAGS -DUSB_ETH_MAC=0x024F464B4D01ULL"
-CFLAGS="$CFLAGS -DUSB_ETH_MAX_SEGMENT_SIZE=1514"
-CFLAGS="$CFLAGS -DCH32V20x_D8W"
+CFLAGS="$CFLAGS -std=gnu99"
 CFLAGS="$CFLAGS -DBLE_BUFF_MAX_LEN=516"
+CFLAGS="$CFLAGS -DCH32V20x_D8W"
 CFLAGS="$CFLAGS -DBLE_MEMHEAP_SIZE=10240"
 CFLAGS="$CFLAGS -DBLE_TX_NUM_EVENT=5"
 CFLAGS="$CFLAGS -DCLK_OSC32K=0"
-
-if [ "$ENABLE_UAC" = "1" ]; then
-  CFLAGS="$CFLAGS -DENABLE_UAC"
-fi
-if [ "$ENABLE_BLE" = "1" ]; then
-  CFLAGS="$CFLAGS -DENABLE_BLE"
-  CFLAGS="$CFLAGS -DCENTRAL_MAX_CONNECTION=0"
-fi
+# ENABLE_BLE, version, ENABLE_UAC all handled by Version_selection.h #ifndef guards
 
 LINKER_SCRIPT="$REPO_ROOT/HAL/Link.ld"
 OUTPUT="$BUILD_DIR/openterface-km-firmware"
@@ -77,19 +145,39 @@ OUTPUT="$BUILD_DIR/openterface-km-firmware"
 mkdir -p "$BUILD_DIR"
 
 echo "=== Compiling C sources ==="
-for src in $C_SOURCES; do
-  obj=$(echo "$src" | sed "s|$REPO_ROOT/|$BUILD_DIR/|; s|\.c$|.o|")
+for i in "${!C_SOURCES[@]}"; do
+  src="${C_SOURCES[$i]}"
+  obj="${C_OBJECTS[$i]}"
   mkdir -p "$(dirname "$obj")"
   echo "  $src"
   "$CC" $CFLAGS "${INCLUDES[@]}" -c "$src" -o "$obj"
 done
 
+echo "=== Compiling BLE task scheduler ==="
+mkdir -p "$(dirname "$BLE_TASK_OBJ")"
+"$CC" $MCFLAGS "${INCLUDES[@]}" -x assembler-with-cpp -c "$BLE_TASK_SRC" -o "$BLE_TASK_OBJ"
+
 echo "=== Compiling assembly startup ==="
 mkdir -p "$(dirname "$ASM_OBJECT")"
-"$CC" $MCFLAGS "${INCLUDES[@]}" -c "$ASM_SOURCES" -o "$ASM_OBJECT"
+"$CC" $MCFLAGS "${INCLUDES[@]}" -x assembler-with-cpp -c "$ASM_SOURCES" -o "$ASM_OBJECT"
+
+echo "=== Compiling tools (empty for riscv) ==="
+mkdir -p "$(dirname "$TOOLS_OBJ")"
+"$CC" $CFLAGS "${INCLUDES[@]}" -c "$TOOLS_SRC" -o "$TOOLS_OBJ"
 
 echo "=== Linking ==="
-ALL_OBJECTS="$ASM_OBJECT $C_OBJECTS"
+# MRS link order: tools/wchisp_c (empty on riscv), startup, SRC/Peripheral,
+# SRC/Debug, SRC/Core, Profile, LIB/ble_task_scheduler, HAL, APP/USBLIB,
+# APP/UART, APP.
+PROFILE_END=25  # C_OBJECTS[0..24] = SRC/Peripheral(20) + Debug + Core + Profile(3)
+
+ALL_OBJECTS=(
+  "$TOOLS_OBJ"
+  "$ASM_OBJECT"
+  "${C_OBJECTS[@]:0:$PROFILE_END}"   # SRC/Peripheral + Debug + Core + Profile
+  "$BLE_TASK_OBJ"                      # LIB/ble_task_scheduler (between Profile and HAL)
+  "${C_OBJECTS[@]:$PROFILE_END}"       # HAL + USBLIB + UART + APP
+)
 "$CC" $MCFLAGS -Os -fmessage-length=0 -fsigned-char -ffunction-sections -fdata-sections -fno-common -g \
   "${INCLUDES[@]}" \
   -T "$LINKER_SCRIPT" -nostartfiles \
@@ -97,7 +185,7 @@ ALL_OBJECTS="$ASM_OBJECT $C_OBJECTS"
   -Xlinker --print-memory-usage \
   -Wl,-Map,"$OUTPUT.map" \
   --specs=nano.specs --specs=nosys.specs \
-  -o "$OUTPUT.elf" $ALL_OBJECTS -lwchble -lm
+  -o "$OUTPUT.elf" "${ALL_OBJECTS[@]}" -lwchble -lm
 
 echo "=== Creating HEX ==="
 "$OBJCOPY" -O ihex "$OUTPUT.elf" "$OUTPUT.hex"

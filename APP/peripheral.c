@@ -24,6 +24,7 @@
 #include "gattprofile.h"
 #include "peripheral.h"
 #include "ble_usb_service.h"
+#include "include/ble_eth_protocol.h"
 #include "usbd_composite_km.h"
 
 /*********************************************************************
@@ -140,6 +141,7 @@ static void peripheralRssiCB(uint16_t connHandle, int8_t rssi);
 static void peripheralChar4Notify(uint8_t *pValue, uint16_t len);
 void        ble_usb_ServiceEvt(uint16_t connection_handle, ble_usb_evt_t *p_evt);
 int         RingMem_Protection(uint8_t enable);
+static void ble_eth_event_handler(ble_eth_evt_t *evt);
 
 static uint8_t Peripheral_IsCh9329ModeCommandFrame(const uint8_t *buf, uint16_t len)
 {
@@ -317,6 +319,9 @@ void Peripheral_Init()
 
     RingMemInit(&RingMemUSB, RingMemUSBBuf, 512, RingMem_Protection);
     RingMemInit(&RingMemBLE, RingMemBLEBuf, 512, RingMem_Protection);
+
+    /* Initialize BLE-Eth tunneling protocol */
+    BLE_Eth_Init(ble_eth_event_handler);
 }
 
 /*********************************************************************
@@ -452,6 +457,22 @@ uint16_t Peripheral_ProcessEvent(uint8_t task_id, uint16_t events)
             tmos_start_task(Peripheral_TaskID, SBP_PROCESS_BLEDATA_EVT, 5);
         }
         return (events ^ SBP_PROCESS_BLEDATA_EVT);
+    }
+
+    if(events & SBP_PROCESS_BLEETH_TX_EVT)
+    {
+        /* Send pending BLE-Eth frames over BLE notification */
+        uint8_t tx_buf[256];
+        uint16_t len;
+
+        while ((len = BLE_Eth_GetNextTxChunk(tx_buf)) > 0) {
+            if (app_usb_notify(tx_buf, (uint8_t)len) != SUCCESS) {
+                /* BLE notify failed, re-schedule for retry */
+                tmos_set_event(Peripheral_TaskID, SBP_PROCESS_BLEETH_TX_EVT);
+                break;
+            }
+        }
+        return (events ^ SBP_PROCESS_BLEETH_TX_EVT);
     }
 
     // Discard unknown events
@@ -833,6 +854,14 @@ void ble_usb_ServiceEvt(uint16_t connection_handle, ble_usb_evt_t *p_evt)
         case BLE_USB_EVT_BLE_DATA_RECIEVED:
             PRINT("BLE RX DATA len:%d\r\n", p_evt->data.length);
 
+            /* First try BLE-Eth protocol parser (handles 0x57 0xAB frames for
+             * TCP tunneling). If it matches BLE-Eth commands, the parser will
+             * handle it via events. */
+            BLE_Eth_Parse(p_evt->data.p_data, p_evt->data.length);
+            tmos_set_event(Peripheral_TaskID, SBP_PROCESS_BLEETH_TX_EVT);
+
+            /* Also feed into legacy CH9329 path for backward compatibility.
+             * The CH9329 parser is stateful and will only match its own commands. */
             if(Peripheral_IsCh9329ModeCommandFrame(p_evt->data.p_data, p_evt->data.length))
             {
                 CH9329_RxBuffer_Add((uint8_t *)p_evt->data.p_data, p_evt->data.length);
@@ -849,6 +878,67 @@ void ble_usb_ServiceEvt(uint16_t connection_handle, ble_usb_evt_t *p_evt)
             break;
         default:
             break;
+    }
+}
+
+/*********************************************************************
+ * @fn      ble_eth_event_handler
+ *
+ * @brief   BLE-Eth protocol event callback. Handles tunnel events from
+ *          the BLE-Eth protocol layer and bridges data to/from USB.
+ *
+ * @return  none
+ */
+static void ble_eth_event_handler(ble_eth_evt_t *evt)
+{
+    switch (evt->type) {
+    case BLE_ETH_EVT_DATA_READY:
+        /* Reassembled TCP data from BLE host -> forward to USB/ECM target */
+        PRINT("BLE-Eth data ready: conn=%d len=%d\r\n",
+              evt->info.data.conn_id, evt->info.data.len);
+        /* Bridge to the ECM/USB path. The ECM bridge or USB handler
+         * will receive this and forward to the target device. */
+        ECM_Bridge_HostRxDone(evt->info.data.data, evt->info.data.len);
+        break;
+
+    case BLE_ETH_EVT_CONN_OPENED:
+        PRINT("BLE-Eth tunnel opened: conn=%d status=%d\r\n",
+              evt->info.conn.conn_id, evt->info.conn.status);
+        break;
+
+    case BLE_ETH_EVT_CONN_CLOSED:
+        PRINT("BLE-Eth tunnel closed: conn=%d status=%d\r\n",
+              evt->info.conn.conn_id, evt->info.conn.status);
+        break;
+
+    case BLE_ETH_EVT_FRAME_RX:
+        /* Raw frame received (for debugging or advanced handling) */
+        break;
+
+    case BLE_ETH_EVT_ERROR:
+        PRINT("BLE-Eth error: conn=%d status=%d\r\n",
+              evt->info.error.conn_id, evt->info.error.status);
+        break;
+    }
+}
+
+/*********************************************************************
+ * @fn      BLE_Eth_PushFromBridge
+ *
+ * @brief   Push data from the ECM bridge (target side) back to BLE host.
+ *          This is the reverse path: target TCP data -> BLE notification.
+ *          Called by ECM_Bridge_TargetRxDone or USB data handlers.
+ *
+ * @param   conn_id  Connection ID (must match an active tunnel).
+ * @param   data     TCP payload data from target.
+ * @param   len      Data length.
+ *
+ * @return  none
+ */
+void BLE_Eth_PushFromBridge(uint8_t conn_id, const uint8_t *data, uint16_t len)
+{
+    if (BLE_Eth_PushTargetData(conn_id, data, len)) {
+        tmos_set_event(Peripheral_TaskID, SBP_PROCESS_BLEETH_TX_EVT);
     }
 }
 

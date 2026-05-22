@@ -34,6 +34,7 @@ extern "C" {
 #define SBP_PHY_UPDATE_EVT      0x0010
 #define SBP_PROCESS_USBDATA_EVT 0x0020
 #define SBP_PROCESS_BLEDATA_EVT 0x0040
+#define SBP_PROCESS_BLEETH_TX_EVT 0x0080
 
 /*********************************************************************
  * MACROS

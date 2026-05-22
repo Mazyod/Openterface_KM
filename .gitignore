@@ -13,4 +13,4 @@ tools/wchisp_c
 .venv/
 stdout
 *.pyc
-build/
+CLAUDE.md
