@@ -45,6 +45,7 @@ from tools.ble_eth_tunnel import (
     BleEthClient,
     BleTcpProxy,
     TunnelEvent,
+    MAX_PAYLOAD_LEN,
     build_connect,
     build_disconnect,
     build_info_request,
@@ -288,9 +289,9 @@ async def test_ble_eth_data_path(args):
         assert pong == large_data, f"PONG mismatch for large payload"
         print("  [PASS] Large payload ping")
 
-        # Test 3: Max payload ping
-        print("  Max payload ping (252 bytes)...")
-        max_data = bytes([0xAA] * 252)
+        # Test 3: Max payload ping (frame must fit in uint8_t notify length)
+        print(f"  Max payload ping ({MAX_PAYLOAD_LEN} bytes)...")
+        max_data = bytes([0xAA] * MAX_PAYLOAD_LEN)
         pong = await client.ping(max_data)
         assert pong == max_data, f"PONG mismatch for max payload"
         print("  [PASS] Max payload ping")

@@ -21,7 +21,7 @@ static ble_eth_event_cb_t   g_event_cb;
 
 /* TX queue: holds pre-built frames ready for BLE notification */
 #define BLE_ETH_TX_QUEUE_DEPTH  2U
-#define BLE_ETH_TX_CHUNK_SIZE   256U  /* fits in BLE notify (MTU-3 ≈ 247) */
+#define BLE_ETH_TX_CHUNK_SIZE   255U  /* fits in ble notify (uint8_t len param, max 255) */
 
 typedef struct {
     uint8_t  data[BLE_ETH_TX_CHUNK_SIZE];

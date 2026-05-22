@@ -38,6 +38,10 @@ extern "C" {
 #define BLE_ETH_FRAME_MIN_LEN     6U    /* head1+head2+addr+cmd+len+csum */
 #define BLE_ETH_FRAME_HEAD_LEN    5U    /* bytes before payload */
 #define BLE_ETH_MAX_PAYLOAD_LEN   252U  /* max payload in a single frame */
+/* Note: For single-chunk BLE notification, complete frame (5 + payload + 1)
+   must fit in BLE_ETH_TX_CHUNK_SIZE (255). Effective max for single-chunk:
+   249 bytes payload → 255-byte frame. Larger payloads will be split by
+   tx_queue_push and require multiple notifications. */
 
 /* ======================== Status Codes =================================== */
 
