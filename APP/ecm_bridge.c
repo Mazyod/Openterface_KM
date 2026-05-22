@@ -205,6 +205,14 @@ static uint8_t handle_host_control_frame(const uint8_t *frame, uint16_t frame_le
     const uint8_t *payload;
     uint16_t payload_len;
 
+    /* First, check if this frame is a TCP response for an active BLE-Eth tunnel.
+       The Mac's TCP stack may respond (e.g. SYN+ACK) to frames injected by
+       BLE-Eth, and these need to be routed back through the tunnel. */
+    if (BLE_Eth_HandleTargetFrame(frame, frame_len) && g_ble_tx_event_cb) {
+        g_ble_tx_event_cb();
+        /* Don't drop the frame — let it also go to the Mac's queue below */
+    }
+
     if (!tcp_payload_from_ipv4_frame(frame, frame_len, &payload, &payload_len)) {
         return 0;
     }
@@ -545,6 +553,13 @@ void ECM_Bridge_Init(void)
     g_host_zlp_pending = 0;
     g_target_notify_state = 1;
     g_host_notify_state = 1;
+}
+
+void ECM_Bridge_SendRawFrame(const uint8_t *data, uint16_t len)
+{
+    /* Queue raw Ethernet frame directly to target_to_host, bypassing
+       CH9329 protocol handler. Used by BLE-Eth TCP frame injection. */
+    queue_push(&g_target_to_host, data, len);
 }
 
 void ECM_Bridge_HostRxDone(const uint8_t *data, uint16_t len)

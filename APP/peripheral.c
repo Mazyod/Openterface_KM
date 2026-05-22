@@ -336,7 +336,7 @@ void Peripheral_Init()
 /* Send Ethernet frame from BLE-Eth to ECM bridge (host side) */
 static void ecm_bridge_tx_handler(const uint8_t *data, uint16_t len)
 {
-    ECM_Bridge_HostRxDone(data, len);
+    ECM_Bridge_SendRawFrame(data, len);
 }
 
 /* Trigger BLE-Eth TX event when target frame data is pushed via BLE */
