@@ -40,6 +40,21 @@ static ble_eth_tx_queue_t  g_tx_queue;
 /* Reassembly buffer (one at a time, since BLE is single-connection) */
 static ble_eth_reassembly_t g_reassembly;
 
+/* Callback for sending complete Ethernet frames to ECM bridge.
+   Set by peripheral.c via BLE_Eth_SetEcmtxCb(). */
+typedef void (*ble_eth_ecm_tx_cb_t)(const uint8_t *data, uint16_t len);
+static ble_eth_ecm_tx_cb_t g_ecm_tx_cb;
+
+/* Device-side MAC and IP for ECM frames (must be on same subnet as Mac) */
+static const uint8_t g_dev_mac[6] = { 0x02, 0x00, 0x00, 0x00, 0x00, 0x02 };
+static const uint8_t g_host_mac[6] = { 0x02, 0x00, 0x00, 0x00, 0x00, 0x01 };
+static const uint8_t g_dev_ip[4] = { 192, 168, 11, 3 };
+
+void BLE_Eth_SetEcmtxCb(ble_eth_ecm_tx_cb_t cb)
+{
+    g_ecm_tx_cb = cb;
+}
+
 /* ======================== Helpers ======================================== */
 
 static uint8_t calc_checksum(const uint8_t *data, uint16_t len)
@@ -157,6 +172,9 @@ static void evt_conn_closed(uint8_t conn_id, uint8_t status)
 
 /* ======================== Frame Dispatch ================================ */
 
+static uint8_t send_tcp_frame(uint8_t conn_id, uint16_t tcp_flags,
+                              const uint8_t *payload, uint16_t payload_len);
+
 static void dispatch_frame(const ble_eth_frame_t *frame)
 {
     uint8_t addr = frame->addr;
@@ -187,6 +205,11 @@ static void dispatch_frame(const ble_eth_frame_t *frame)
         uint8_t status = (conn_id != BLE_ETH_INVALID_CONN_ID)
                          ? BLE_ETH_STATUS_SUCCESS
                          : BLE_ETH_STATUS_CONN_FULL;
+
+        /* If connection succeeded, send TCP SYN to target via ECM */
+        if (status == BLE_ETH_STATUS_SUCCESS && g_ecm_tx_cb) {
+            send_tcp_frame(conn_id, 0x02, NULL, 0);  /* SYN only */
+        }
 
         uint8_t rsp[2] = { conn_id, status };
         uint8_t buf[16];
@@ -475,6 +498,12 @@ uint8_t BLE_Eth_AllocConnection(const uint8_t remote_ip[4], uint16_t remote_port
             g_connections[i].conn_id = i;
             memcpy(g_connections[i].remote_ip, remote_ip, 4);
             g_connections[i].remote_port = remote_port;
+            g_connections[i].tcp_state = BLE_ETH_TCP_SYN_SENT;
+            g_connections[i].local_seq = 0x12345678 + i;  /* unique per conn */
+            g_connections[i].local_ack = 0;
+            g_connections[i].remote_seq = 0;
+            g_connections[i].remote_ack = 0;
+            g_connections[i].local_port = 50000 + i * 10;
             return i;
         }
     }
@@ -547,6 +576,117 @@ uint16_t BLE_Eth_GetNextTxChunk(uint8_t *buf)
     return len;
 }
 
+/* ======================== ECM TCP frame generation ======================= */
+
+static uint16_t ecm_get_be16(const uint8_t *p)
+{
+    return (uint16_t)((p[0] << 8) | p[1]);
+}
+
+static uint32_t ecm_get_be32(const uint8_t *p)
+{
+    return (uint32_t)(p[0]) << 24 | (uint32_t)(p[1]) << 16 |
+           (uint32_t)(p[2]) << 8  | (uint32_t)(p[3]);
+}
+
+static void ecm_put_be16(uint8_t *p, uint16_t v)
+{
+    p[0] = (v >> 8) & 0xFF;
+    p[1] = v & 0xFF;
+}
+
+static void ecm_put_be32(uint8_t *p, uint32_t v)
+{
+    p[0] = (v >> 24) & 0xFF;
+    p[1] = (v >> 16) & 0xFF;
+    p[2] = (v >> 8) & 0xFF;
+    p[3] = v & 0xFF;
+}
+
+static uint16_t ip_checksum(const uint8_t *hdr, uint16_t len)
+{
+    uint32_t sum = 0;
+    for (uint16_t i = 0; i < len; i += 2) {
+        sum += (uint16_t)(hdr[i] << 8) | hdr[i + 1];
+    }
+    while (sum >> 16) sum = (sum & 0xFFFF) + (sum >> 16);
+    return (~sum) & 0xFFFF;
+}
+
+/* Build Ethernet + IPv4 + TCP frame and send via ECM callback.
+   Returns 1 on success, 0 if no callback registered. */
+static uint8_t send_tcp_frame(uint8_t conn_id, uint16_t tcp_flags,
+                              const uint8_t *payload, uint16_t payload_len)
+{
+    if (!g_ecm_tx_cb) return 0;
+
+    ble_eth_conn_t *c = &g_connections[conn_id];
+    if (!c->active) return 0;
+
+    /* Build frame: 14 Eth + 20 IPv4 + 20 TCP + payload */
+    uint16_t total = 14 + 20 + 20 + payload_len;
+    if (total > 1514) return 0;
+
+    uint8_t buf[1514];
+    uint16_t off = 0;
+
+    /* Ethernet header */
+    memcpy(&buf[off], g_host_mac, 6); off += 6;  /* dst = Mac */
+    memcpy(&buf[off], g_dev_mac, 6);  off += 6;  /* src = device */
+    ecm_put_be16(&buf[off], 0x0800); off += 2;   /* EtherType = IPv4 */
+
+    /* IPv4 header */
+    uint16_t ip_total = 20 + 20 + payload_len;
+    buf[off + 0] = 0x45;              /* v4, IHL=5 */
+    buf[off + 1] = 0x00;              /* DSCP */
+    ecm_put_be16(&buf[off + 2], ip_total);
+    ecm_put_be16(&buf[off + 4], 0x0001); /* identification */
+    ecm_put_be16(&buf[off + 6], 0x4000); /* DF */
+    buf[off + 8] = 64;                /* TTL */
+    buf[off + 9] = 6;                 /* protocol = TCP */
+    buf[off + 10] = 0; buf[off + 11] = 0; /* checksum placeholder */
+    memcpy(&buf[off + 12], g_dev_ip, 4);    /* src IP */
+    memcpy(&buf[off + 16], c->remote_ip, 4); /* dst IP */
+    uint16_t ip_chk = ip_checksum(&buf[off], 20);
+    ecm_put_be16(&buf[off + 10], ip_chk);
+    off += 20;
+
+    /* TCP header */
+    ecm_put_be16(&buf[off + 0], c->local_port);   /* src port */
+    ecm_put_be16(&buf[off + 2], c->remote_port);  /* dst port */
+    ecm_put_be32(&buf[off + 4], c->local_seq);    /* seq */
+    ecm_put_be32(&buf[off + 8], c->local_ack);    /* ack */
+    buf[off + 12] = 0x50;             /* data offset = 5 (20 bytes) */
+    buf[off + 13] = tcp_flags;        /* flags */
+    ecm_put_be16(&buf[off + 14], 0xFFFF); /* window */
+    buf[off + 16] = 0; buf[off + 17] = 0; /* checksum = 0 (not verified by most stacks) */
+    buf[off + 18] = 0; buf[off + 19] = 0; /* urgent pointer */
+    off += 20;
+
+    /* Payload */
+    if (payload && payload_len > 0) {
+        memcpy(&buf[off], payload, payload_len);
+        off += payload_len;
+    }
+
+    /* Update TCP sequence numbers */
+    if (tcp_flags & 0x02) c->local_seq++;  /* SYN increments seq */
+    if (tcp_flags & 0x01) c->local_seq++;  /* FIN increments seq */
+    if (payload_len > 0) c->local_seq += payload_len;
+
+    g_ecm_tx_cb(buf, total);
+    return 1;
+}
+
+/* Send TCP data through tunnel. Wraps in Ethernet/IPv4/TCP. */
+void BLE_Eth_SendDataToEth(uint8_t conn_id, const uint8_t *data, uint16_t len)
+{
+    if (conn_id >= BLE_ETH_MAX_CONNECTIONS) return;
+    ble_eth_conn_t *c = &g_connections[conn_id];
+    if (!c->active || c->tcp_state != BLE_ETH_TCP_ESTABLISHED) return;
+    send_tcp_frame(conn_id, 0x18, data, len);  /* PSH+ACK */
+}
+
 /* ======================== Target frame handler =========================== */
 
 static uint16_t frame_get_be16(const uint8_t *p)
@@ -582,8 +722,10 @@ bool BLE_Eth_HandleTargetFrame(const uint8_t *frame, uint16_t len)
     uint16_t tcp_header_len = (uint16_t)((tcp[12] >> 4) * 4u);
     if (tcp_header_len < 20u || tcp_header_len > tcp_segment_len) return false;
 
+    uint8_t tcp_flags = tcp[13];
+    uint32_t remote_seq = ecm_get_be32(&tcp[4]);
+    uint32_t remote_ack = ecm_get_be32(&tcp[8]);
     uint16_t tcp_payload_len = tcp_segment_len - tcp_header_len;
-    if (tcp_payload_len == 0) return false;  /* no payload (SYN, ACK, FIN, etc.) */
 
     /* Extract source IP and port from the frame */
     uint8_t src_ip[4];
@@ -603,7 +745,36 @@ bool BLE_Eth_HandleTargetFrame(const uint8_t *frame, uint16_t len)
 
     if (conn_id < 0) return false;
 
-    /* Push TCP payload back to BLE host through the matching tunnel */
+    ble_eth_conn_t *c = &g_connections[(uint8_t)conn_id];
+
+    /* Handle SYN-ACK: complete TCP handshake */
+    if ((tcp_flags & 0x12) == 0x12) {  /* SYN+ACK */
+        c->tcp_state = BLE_ETH_TCP_ESTABLISHED;
+        c->remote_seq = remote_seq;
+        c->remote_ack = remote_ack;
+        c->local_ack = remote_seq + 1;  /* ACK the SYN */
+        send_tcp_frame((uint8_t)conn_id, 0x10, NULL, 0);  /* ACK */
+        /* PRINT("BLE-Eth TCP connected: conn=%d\r\n", conn_id); */
+        return true;
+    }
+
+    /* Handle RST: connection refused */
+    if (tcp_flags & 0x04) {
+        c->tcp_state = BLE_ETH_TCP_CLOSED;
+        /* PRINT("BLE-Eth TCP RST: conn=%d\r\n", conn_id); */
+        return false;
+    }
+
+    /* Handle data from target */
+    if (tcp_payload_len == 0) return false;
+
+    /* Update ack number from target's response */
+    if (remote_ack > c->remote_ack) {
+        c->remote_ack = remote_ack;
+    }
+    c->local_ack = remote_seq + tcp_payload_len;
+
+    /* Push TCP payload back to BLE host */
     const uint8_t *tcp_payload = &tcp[tcp_header_len];
     return BLE_Eth_PushTargetData((uint8_t)conn_id, tcp_payload, tcp_payload_len);
 }

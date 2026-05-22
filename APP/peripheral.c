@@ -144,6 +144,7 @@ void        ble_usb_ServiceEvt(uint16_t connection_handle, ble_usb_evt_t *p_evt)
 int         RingMem_Protection(uint8_t enable);
 static void ble_eth_event_handler(ble_eth_evt_t *evt);
 static void ble_eth_tx_event_trigger(void);
+static void ecm_bridge_tx_handler(const uint8_t *data, uint16_t len);
 
 static uint8_t Peripheral_IsCh9329ModeCommandFrame(const uint8_t *buf, uint16_t len)
 {
@@ -327,6 +328,15 @@ void Peripheral_Init()
 
     /* Hook ECM bridge target frames into BLE-Eth reverse path */
     ECM_Bridge_SetBleTxCallback(ble_eth_tx_event_trigger);
+
+    /* Route BLE-Eth TCP frames through ECM bridge */
+    BLE_Eth_SetEcmtxCb(ecm_bridge_tx_handler);
+}
+
+/* Send Ethernet frame from BLE-Eth to ECM bridge (host side) */
+static void ecm_bridge_tx_handler(const uint8_t *data, uint16_t len)
+{
+    ECM_Bridge_HostRxDone(data, len);
 }
 
 /* Trigger BLE-Eth TX event when target frame data is pushed via BLE */
@@ -904,12 +914,11 @@ static void ble_eth_event_handler(ble_eth_evt_t *evt)
 {
     switch (evt->type) {
     case BLE_ETH_EVT_DATA_READY:
-        /* Reassembled TCP data from BLE host -> forward to USB/ECM target */
+        /* Reassembled TCP data from BLE host -> wrap in Ethernet/IPv4/TCP -> ECM */
         PRINT("BLE-Eth data ready: conn=%d len=%d\r\n",
               evt->info.data.conn_id, evt->info.data.len);
-        /* Bridge to the ECM/USB path. The ECM bridge or USB handler
-         * will receive this and forward to the target device. */
-        ECM_Bridge_HostRxDone(evt->info.data.data, evt->info.data.len);
+        BLE_Eth_SendDataToEth(evt->info.data.conn_id,
+                              evt->info.data.data, evt->info.data.len);
         break;
 
     case BLE_ETH_EVT_CONN_OPENED:

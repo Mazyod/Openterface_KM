@@ -184,11 +184,25 @@ typedef struct {
 
 /* ======================== Connection Info ================================ */
 
+/* TCP connection state machine for ECM bridge */
+typedef enum {
+    BLE_ETH_TCP_CLOSED = 0,
+    BLE_ETH_TCP_SYN_SENT,
+    BLE_ETH_TCP_ESTABLISHED,
+} ble_eth_tcp_state_t;
+
 typedef struct {
     uint8_t  conn_id;
     uint8_t  remote_ip[4];
     uint16_t remote_port;
     bool     active;
+    /* TCP state for ECM frame generation */
+    ble_eth_tcp_state_t tcp_state;
+    uint32_t local_seq;           /* next seq to send to target */
+    uint32_t local_ack;           /* next ack expected from target */
+    uint32_t remote_seq;          /* next seq from target */
+    uint32_t remote_ack;          /* ack we expect target to send */
+    uint16_t local_port;          /* source port for ECM frames */
 } ble_eth_conn_t;
 
 /* ======================== Parser Context ================================= */
@@ -352,6 +366,18 @@ uint16_t BLE_Eth_GetNextTxChunk(uint8_t *buf);
  * @brief Reset parser state (e.g., after connection loss).
  */
 void BLE_Eth_ResetParser(void);
+
+/**
+ * @brief Set the ECM TX callback for sending Ethernet frames to the host.
+ *        Called internally during initialization.
+ */
+void BLE_Eth_SetEcmtxCb(void (*cb)(const uint8_t *data, uint16_t len));
+
+/**
+ * @brief Send TCP data through an active tunnel, wrapped in Ethernet/IPv4/TCP.
+ *        Only valid after TCP handshake is complete (ESTABLISHED state).
+ */
+void BLE_Eth_SendDataToEth(uint8_t conn_id, const uint8_t *data, uint16_t len);
 
 /**
  * @brief Push data from bridge (target side) back to BLE host.
