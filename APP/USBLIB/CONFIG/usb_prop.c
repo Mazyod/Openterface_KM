@@ -333,6 +333,11 @@ void USBD_Reset(void)
   _ClearDTOG_TX(ENDP3);
   _ClearDTOG_RX(ENDP3);
 
+  /* EP5 RX buffer: allocate enough space for ECM bulk packets (64 bytes) */
+  if (USB_ModeConfig_ActiveModeBridgeEcm()) {
+      SetEPRxCount(ENDP5, 64);
+  }
+
 #ifdef ENABLE_UAC
   if (USB_ModeConfig_ActiveModeHasHostUac())
   {
@@ -354,7 +359,7 @@ void USBD_Reset(void)
 
   SetEPType(ENDP5, EP_BULK);
   SetEPRxAddr(ENDP5, ENDP5_BULK_RXADDR);
-  SetEPRxCount(ENDP5, DEF_USBD_MAX_PACK_SIZE);
+  SetEPRxCount(ENDP5, USB_ModeConfig_ActiveModeBridgeEcm() ? 64 : DEF_USBD_MAX_PACK_SIZE);
   _ClearDTOG_RX(ENDP5);
   _ClearDTOG_TX(ENDP5);
   SetEPRxStatus(ENDP5, EP_RX_VALID);

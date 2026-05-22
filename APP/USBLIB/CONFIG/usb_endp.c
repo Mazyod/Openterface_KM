@@ -228,7 +228,9 @@ uint8_t USBD_ENDPx_DataUp( uint8_t endp, uint8_t *pbuf, uint16_t len )
     }
     else if( endp == ENDP3 )
 	{
-        if( len > DEF_USBD_MAX_PACK_SIZE )
+        /* ECM bridge sends full Ethernet frames; use 64-byte bulk packets. */
+        uint16_t max_pack = USB_ModeConfig_ActiveModeBridgeEcm() ? 64 : DEF_USBD_MAX_PACK_SIZE;
+        if( len > max_pack )
         {
             return USB_ERROR;
         }
