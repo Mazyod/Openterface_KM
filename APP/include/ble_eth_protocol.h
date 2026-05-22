@@ -398,6 +398,11 @@ void BLE_Eth_PushFromBridge(uint8_t conn_id, const uint8_t *data, uint16_t len);
  */
 bool BLE_Eth_HandleTargetFrame(const uint8_t *frame, uint16_t len);
 
+/**
+ * @brief Check if any BLE-Eth tunnels are currently active.
+ */
+bool BLE_Eth_HasActiveTunnel(void);
+
 #ifdef __cplusplus
 }
 #endif

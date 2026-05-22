@@ -788,3 +788,14 @@ void BLE_Eth_ResetParser(void)
     g_parser.checksum = 0;
     reassembly_clear();
 }
+
+bool BLE_Eth_HasActiveTunnel(void)
+{
+    for (uint8_t i = 0; i < BLE_ETH_MAX_CONNECTIONS; i++) {
+        if (g_connections[i].active &&
+            g_connections[i].tcp_state == BLE_ETH_TCP_ESTABLISHED) {
+            return true;
+        }
+    }
+    return false;
+}

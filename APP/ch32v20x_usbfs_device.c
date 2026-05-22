@@ -306,7 +306,7 @@ void USBFS_Device_Endp_Init( void )
      * into the wrong memory, so we must NOT use BUF_MOD for large ISO packets.
      * Software double-buffering is handled in uac_handler.c instead. */
 #ifdef ENABLE_UAC
-    if (USB_ModeConfig_ActiveModeHasTargetUac()) {
+    if (USB_ModeConfig_ActiveModeHasTargetUac() && !USB_ModeConfig_ActiveModeHasTargetCdcEcm()) {
         USBFSD->UEP5_6_MOD = USBFS_UEP5_TX_EN | USBFS_UEP6_RX_EN;
         USBFSD_UEP_MOD( 3 ) = 0;
     }
@@ -330,7 +330,7 @@ void USBFS_Device_Endp_Init( void )
     USBFSD->UEP4_DMA = (uint32_t)USBFS_EP4_Buf;
 #if defined(ENABLE_UAC) || USB_WORK_MODE_COMPILES_TARGET_CDC_ACM || USB_WORK_MODE_COMPILES_TARGET_CDC_ECM
 #ifdef ENABLE_UAC
-    if (USB_ModeConfig_ActiveModeHasTargetUac()) {
+    if (USB_ModeConfig_ActiveModeHasTargetUac() && !USB_ModeConfig_ActiveModeHasTargetCdcEcm()) {
         USBFSD->UEP5_DMA = (uint32_t)USBFS_EP5_Buf;
         USBFSD->UEP6_DMA = (uint32_t)USBFS_EP6_Buf;
     }
@@ -353,7 +353,7 @@ void USBFS_Device_Endp_Init( void )
 #if defined(ENABLE_UAC) || USB_WORK_MODE_COMPILES_TARGET_CDC_ACM || USB_WORK_MODE_COMPILES_TARGET_CDC_ECM
     /* EP5 ISO IN: NAK until alt-setting 1 activated; TX_LEN=0 initially */
 #ifdef ENABLE_UAC
-    if (USB_ModeConfig_ActiveModeHasTargetUac()) {
+    if (USB_ModeConfig_ActiveModeHasTargetUac() && !USB_ModeConfig_ActiveModeHasTargetCdcEcm()) {
         USBFSD->UEP5_TX_LEN  = 0;
         USBFSD->UEP5_TX_CTRL = USBFS_UEP_T_RES_NAK;
         USBFSD->UEP6_RX_CTRL = USBFS_UEP_R_RES_NAK;

@@ -11,6 +11,7 @@
 #include "HAL.h"
 #include "gattprofile.h"
 #include "peripheral.h"
+#include "include/ble_eth_protocol.h"
 #endif
 #include "include/keyboard_handler.h"
 #include "include/mouse_handler.h"
@@ -80,6 +81,10 @@ void Main_Circulation(void)
             ACM_Bridge_Poll();
         }
         else if (USB_ModeConfig_ActiveModeBridgeEcm()) {
+            ECM_Bridge_Poll();
+        }
+        /* Also poll ECM bridge when BLE-Eth has active tunnels */
+        else if (BLE_Eth_HasActiveTunnel()) {
             ECM_Bridge_Poll();
         }
 
