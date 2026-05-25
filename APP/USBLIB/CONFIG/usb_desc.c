@@ -634,8 +634,8 @@ static const uint8_t USBD_RuntimeEcmConfigDescriptor[USBD_RUNTIME_ECM_CONFIG_DES
 
     0x09, 0x04, 0x01, 0x00, 0x00, 0x0A, 0x00, 0x00, 0x00,
     0x09, 0x04, 0x01, 0x01, 0x02, 0x0A, 0x00, 0x00, 0x00,
-    0x07, 0x05, 0x05, 0x02, 0x10, 0x00, 0x00,
-    0x07, 0x05, 0x83, 0x02, 0x10, 0x00, 0x00,
+    0x07, 0x05, 0x05, 0x02, 0x40, 0x00, 0x00,  /* EP5 bulk OUT: 64 bytes */
+    0x07, 0x05, 0x83, 0x02, 0x40, 0x00, 0x00,  /* EP3 bulk IN: 64 bytes */
 };
 
 /* Combined ECM + UAC descriptor size */
@@ -669,9 +669,9 @@ const uint8_t *USBD_GetActiveConfigDescriptorData(uint16_t *len)
     }
     if (USB_ModeConfig_ActiveModeHasHostCdcEcm()) {
         if (len != 0) {
-            *len = USBD_SIZE_CONFIG_DESC;
+            *len = USBD_RUNTIME_ECM_CONFIG_DESC_SIZE;
         }
-        return USBD_ConfigDescriptor;
+        return USBD_RuntimeEcmConfigDescriptor;
     }
     if (USB_ModeConfig_ActiveModeHasHostUac()) {
         USBD_BuildRuntimeUacConfigDescriptor();

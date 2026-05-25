@@ -26,25 +26,25 @@
 #define ENDP0_RXADDR        (0x40)
 #define ENDP0_TXADDR        (0x80)
 
-/* USBD PMA layout — bidirectional UAC with double-buffered audio (512 B total):
+/* USBD PMA layout — supports both ECM-only and UAC+ECM combined modes:
  *   BTABLE:  0x000~0x03F  (64B)
  *   EP0 RX:  0x040~0x07F  (64B)
  *   EP0 TX:  0x080~0x0BF  (64B)
  *   EP1 TX:  0x0C0~0x0CF  (16B)  CDC interrupt IN
- *   EP5 RX:  0x0D0~0x0DF  (16B)  CDC bulk OUT  [max packet 16B]
- *   EP3 TX:  0x0E0~0x0EF  (16B)  CDC bulk IN   [max packet 16B]
- *   EP4 TX0: 0x100~0x13F  (64B)  UAC ISO IN buffer 0 (MCU→Host, mic path)
- *   EP4 TX1: 0x140~0x17F  (64B)  UAC ISO IN buffer 1
- *   EP2 RX0: 0x180~0x1BF  (64B)  UAC ISO OUT (Host→MCU, spk path)
- *   EP2 RX1: 0x1C0~0x1FF  (64B)  UAC ISO OUT double-buffer
- *   Total:   0x200 = 512B */
+ *   EP5 RX:  0x0D0~0x10F  (64B)  CDC ECM bulk OUT
+ *   EP3 TX:  0x110~0x14F  (64B)  CDC ECM bulk IN
+ *   EP4 TX0: 0x150~0x18F  (64B)  UAC ISO IN buffer 0 (MCU→Host, mic path)
+ *   EP4 TX1: 0x190~0x1CF  (64B)  UAC ISO IN buffer 1
+ *   EP2 RX0: 0x1D0~0x20F  (64B)  UAC ISO OUT (Host→MCU, spk path)
+ *   EP2 RX1: 0x210~0x24F  (64B)  UAC ISO OUT double-buffer
+ *   Total:   0x250 = 592B (fits in 1KB PMA) */
 #define ENDP1_TXADDR        (0xC0)                          /* 16B, CDC int   */
-#define ENDP5_BULK_RXADDR   (0xD0)                          /* 16B, CDC bulk OUT */
-#define ENDP3_TXADDR        (0xE0)                          /* 16B, ACM bulk IN  */
-#define ENDP4_ISO_TXADDR    (0x100)                         /* 64B, UAC ISO IN buffer 0 */
-#define ENDP4_ISO_TXADDR1   (0x140)                         /* 64B, UAC ISO IN buffer 1 */
-#define ENDP2_ISO_RXADDR    (0x180)                         /* 64B, UAC ISO OUT buffer 0 */
-#define ENDP2_ISO_RXADDR1   (0x1C0)                         /* 64B, UAC ISO OUT buffer 1 */
+#define ENDP5_BULK_RXADDR   (0xD0)                          /* 64B, CDC ECM bulk OUT */
+#define ENDP3_TXADDR        (0x110)                         /* 64B, CDC ECM bulk IN  */
+#define ENDP4_ISO_TXADDR    (0x150)                         /* 64B, UAC ISO IN buffer 0 */
+#define ENDP4_ISO_TXADDR1   (0x190)                         /* 64B, UAC ISO IN buffer 1 */
+#define ENDP2_ISO_RXADDR    (0x1D0)                         /* 64B, UAC ISO OUT buffer 0 */
+#define ENDP2_ISO_RXADDR1   (0x210)                         /* 64B, UAC ISO OUT buffer 1 */
 
 /* Serial data endpoint for CDC-ACM. */
 #define USBD_SERIAL_ENDP       ENDP3

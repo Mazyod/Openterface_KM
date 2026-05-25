@@ -29,6 +29,10 @@
 #define ECM_TCP_MIN_HEADER_LEN          20u
 #define ECM_CH9329_MIN_FRAME_LEN        6u
 
+/* Device-side MAC and IP for ECM frames (must match ble_eth_protocol.c). */
+static const uint8_t ECM_DEV_MAC[6] = { 0x02, 0x00, 0x00, 0x00, 0x00, 0x02 };
+static const uint8_t ECM_DEV_IP[4]  = { 192, 168, 11, 3 };
+
 typedef struct {
     uint8_t data[ECM_BRIDGE_MTU_FRAME_SIZE];
     uint16_t len;
@@ -132,6 +136,46 @@ static uint8_t ch9329_payload_valid(const uint8_t *payload, uint16_t payload_len
     return 1;
 }
 
+static uint8_t queue_push(ECM_FrameQueue_t *queue, const uint8_t *data, uint16_t len);
+
+/* ARP handler: respond to ARP requests for the device IP so the Mac
+   can resolve our MAC address and route packets back to us. */
+static uint8_t handle_arp_frame(const uint8_t *frame, uint16_t frame_len)
+{
+    if (frame_len < 28) return 0;  /* minimum ARP frame size */
+
+    uint16_t eth_type = (uint16_t)(frame[12] << 8) | frame[13];
+    if (eth_type != 0x0806) return 0;  /* not ARP */
+
+    /* ARP: hardware type (2), protocol type (2), hlen (1), plen (1), op (2) */
+    if (frame_len < 28) return 0;
+    uint16_t arp_op = (uint16_t)(frame[20] << 8) | frame[21];
+    if (arp_op != 1) return 0;  /* not ARP request */
+
+    /* Check if target IP matches our device IP */
+    if (frame[24] != ECM_DEV_IP[0] || frame[25] != ECM_DEV_IP[1] ||
+        frame[26] != ECM_DEV_IP[2] || frame[27] != ECM_DEV_IP[3]) {
+        return 0;
+    }
+
+    /* Build ARP reply: sender=us, target=requestor */
+    uint8_t reply[42];
+    memcpy(&reply[0], &frame[6], 6);   /* dst MAC = requestor MAC */
+    memcpy(&reply[6], ECM_DEV_MAC, 6); /* src MAC = device MAC */
+    reply[12] = 0x08; reply[13] = 0x06; /* EtherType = ARP */
+    reply[14] = 0x00; reply[15] = 0x01; /* hardware type = Ethernet */
+    reply[16] = 0x08; reply[17] = 0x00; /* protocol type = IPv4 */
+    reply[18] = 6;  reply[19] = 4;     /* MAC len=6, IP len=4 */
+    reply[20] = 0x00; reply[21] = 0x02; /* op = ARP reply */
+    memcpy(&reply[22], ECM_DEV_MAC, 6); /* sender MAC */
+    memcpy(&reply[28], ECM_DEV_IP, 4);  /* sender IP */
+    memcpy(&reply[32], &frame[22], 6); /* target MAC (from request) */
+    memcpy(&reply[38], &frame[24], 4); /* target IP */
+
+    queue_push(&g_target_to_host, reply, sizeof(reply));
+    return 1;
+}
+
 static uint8_t tcp_payload_from_ipv4_frame(const uint8_t *frame,
                                            uint16_t frame_len,
                                            const uint8_t **payload,
@@ -204,6 +248,12 @@ static uint8_t handle_host_control_frame(const uint8_t *frame, uint16_t frame_le
 {
     const uint8_t *payload;
     uint16_t payload_len;
+
+    /* Handle ARP requests first — the Mac needs to resolve our MAC address
+       before it can send packets back to us. */
+    if (handle_arp_frame(frame, frame_len)) {
+        return 1;  /* ARP reply queued, done */
+    }
 
     /* First, check if this frame is a TCP response for an active BLE-Eth tunnel.
        The Mac's TCP stack may respond (e.g. SYN+ACK) to frames injected by

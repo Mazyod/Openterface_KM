@@ -174,7 +174,7 @@ void EP5_OUT_Callback(void)
     {
         CH9329_RxBuffer_Add( buf, (uint16_t)len );
     }
-    SetEPRxCount( ENDP5, DEF_USBD_MAX_PACK_SIZE );
+    SetEPRxCount( ENDP5, USB_ModeConfig_ActiveModeBridgeEcm() ? 64 : DEF_USBD_MAX_PACK_SIZE );
     SetEPRxValid( ENDP5 );
 #else
 	uint32_t len;
