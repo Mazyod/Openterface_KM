@@ -149,12 +149,12 @@ void EP4_OUT_Callback(void)
 void EP5_OUT_Callback(void)
 {
 #if USB_WORK_MODE_COMPILES_BRIDGE_ACM || USB_WORK_MODE_COMPILES_BRIDGE_ECM
-	uint8_t buf[DEF_USBD_MAX_PACK_SIZE];
+	uint8_t buf[64];
 	uint32_t len;
     len = GetEPRxCount( ENDP5 );
-    if( len > DEF_USBD_MAX_PACK_SIZE )
+    if( len > sizeof(buf) )
     {
-        len = DEF_USBD_MAX_PACK_SIZE;
+        len = sizeof(buf);
     }
     PMAToUserBufferCopy( buf, GetEPRxAddr( ENDP5 ), len );
     if (USB_ModeConfig_ActiveModeBridgeAcm())

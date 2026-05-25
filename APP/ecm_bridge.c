@@ -603,6 +603,22 @@ void ECM_Bridge_Init(void)
     g_host_zlp_pending = 0;
     g_target_notify_state = 1;
     g_host_notify_state = 1;
+
+    /* Send gratuitous ARP to populate the host's ARP cache immediately.
+       This avoids the race condition where the host hasn't sent an ARP
+       request yet but needs to route packets to the device. */
+    uint8_t garp[42];
+    memset(garp, 0xFF, 6);              /* dst MAC = broadcast */
+    memcpy(&garp[6], ECM_DEV_MAC, 6);   /* src MAC = device */
+    garp[12] = 0x08; garp[13] = 0x06;   /* EtherType = ARP */
+    garp[14] = 0x00; garp[15] = 0x01;   /* hardware type = Ethernet */
+    garp[16] = 0x08; garp[17] = 0x00;   /* protocol type = IPv4 */
+    garp[18] = 6;  garp[19] = 4;        /* MAC len=6, IP len=4 */
+    garp[20] = 0x00; garp[21] = 0x02;   /* op = ARP reply (gratuitous) */
+    memcpy(&garp[22], ECM_DEV_MAC, 6);  /* sender MAC */
+    memcpy(&garp[28], ECM_DEV_IP, 4);   /* sender IP */
+    /* target MAC and IP are zeroed (memset above) */
+    queue_push(&g_target_to_host, garp, sizeof(garp));
 }
 
 void ECM_Bridge_SendRawFrame(const uint8_t *data, uint16_t len)
