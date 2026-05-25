@@ -152,9 +152,11 @@ static uint8_t handle_arp_frame(const uint8_t *frame, uint16_t frame_len)
     uint16_t arp_op = (uint16_t)(frame[20] << 8) | frame[21];
     if (arp_op != 1) return 0;  /* not ARP request */
 
-    /* Check if target IP matches our device IP */
-    if (frame[24] != ECM_DEV_IP[0] || frame[25] != ECM_DEV_IP[1] ||
-        frame[26] != ECM_DEV_IP[2] || frame[27] != ECM_DEV_IP[3]) {
+    /* Check if target IP matches our device IP.
+     * ARP frame offsets: bytes 22-27 = sender MAC, 28-31 = sender IP,
+     *                    32-37 = target MAC, 38-41 = target IP */
+    if (frame[38] != ECM_DEV_IP[0] || frame[39] != ECM_DEV_IP[1] ||
+        frame[40] != ECM_DEV_IP[2] || frame[41] != ECM_DEV_IP[3]) {
         return 0;
     }
 
@@ -169,8 +171,8 @@ static uint8_t handle_arp_frame(const uint8_t *frame, uint16_t frame_len)
     reply[20] = 0x00; reply[21] = 0x02; /* op = ARP reply */
     memcpy(&reply[22], ECM_DEV_MAC, 6); /* sender MAC */
     memcpy(&reply[28], ECM_DEV_IP, 4);  /* sender IP */
-    memcpy(&reply[32], &frame[22], 6); /* target MAC (from request) */
-    memcpy(&reply[38], &frame[24], 4); /* target IP */
+    memcpy(&reply[32], &frame[22], 6);  /* target MAC (from request) */
+    memcpy(&reply[38], &frame[28], 4);  /* target IP = requestor IP */
 
     queue_push(&g_target_to_host, reply, sizeof(reply));
     return 1;
