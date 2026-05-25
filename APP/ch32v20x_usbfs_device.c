@@ -1394,6 +1394,22 @@ void USBFS_IRQHandler( void )
                                 }
                             }
 #endif /* ENABLE_UAC */
+
+                            /* CDC-ECM data interface (IF5): alt=0 disables endpoints,
+                             * alt=1 enables EP6 (bulk OUT) and EP7 (bulk IN). */
+                            if (USB_ModeConfig_ActiveModeHasTargetCdcEcm() && !USB_ModeConfig_ActiveModeHasTargetUac() && USBFS_SetupReqIndex == 5) {
+                                uint8_t alt = (uint8_t)(USBFS_SetupReqValue & 0xFF);
+                                if (alt == 1) {
+                                    /* Reset data toggles for fresh connection */
+                                    USBFSD->UEP6_RX_CTRL = USBFS_UEP_R_TOG | USBFS_UEP_R_RES_ACK;
+                                    USBFSD->UEP7_TX_CTRL = USBFS_UEP_T_TOG | USBFS_UEP_T_RES_NAK;
+                                    USBFSD->UEP7_TX_LEN  = 0;
+                                }
+                                else {
+                                    USBFSD->UEP6_RX_CTRL = USBFS_UEP_R_RES_NAK;
+                                    USBFSD->UEP7_TX_CTRL = USBFS_UEP_T_RES_NAK;
+                                }
+                            }
                             break;
 
                         /* host get status of specified device/interface/end-points */

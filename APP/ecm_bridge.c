@@ -8,6 +8,7 @@
 #include "usb_conf.h"
 #include "usb_desc.h"
 #include "usb_prop.h"
+#include "usb_pwr.h"
 #include "include/usbd_composite_km.h"
 #include "include/km_ring.h"
 #include "include/ble_eth_protocol.h"
@@ -553,7 +554,47 @@ static void poll_host_tx(void)
 {
     ECM_Frame_t *frame;
     uint16_t len;
+    uint8_t usbd_active = (bDeviceState == CONFIGURED) ? 1u : 0u;
 
+    if (!usbd_active) {
+        /* Mac is connected via USBFS (Target USB port). Use USBFS EP7. */
+        if (USBFS_Endp_Busy[DEF_UEP7] != 0) {
+            return;
+        }
+        frame = queue_peek(&g_target_to_host);
+        if (frame == 0) {
+            g_host_tx_offset = 0;
+            g_host_zlp_pending = 0;
+            return;
+        }
+        if (g_host_zlp_pending) {
+            if (USBFS_Endp_DataUp(DEF_UEP7, frame->data, 0, DEF_UEP_CPY_LOAD) == READY) {
+                g_host_zlp_pending = 0;
+                g_host_tx_offset = 0;
+                queue_pop(&g_target_to_host);
+            }
+            return;
+        }
+        len = (uint16_t)(frame->len - g_host_tx_offset);
+        if (len > ECM_BRIDGE_USBFS_PACKET_SIZE) {
+            len = ECM_BRIDGE_USBFS_PACKET_SIZE;
+        }
+        if (USBFS_Endp_DataUp(DEF_UEP7, &frame->data[g_host_tx_offset], len, DEF_UEP_CPY_LOAD) == READY) {
+            g_host_tx_offset = (uint16_t)(g_host_tx_offset + len);
+            if (g_host_tx_offset >= frame->len) {
+                if (len == ECM_BRIDGE_USBFS_PACKET_SIZE) {
+                    g_host_zlp_pending = 1;
+                }
+                else {
+                    g_host_tx_offset = 0;
+                    queue_pop(&g_target_to_host);
+                }
+            }
+        }
+        return;
+    }
+
+    /* Mac is connected via USBD (Host USB port). Use USBD EP3. */
     if (USBD_Endp3_Busy != 0) {
         return;
     }
@@ -646,6 +687,11 @@ void ECM_Bridge_TargetRxDone(const uint8_t *data, uint16_t len)
 
 static uint8_t handle_target_frame(const uint8_t *frame, uint16_t frame_len)
 {
+    /* Handle ARP requests from the Mac (connected via USBFS) */
+    if (handle_arp_frame(frame, frame_len)) {
+        return 1;  /* ARP reply queued, don't queue original */
+    }
+
     /* Try to match frame to a BLE-Eth tunnel and push TCP payload back via BLE */
     if (BLE_Eth_HandleTargetFrame(frame, frame_len) && g_ble_tx_event_cb) {
         g_ble_tx_event_cb();
