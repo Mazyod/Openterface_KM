@@ -613,6 +613,35 @@ static uint16_t ip_checksum(const uint8_t *hdr, uint16_t len)
     return (~sum) & 0xFFFF;
 }
 
+/* TCP checksum: covers pseudo-header + TCP header + payload */
+static uint16_t tcp_checksum(const uint8_t *tcp_hdr, uint16_t tcp_len,
+                             const uint8_t *src_ip, const uint8_t *dst_ip)
+{
+    uint32_t sum = 0;
+
+    /* Pseudo-header: src IP + dst IP + zero + protocol + TCP length */
+    sum += (uint16_t)(src_ip[0] << 8) | src_ip[1];
+    sum += (uint16_t)(src_ip[2] << 8) | src_ip[3];
+    sum += (uint16_t)(dst_ip[0] << 8) | dst_ip[1];
+    sum += (uint16_t)(dst_ip[2] << 8) | dst_ip[3];
+    sum += 0x0006;  /* zero + protocol (TCP=6) */
+    sum += (tcp_len >> 8) + (tcp_len & 0xFF);  /* TCP length (split into two bytes) */
+
+    /* TCP header + payload */
+    for (uint16_t i = 0; i < tcp_len; i += 2) {
+        uint16_t word;
+        if (i + 1 < tcp_len) {
+            word = (uint16_t)(tcp_hdr[i] << 8) | tcp_hdr[i + 1];
+        } else {
+            word = (uint16_t)(tcp_hdr[i] << 8);  /* pad last odd byte */
+        }
+        sum += word;
+    }
+
+    while (sum >> 16) sum = (sum & 0xFFFF) + (sum >> 16);
+    return (~sum) & 0xFFFF;
+}
+
 /* Build Ethernet + IPv4 + TCP frame and send via ECM callback.
    Returns 1 on success, 0 if no callback registered. */
 static uint8_t send_tcp_frame(uint8_t conn_id, uint16_t tcp_flags,
@@ -659,7 +688,10 @@ static uint8_t send_tcp_frame(uint8_t conn_id, uint16_t tcp_flags,
     buf[off + 12] = 0x50;             /* data offset = 5 (20 bytes) */
     buf[off + 13] = tcp_flags;        /* flags */
     ecm_put_be16(&buf[off + 14], 0xFFFF); /* window */
-    buf[off + 16] = 0; buf[off + 17] = 0; /* checksum = 0 (not verified by most stacks) */
+    /* TCP checksum: pseudo-header + TCP header + payload */
+    uint16_t tcp_len = 20 + payload_len;
+    uint16_t tcp_chk = tcp_checksum(&buf[off], tcp_len, g_dev_ip, c->remote_ip);
+    ecm_put_be16(&buf[off + 16], tcp_chk);
     buf[off + 18] = 0; buf[off + 19] = 0; /* urgent pointer */
     off += 20;
 
