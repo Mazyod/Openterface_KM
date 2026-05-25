@@ -30,7 +30,7 @@
 #define ECM_CH9329_MIN_FRAME_LEN        6u
 
 /* Device-side MAC and IP for ECM frames (must match ble_eth_protocol.c). */
-static const uint8_t ECM_DEV_MAC[6] = { 0x02, 0x00, 0x00, 0x00, 0x00, 0x02 };
+static const uint8_t ECM_DEV_MAC[6] = { 0x02, 0x00, 0x00, 0x00, 0x00, 0x03 };
 static const uint8_t ECM_DEV_IP[4]  = { 192, 168, 11, 3 };
 
 typedef struct {

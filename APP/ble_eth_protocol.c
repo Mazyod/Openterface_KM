@@ -46,8 +46,8 @@ typedef void (*ble_eth_ecm_tx_cb_t)(const uint8_t *data, uint16_t len);
 static ble_eth_ecm_tx_cb_t g_ecm_tx_cb;
 
 /* Device-side MAC and IP for ECM frames (must be on same subnet as Mac) */
-static const uint8_t g_dev_mac[6] = { 0x02, 0x00, 0x00, 0x00, 0x00, 0x02 };
-static const uint8_t g_host_mac[6] = { 0x02, 0x00, 0x00, 0x00, 0x00, 0x01 };
+static const uint8_t g_dev_mac[6] = { 0x02, 0x00, 0x00, 0x00, 0x00, 0x03 };
+static const uint8_t g_host_mac[6] = { 0x02, 0x00, 0x00, 0x00, 0x00, 0x02 };
 static const uint8_t g_dev_ip[4] = { 192, 168, 11, 3 };
 
 void BLE_Eth_SetEcmtxCb(ble_eth_ecm_tx_cb_t cb)
