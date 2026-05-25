@@ -1236,7 +1236,7 @@ void USBFS_IRQHandler( void )
                                             USBFSD->UEP4_TX_CTRL = USBFS_UEP_T_RES_NAK;
                                             break;
 
-#if USB_WORK_MODE_COMPILES_TARGET_CDC_ACM
+#if USB_WORK_MODE_COMPILES_TARGET_CDC_ACM || USB_WORK_MODE_COMPILES_TARGET_CDC_ECM
                                         case ( DEF_UEP_IN | DEF_UEP5 ):
                                             USBFSD->UEP5_TX_CTRL = USBFS_UEP_T_RES_NAK;
                                             break;
@@ -1311,7 +1311,7 @@ void USBFS_IRQHandler( void )
                                             USBFSD->UEP4_TX_CTRL = ( USBFSD->UEP4_TX_CTRL & ~USBFS_UEP_T_RES_MASK ) | USBFS_UEP_T_RES_STALL;
                                             break;
 
-#if USB_WORK_MODE_COMPILES_TARGET_CDC_ACM
+#if USB_WORK_MODE_COMPILES_TARGET_CDC_ACM || USB_WORK_MODE_COMPILES_TARGET_CDC_ECM
                                         case ( DEF_UEP_IN | DEF_UEP5 ):
                                             USBFSD->UEP5_TX_CTRL = ( USBFSD->UEP5_TX_CTRL & ~USBFS_UEP_T_RES_MASK ) | USBFS_UEP_T_RES_STALL;
                                             break;
@@ -1400,9 +1400,12 @@ void USBFS_IRQHandler( void )
                             if (USB_ModeConfig_ActiveModeHasTargetCdcEcm() && !USB_ModeConfig_ActiveModeHasTargetUac() && USBFS_SetupReqIndex == 5) {
                                 uint8_t alt = (uint8_t)(USBFS_SetupReqValue & 0xFF);
                                 if (alt == 1) {
-                                    /* Reset data toggles for fresh connection */
-                                    USBFSD->UEP6_RX_CTRL = USBFS_UEP_R_TOG | USBFS_UEP_R_RES_ACK;
-                                    USBFSD->UEP7_TX_CTRL = USBFS_UEP_T_TOG | USBFS_UEP_T_RES_NAK;
+                                    /* Enable EP6 bulk OUT (ACK, DATA0) and EP7 bulk IN (NAK, DATA0).
+                                     * Do NOT set UEP_R_TOG/UEP_T_TOG — bulk endpoints start at
+                                     * DATA0; setting TOG would make the hardware expect DATA1
+                                     * and reject the host's first DATA0 packet. */
+                                    USBFSD->UEP6_RX_CTRL = USBFS_UEP_R_RES_ACK;
+                                    USBFSD->UEP7_TX_CTRL = USBFS_UEP_T_RES_NAK;
                                     USBFSD->UEP7_TX_LEN  = 0;
                                 }
                                 else {
