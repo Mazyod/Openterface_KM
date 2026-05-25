@@ -278,6 +278,26 @@ void USBD_SetInterface_Impl(void)
         g_uac_state.usbd_as_out_alt = alt;
     }
 #endif /* ENABLE_UAC */
+
+#if USB_WORK_MODE_COMPILES_BRIDGE_ECM
+    /* IF1 = CDC-ECM Data interface. alt=0: endpoints disabled;
+     * alt=1: enable EP3 (bulk IN) and EP5 (bulk OUT). */
+    if (USB_ModeConfig_ActiveModeBridgeEcm() && iface == 1) {
+        if (alt == 1) {
+            /* Clear data toggle for fresh endpoint */
+            _ClearDTOG_TX(ENDP3);
+            _ClearDTOG_RX(ENDP3);
+            SetEPTxStatus(ENDP3, EP_TX_NAK);
+            SetEPRxAddr(ENDP5, ENDP5_BULK_RXADDR);
+            SetEPRxCount(ENDP5, 64);
+            _ClearDTOG_RX(ENDP5);
+            SetEPRxStatus(ENDP5, EP_RX_VALID);
+        } else {
+            SetEPTxStatus(ENDP3, EP_TX_DIS);
+            SetEPRxStatus(ENDP5, EP_RX_DIS);
+        }
+    }
+#endif
 }
 
 /*******************************************************************************
@@ -326,8 +346,10 @@ void USBD_Reset(void)
   }
 #endif
 
+  /* EP3: ECM bulk IN (host PC side). Start disabled per CDC-ECM spec;
+   * enabled when the host selects data interface alt setting 1. */
   SetEPType(ENDP3, EP_BULK);
-  SetEPTxStatus(ENDP3, EP_TX_NAK);
+  SetEPTxStatus(ENDP3, EP_TX_DIS);
   SetEPTxAddr(ENDP3, ENDP3_TXADDR);
   SetEPRxStatus(ENDP3, EP_RX_DIS);
   _ClearDTOG_TX(ENDP3);
@@ -362,7 +384,8 @@ void USBD_Reset(void)
   SetEPRxCount(ENDP5, USB_ModeConfig_ActiveModeBridgeEcm() ? 64 : DEF_USBD_MAX_PACK_SIZE);
   _ClearDTOG_RX(ENDP5);
   _ClearDTOG_TX(ENDP5);
-  SetEPRxStatus(ENDP5, EP_RX_VALID);
+  /* In ECM bridge mode, start disabled; enabled by SET_INTERFACE(IF1, alt=1) */
+  SetEPRxStatus(ENDP5, USB_ModeConfig_ActiveModeBridgeEcm() ? EP_RX_DIS : EP_RX_VALID);
   SetEPTxStatus(ENDP5, EP_TX_DIS);
 
   SetDeviceAddress(0);

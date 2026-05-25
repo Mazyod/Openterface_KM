@@ -608,7 +608,8 @@ void ECM_Bridge_Init(void)
 
     /* Send gratuitous ARP to populate the host's ARP cache immediately.
        This avoids the race condition where the host hasn't sent an ARP
-       request yet but needs to route packets to the device. */
+       request yet but needs to route packets to the device.
+       Per RFC 5944, gratuitous ARP has target IP = sender IP. */
     uint8_t garp[42];
     memset(garp, 0xFF, 6);              /* dst MAC = broadcast */
     memcpy(&garp[6], ECM_DEV_MAC, 6);   /* src MAC = device */
@@ -619,7 +620,8 @@ void ECM_Bridge_Init(void)
     garp[20] = 0x00; garp[21] = 0x02;   /* op = ARP reply (gratuitous) */
     memcpy(&garp[22], ECM_DEV_MAC, 6);  /* sender MAC */
     memcpy(&garp[28], ECM_DEV_IP, 4);   /* sender IP */
-    /* target MAC and IP are zeroed (memset above) */
+    memcpy(&garp[32], ECM_DEV_MAC, 6);  /* target MAC (same as sender for gratuitous) */
+    memcpy(&garp[38], ECM_DEV_IP, 4);   /* target IP (same as sender for gratuitous) */
     queue_push(&g_target_to_host, garp, sizeof(garp));
 }
 
