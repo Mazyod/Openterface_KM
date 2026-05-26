@@ -15,6 +15,8 @@ void ECM_Bridge_TargetRxDone(const uint8_t *data, uint16_t len);
 void ECM_Bridge_Poll(void);
 void ECM_Bridge_SetBleTxCallback(void (*cb)(void));
 void ECM_Bridge_SendRawFrame(const uint8_t *data, uint16_t len);
+/* Set when USBFS CDC ECM data interface (IF5, alt=1) is activated. */
+extern volatile uint8_t g_ecm_data_if_active;
 #else
 #define ECM_Bridge_Init()                  ((void)0)
 #define ECM_Bridge_HostRxDone(data, len)   ((void)0)

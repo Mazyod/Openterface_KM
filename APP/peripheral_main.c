@@ -83,8 +83,8 @@ void Main_Circulation(void)
         else if (USB_ModeConfig_ActiveModeBridgeEcm()) {
             ECM_Bridge_Poll();
         }
-        /* Also poll ECM bridge when BLE-Eth has active tunnels */
-        else if (BLE_Eth_HasActiveTunnel()) {
+        /* Also poll ECM bridge when BLE-Eth has active tunnels or ARP-pending connections */
+        else if (BLE_Eth_HasActiveOrPendingConnection()) {
             ECM_Bridge_Poll();
         }
 

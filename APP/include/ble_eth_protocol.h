@@ -187,6 +187,7 @@ typedef struct {
 /* TCP connection state machine for ECM bridge */
 typedef enum {
     BLE_ETH_TCP_CLOSED = 0,
+    BLE_ETH_TCP_ARP_PENDING,    /* Waiting for ARP resolution */
     BLE_ETH_TCP_SYN_SENT,
     BLE_ETH_TCP_ESTABLISHED,
 } ble_eth_tcp_state_t;
@@ -203,6 +204,8 @@ typedef struct {
     uint32_t remote_seq;          /* next seq from target */
     uint32_t remote_ack;          /* ack we expect target to send */
     uint16_t local_port;          /* source port for ECM frames */
+    uint8_t  target_mac[6];       /* Resolved target MAC via ARP */
+    uint16_t arp_timeout_ticks;   /* ARP resolution countdown */
 } ble_eth_conn_t;
 
 /* ======================== Parser Context ================================= */
@@ -402,6 +405,33 @@ bool BLE_Eth_HandleTargetFrame(const uint8_t *frame, uint16_t len);
  * @brief Check if any BLE-Eth tunnels are currently active.
  */
 bool BLE_Eth_HasActiveTunnel(void);
+
+/**
+ * @brief Handle an incoming ARP reply and resolve pending connections.
+ *        Called from ECM bridge when an ARP reply is detected.
+ * @param sender_ip   IP address of the ARP reply sender (4 bytes).
+ * @param sender_mac  MAC address of the ARP reply sender (6 bytes).
+ * @return true if a pending connection was resolved.
+ */
+bool BLE_Eth_HandleArpReply(const uint8_t sender_ip[4], const uint8_t sender_mac[6]);
+
+/**
+ * @brief Check if any BLE-Eth connections exist (active or ARP-pending).
+ *        Used to determine whether to poll ECM bridge during ARP resolution.
+ */
+bool BLE_Eth_HasActiveOrPendingConnection(void);
+
+/**
+ * @brief Learn host MAC from an incoming frame.
+ *        Call from ECM bridge when receiving a frame from the host side.
+ */
+void BLE_Eth_LearnHostMac(const uint8_t *mac);
+
+/**
+ * @brief Periodic tick handler for ARP timeout processing.
+ *        Call from periodic task (e.g., every 1 second).
+ */
+void BLE_Eth_PeriodicTick(void);
 
 #ifdef __cplusplus
 }

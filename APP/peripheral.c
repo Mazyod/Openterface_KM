@@ -784,8 +784,8 @@ static void peripheralStateNotificationCB(gapRole_States_t newState, gapRoleEven
  */
 static void performPeriodicTask(void)
 {
-    // uint8_t notiData[SIMPLEPROFILE_CHAR4_LEN] = {0x88};
-    // peripheralChar4Notify(notiData, SIMPLEPROFILE_CHAR4_LEN);
+    /* Process BLE-Eth ARP timeouts */
+    BLE_Eth_PeriodicTick();
 }
 
 /*********************************************************************

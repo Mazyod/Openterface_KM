@@ -12,6 +12,7 @@
 
 #include "include/ble_eth_protocol.h"
 #include <string.h>
+#include "debug.h"
 
 /* ======================== Internal State ================================= */
 
@@ -45,14 +46,32 @@ static ble_eth_reassembly_t g_reassembly;
 typedef void (*ble_eth_ecm_tx_cb_t)(const uint8_t *data, uint16_t len);
 static ble_eth_ecm_tx_cb_t g_ecm_tx_cb;
 
-/* Device-side MAC and IP for ECM frames (must be on same subnet as Mac) */
-static const uint8_t g_dev_mac[6] = { 0x02, 0x00, 0x00, 0x00, 0x00, 0x03 };
+/* Device-side MAC and IP for ECM frames.
+   On CDC ECM point-to-point USB link, the host MAC is assigned by the device.
+   USBD (Mac-facing) iMACAddress = 02:00:00:00:00:02 (from usb_desc.c USBD_StringEcmMac).
+   The Mac's CDC ECM interface gets 02:00:00:00:00:01.
+   Device uses its own MAC 02:00:00:00:00:02 (matching the descriptor). */
+static const uint8_t g_dev_mac[6] = { 0x02, 0x00, 0x00, 0x00, 0x00, 0x02 };
 static const uint8_t g_host_mac[6] = { 0x02, 0x00, 0x00, 0x00, 0x00, 0x01 };
 static const uint8_t g_dev_ip[4] = { 192, 168, 11, 3 };
+
+/* Learned host MAC from incoming frames (overrides hardcoded g_host_mac) */
+static uint8_t g_host_mac_learned[6];
+static bool g_host_mac_valid = false;
 
 void BLE_Eth_SetEcmtxCb(ble_eth_ecm_tx_cb_t cb)
 {
     g_ecm_tx_cb = cb;
+}
+
+void BLE_Eth_LearnHostMac(const uint8_t *mac)
+{
+    if (mac && !g_host_mac_valid) {
+        memcpy(g_host_mac_learned, mac, 6);
+        g_host_mac_valid = true;
+        PRINT("BLE-Eth learned host MAC: %02X:%02X:%02X:%02X:%02X:%02X\r\n",
+              mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+    }
 }
 
 /* ======================== Helpers ======================================== */
@@ -174,6 +193,7 @@ static void evt_conn_closed(uint8_t conn_id, uint8_t status)
 
 static uint8_t send_tcp_frame(uint8_t conn_id, uint16_t tcp_flags,
                               const uint8_t *payload, uint16_t payload_len);
+static void send_arp_request(uint8_t conn_id);
 
 static void dispatch_frame(const ble_eth_frame_t *frame)
 {
@@ -206,9 +226,20 @@ static void dispatch_frame(const ble_eth_frame_t *frame)
                          ? BLE_ETH_STATUS_SUCCESS
                          : BLE_ETH_STATUS_CONN_FULL;
 
-        /* If connection succeeded, send TCP SYN to target via ECM */
-        if (status == BLE_ETH_STATUS_SUCCESS && g_ecm_tx_cb) {
-            send_tcp_frame(conn_id, 0x02, NULL, 0);  /* SYN only */
+        /* If connection succeeded, send TCP SYN immediately.
+         * On CDC ECM point-to-point USB link, there's only one other node
+         * (the Mac) — no ARP needed. The Mac routes based on IP. */
+        if (status == BLE_ETH_STATUS_SUCCESS) {
+            /* Mark host MAC as valid if not yet learned — on point-to-point
+             * CDC ECM the Mac will accept any MAC address. */
+            if (!g_host_mac_valid) {
+                memcpy(g_host_mac_learned, g_host_mac, 6);
+                g_host_mac_valid = true;
+            }
+            ble_eth_conn_t *c = &g_connections[conn_id];
+            memcpy(c->target_mac, g_host_mac_learned, 6);
+            c->tcp_state = BLE_ETH_TCP_SYN_SENT;
+            send_tcp_frame(conn_id, 0x02, NULL, 0);  /* SYN */
         }
 
         uint8_t rsp[2] = { conn_id, status };
@@ -498,12 +529,14 @@ uint8_t BLE_Eth_AllocConnection(const uint8_t remote_ip[4], uint16_t remote_port
             g_connections[i].conn_id = i;
             memcpy(g_connections[i].remote_ip, remote_ip, 4);
             g_connections[i].remote_port = remote_port;
-            g_connections[i].tcp_state = BLE_ETH_TCP_SYN_SENT;
+            g_connections[i].tcp_state = BLE_ETH_TCP_CLOSED;
             g_connections[i].local_seq = 0x12345678 + i;  /* unique per conn */
             g_connections[i].local_ack = 0;
             g_connections[i].remote_seq = 0;
             g_connections[i].remote_ack = 0;
             g_connections[i].local_port = 50000 + i * 10;
+            memset(g_connections[i].target_mac, 0, 6);
+            g_connections[i].arp_timeout_ticks = 10;  /* 10 second timeout */
             return i;
         }
     }
@@ -514,6 +547,53 @@ void BLE_Eth_FreeConnection(uint8_t conn_id)
 {
     if (conn_id >= BLE_ETH_MAX_CONNECTIONS) return;
     memset(&g_connections[conn_id], 0, sizeof(ble_eth_conn_t));
+}
+
+/* Handle an incoming ARP reply and resolve pending connections. */
+bool BLE_Eth_HandleArpReply(const uint8_t sender_ip[4], const uint8_t sender_mac[6])
+{
+    for (uint8_t i = 0; i < BLE_ETH_MAX_CONNECTIONS; i++) {
+        ble_eth_conn_t *c = &g_connections[i];
+        if (c->active && c->tcp_state == BLE_ETH_TCP_ARP_PENDING &&
+            memcmp(c->remote_ip, sender_ip, 4) == 0) {
+            memcpy(c->target_mac, sender_mac, 6);
+            c->tcp_state = BLE_ETH_TCP_SYN_SENT;
+            PRINT("BLE-Eth ARP resolved: conn=%d mac=%02X:%02X:%02X:%02X:%02X:%02X\r\n",
+                  i, sender_mac[0], sender_mac[1], sender_mac[2],
+                  sender_mac[3], sender_mac[4], sender_mac[5]);
+            send_tcp_frame(i, 0x02, NULL, 0);  /* SYN with resolved MAC */
+            return true;
+        }
+    }
+    return false;
+}
+
+/* Check if any BLE-Eth connections exist (active or ARP-pending). */
+bool BLE_Eth_HasActiveOrPendingConnection(void)
+{
+    for (uint8_t i = 0; i < BLE_ETH_MAX_CONNECTIONS; i++) {
+        if (g_connections[i].active) return true;
+    }
+    return false;
+}
+
+/* Periodic tick handler for ARP timeout processing. */
+void BLE_Eth_PeriodicTick(void)
+{
+    for (uint8_t i = 0; i < BLE_ETH_MAX_CONNECTIONS; i++) {
+        ble_eth_conn_t *c = &g_connections[i];
+        if (c->active && c->tcp_state == BLE_ETH_TCP_ARP_PENDING) {
+            if (c->arp_timeout_ticks > 0) {
+                c->arp_timeout_ticks--;
+                if (c->arp_timeout_ticks == 0) {
+                    PRINT("BLE-Eth ARP timeout: conn=%d\r\n", i);
+                    c->tcp_state = BLE_ETH_TCP_CLOSED;
+                    c->active = false;
+                    evt_conn_closed(i, BLE_ETH_STATUS_NO_ROUTE);
+                }
+            }
+        }
+    }
 }
 
 bool BLE_Eth_PushTargetData(uint8_t conn_id, const uint8_t *data, uint16_t len)
@@ -660,8 +740,8 @@ static uint8_t send_tcp_frame(uint8_t conn_id, uint16_t tcp_flags,
     uint16_t off = 0;
 
     /* Ethernet header */
-    memcpy(&buf[off], g_host_mac, 6); off += 6;  /* dst = Mac */
-    memcpy(&buf[off], g_dev_mac, 6);  off += 6;  /* src = device */
+    memcpy(&buf[off], c->target_mac, 6); off += 6;  /* dst = resolved target MAC */
+    memcpy(&buf[off], g_dev_mac, 6);     off += 6;  /* src = device */
     ecm_put_be16(&buf[off], 0x0800); off += 2;   /* EtherType = IPv4 */
 
     /* IPv4 header */
@@ -706,8 +786,49 @@ static uint8_t send_tcp_frame(uint8_t conn_id, uint16_t tcp_flags,
     if (tcp_flags & 0x01) c->local_seq++;  /* FIN increments seq */
     if (payload_len > 0) c->local_seq += payload_len;
 
+    PRINT("BLE-Eth send_tcp_frame: conn=%d flags=0x%02X dst=%02X:%02X:%02X:%02X:%02X:%02X ip=%d.%d.%d.%d:%d\r\n",
+          conn_id, tcp_flags,
+          c->target_mac[0], c->target_mac[1], c->target_mac[2],
+          c->target_mac[3], c->target_mac[4], c->target_mac[5],
+          c->remote_ip[0], c->remote_ip[1], c->remote_ip[2], c->remote_ip[3],
+          c->remote_port);
     g_ecm_tx_cb(buf, total);
     return 1;
+}
+
+/* Build and send an ARP request for a connection's target IP.
+   Sent via ECM bridge so the Mac can forward it to the physical network. */
+static void send_arp_request(uint8_t conn_id)
+{
+    if (!g_ecm_tx_cb) return;
+
+    ble_eth_conn_t *c = &g_connections[conn_id];
+    if (!c->active) return;
+
+    uint8_t buf[42];
+
+    /* Ethernet header: unicast to learned host MAC if available, else broadcast */
+    if (g_host_mac_valid) {
+        memcpy(&buf[0], g_host_mac_learned, 6);  /* unicast to host */
+    } else {
+        memset(&buf[0], 0xFF, 6);                 /* broadcast */
+    }
+    memcpy(&buf[6], g_dev_mac, 6);      /* src MAC = device */
+    buf[12] = 0x08; buf[13] = 0x06;     /* EtherType = ARP */
+
+    /* ARP request */
+    buf[14 + 0] = 0x00; buf[14 + 1] = 0x01;  /* hardware type = Ethernet */
+    buf[14 + 2] = 0x08; buf[14 + 3] = 0x00;  /* protocol type = IPv4 */
+    buf[14 + 4] = 6;  buf[14 + 5] = 4;       /* hlen=6, plen=4 */
+    buf[14 + 6] = 0x00; buf[14 + 7] = 0x01;  /* op = ARP request */
+    memcpy(&buf[14 + 8], g_dev_mac, 6);       /* sender MAC */
+    memcpy(&buf[14 + 14], g_dev_ip, 4);       /* sender IP */
+    memcpy(&buf[14 + 18], g_host_mac_valid ? (const uint8_t *)g_host_mac_learned : (const uint8_t *)(const char *)"\x00\x00\x00\x00\x00\x00", 6);
+    memcpy(&buf[14 + 24], c->remote_ip, 4);   /* target IP = connection target */
+
+    PRINT("BLE-Eth sending ARP request for %d.%d.%d.%d.%d\r\n",
+          c->remote_ip[0], c->remote_ip[1], c->remote_ip[2], c->remote_ip[3]);
+    g_ecm_tx_cb(buf, 42);
 }
 
 /* Send TCP data through tunnel. Wraps in Ethernet/IPv4/TCP. */

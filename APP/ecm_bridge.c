@@ -31,7 +31,9 @@
 #define ECM_CH9329_MIN_FRAME_LEN        6u
 
 /* Device-side MAC and IP for ECM frames (must match ble_eth_protocol.c). */
-static const uint8_t ECM_DEV_MAC[6] = { 0x02, 0x00, 0x00, 0x00, 0x00, 0x03 };
+/* Device-side MAC and IP for ECM frames (must match USB CDC ECM descriptors).
+   USBD iMACAddress = 02:00:00:00:00:02 (from usb_desc.c USBD_StringEcmMac). */
+static const uint8_t ECM_DEV_MAC[6] = { 0x02, 0x00, 0x00, 0x00, 0x00, 0x02 };
 static const uint8_t ECM_DEV_IP[4]  = { 192, 168, 11, 3 };
 
 typedef struct {
@@ -69,6 +71,11 @@ static uint8_t g_target_zlp_pending;
 static uint8_t g_host_zlp_pending;
 static uint8_t g_target_notify_state;
 static uint8_t g_host_notify_state;
+
+/* Track whether the USBFS CDC ECM data interface (IF5, alt=1) has been
+   activated by the host. Set in ch32v20x_usbfs_device.c SET_INTERFACE handler.
+   Prevents sending through EP7 before the host is ready. */
+volatile uint8_t g_ecm_data_if_active = 0;
 
 extern uint8_t USBD_Endp1_Busy;
 extern uint8_t USBD_Endp3_Busy;
@@ -148,35 +155,48 @@ static uint8_t handle_arp_frame(const uint8_t *frame, uint16_t frame_len)
     uint16_t eth_type = (uint16_t)(frame[12] << 8) | frame[13];
     if (eth_type != 0x0806) return 0;  /* not ARP */
 
-    /* ARP: hardware type (2), protocol type (2), hlen (1), plen (1), op (2) */
-    if (frame_len < 28) return 0;
     uint16_t arp_op = (uint16_t)(frame[20] << 8) | frame[21];
-    if (arp_op != 1) return 0;  /* not ARP request */
 
-    /* Check if target IP matches our device IP.
-     * ARP frame offsets: bytes 22-27 = sender MAC, 28-31 = sender IP,
-     *                    32-37 = target MAC, 38-41 = target IP */
-    if (frame[38] != ECM_DEV_IP[0] || frame[39] != ECM_DEV_IP[1] ||
-        frame[40] != ECM_DEV_IP[2] || frame[41] != ECM_DEV_IP[3]) {
-        return 0;
+    /* Handle ARP requests for our device IP */
+    if (arp_op == 1) {  /* ARP request */
+        /* Check if target IP matches our device IP.
+         * ARP frame offsets: bytes 22-27 = sender MAC, 28-31 = sender IP,
+         *                    32-37 = target MAC, 38-41 = target IP */
+        if (frame[38] != ECM_DEV_IP[0] || frame[39] != ECM_DEV_IP[1] ||
+            frame[40] != ECM_DEV_IP[2] || frame[41] != ECM_DEV_IP[3]) {
+            return 0;
+        }
+
+        /* Build ARP reply: sender=us, target=requestor */
+        uint8_t reply[42];
+        memcpy(&reply[0], &frame[6], 6);   /* dst MAC = requestor MAC */
+        memcpy(&reply[6], ECM_DEV_MAC, 6); /* src MAC = device MAC */
+        reply[12] = 0x08; reply[13] = 0x06; /* EtherType = ARP */
+        reply[14] = 0x00; reply[15] = 0x01; /* hardware type = Ethernet */
+        reply[16] = 0x08; reply[17] = 0x00; /* protocol type = IPv4 */
+        reply[18] = 6;  reply[19] = 4;     /* MAC len=6, IP len=4 */
+        reply[20] = 0x00; reply[21] = 0x02; /* op = ARP reply */
+        memcpy(&reply[22], ECM_DEV_MAC, 6); /* sender MAC */
+        memcpy(&reply[28], ECM_DEV_IP, 4);  /* sender IP */
+        memcpy(&reply[32], &frame[22], 6);  /* target MAC (from request) */
+        memcpy(&reply[38], &frame[28], 4);  /* target IP = requestor IP */
+
+        queue_push(&g_target_to_host, reply, sizeof(reply));
+        return 1;
     }
 
-    /* Build ARP reply: sender=us, target=requestor */
-    uint8_t reply[42];
-    memcpy(&reply[0], &frame[6], 6);   /* dst MAC = requestor MAC */
-    memcpy(&reply[6], ECM_DEV_MAC, 6); /* src MAC = device MAC */
-    reply[12] = 0x08; reply[13] = 0x06; /* EtherType = ARP */
-    reply[14] = 0x00; reply[15] = 0x01; /* hardware type = Ethernet */
-    reply[16] = 0x08; reply[17] = 0x00; /* protocol type = IPv4 */
-    reply[18] = 6;  reply[19] = 4;     /* MAC len=6, IP len=4 */
-    reply[20] = 0x00; reply[21] = 0x02; /* op = ARP reply */
-    memcpy(&reply[22], ECM_DEV_MAC, 6); /* sender MAC */
-    memcpy(&reply[28], ECM_DEV_IP, 4);  /* sender IP */
-    memcpy(&reply[32], &frame[22], 6);  /* target MAC (from request) */
-    memcpy(&reply[38], &frame[28], 4);  /* target IP = requestor IP */
+    /* Handle ARP replies - pass to BLE-Eth for connection resolution */
+    if (arp_op == 2) {  /* ARP reply */
+        uint8_t sender_ip[4], sender_mac[6];
+        memcpy(sender_mac, &frame[22], 6);
+        memcpy(sender_ip, &frame[28], 4);
+        if (BLE_Eth_HandleArpReply(sender_ip, sender_mac)) {
+            PRINT("BLE-Eth: ARP reply processed from host side\r\n");
+        }
+        /* Don't consume the frame - let it also go to Mac's queue */
+    }
 
-    queue_push(&g_target_to_host, reply, sizeof(reply));
-    return 1;
+    return 0;
 }
 
 static uint8_t tcp_payload_from_ipv4_frame(const uint8_t *frame,
@@ -558,7 +578,7 @@ static void poll_host_tx(void)
 
     if (!usbd_active) {
         /* Mac is connected via USBFS (Target USB port). Use USBFS EP7. */
-        if (USBFS_Endp_Busy[DEF_UEP7] != 0) {
+        if (!g_ecm_data_if_active || USBFS_Endp_Busy[DEF_UEP7] != 0) {
             return;
         }
         frame = queue_peek(&g_target_to_host);
@@ -687,6 +707,24 @@ void ECM_Bridge_TargetRxDone(const uint8_t *data, uint16_t len)
 
 static uint8_t handle_target_frame(const uint8_t *frame, uint16_t frame_len)
 {
+    /* Learn host MAC from any incoming frame (point-to-point CDC ECM link) */
+    if (frame_len >= 14) {
+        BLE_Eth_LearnHostMac(&frame[0]);  /* source MAC is the host's MAC */
+    }
+
+    /* Handle ARP replies from target side (USBFS) for BLE-Eth connections */
+    if (frame_len >= 42 && frame[12] == 0x08 && frame[13] == 0x06) {
+        uint16_t arp_op = (uint16_t)(frame[20] << 8) | frame[21];
+        if (arp_op == 2) {  /* ARP reply */
+            uint8_t sender_ip[4], sender_mac[6];
+            memcpy(sender_mac, &frame[22], 6);
+            memcpy(sender_ip, &frame[28], 4);
+            if (BLE_Eth_HandleArpReply(sender_ip, sender_mac)) {
+                PRINT("BLE-Eth: ARP reply processed from target side\r\n");
+            }
+        }
+    }
+
     /* Handle ARP requests from the Mac (connected via USBFS) */
     if (handle_arp_frame(frame, frame_len)) {
         return 1;  /* ARP reply queued, don't queue original */

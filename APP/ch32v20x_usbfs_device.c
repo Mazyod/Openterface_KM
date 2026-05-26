@@ -1395,9 +1395,15 @@ void USBFS_IRQHandler( void )
                             }
 #endif /* ENABLE_UAC */
 
-                            /* CDC-ECM data interface (IF5): alt=0 disables endpoints,
-                             * alt=1 enables EP6 (bulk OUT) and EP7 (bulk IN). */
-                            if (USB_ModeConfig_ActiveModeHasTargetCdcEcm() && !USB_ModeConfig_ActiveModeHasTargetUac() && USBFS_SetupReqIndex == 5) {
+                            /* CDC-ECM data interface: alt=0 disables endpoints,
+                             * alt=1 enables EP6 (bulk OUT) and EP7 (bulk IN).
+                             * Interface number depends on whether UAC is present:
+                             *   without UAC: ECM data is IF5
+                             *   with UAC:    ECM data is IF4 (UAC takes IF5-IF7) */
+                            if (USB_ModeConfig_ActiveModeHasTargetCdcEcm() &&
+                                (USBFS_SetupReqIndex == 5 || USBFS_SetupReqIndex == 4) &&
+                                /* Skip IF5 when UAC is active — IF5 belongs to UAC AS_IN */
+                                !(USB_ModeConfig_ActiveModeHasTargetUac() && USBFS_SetupReqIndex == 5)) {
                                 uint8_t alt = (uint8_t)(USBFS_SetupReqValue & 0xFF);
                                 if (alt == 1) {
                                     /* Enable EP6 bulk OUT (ACK, DATA0) and EP7 bulk IN (NAK, DATA0).
@@ -1407,10 +1413,14 @@ void USBFS_IRQHandler( void )
                                     USBFSD->UEP6_RX_CTRL = USBFS_UEP_R_RES_ACK;
                                     USBFSD->UEP7_TX_CTRL = USBFS_UEP_T_RES_NAK;
                                     USBFSD->UEP7_TX_LEN  = 0;
+                                    /* Externally visible flag — ecm_bridge.c checks this
+                                     * before sending through USBFS EP7. */
+                                    g_ecm_data_if_active = 1;
                                 }
                                 else {
                                     USBFSD->UEP6_RX_CTRL = USBFS_UEP_R_RES_NAK;
                                     USBFSD->UEP7_TX_CTRL = USBFS_UEP_T_RES_NAK;
+                                    g_ecm_data_if_active = 0;
                                 }
                             }
                             break;
