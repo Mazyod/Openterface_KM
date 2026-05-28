@@ -25,6 +25,7 @@
 #include "include/acm_bridge.h"
 #include "include/ecm_bridge.h"
 #include "include/usb_mode_config.h"
+#include "include/pwm_led.h"
 
 /*********************************************************************
  * GLOBAL TYPEDEFS
@@ -61,7 +62,8 @@ void Main_Circulation(void)
 
 
     while(1)
-    {   
+    {
+        PWM_LED_SetBrightness(100);
         //rgb_state
         RGB_Update();
         USB_ModeConfig_Poll();
@@ -155,10 +157,12 @@ int main(void) {
     //temp_init
     ADC_Function_Init();
     //rgb_init
-    RGB_Init(); 
+    RGB_Init();
+
+    /* Initialize PC7 LED - must be after RGB_Init since RGB configures GPIOC/AFIO */
+    PWM_LED_Init();
+
     Delay_Ms(1000);
     IWDG_Auto_Init(IWDG_Prescaler_32, 4000);
     Main_Circulation();
 }
-
-

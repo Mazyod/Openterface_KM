@@ -84,6 +84,7 @@ C_SOURCES=(
   "$REPO_ROOT/APP/mouse_handler.c"
   "$REPO_ROOT/APP/peripheral.c"
   "$REPO_ROOT/APP/peripheral_main.c"
+  "$REPO_ROOT/APP/pwm_led.c"
   "$REPO_ROOT/APP/sd_switch.c"
   "$REPO_ROOT/APP/system_ch32v20x.c"
   "$REPO_ROOT/APP/uac_handler.c"
@@ -136,8 +137,14 @@ CFLAGS="$CFLAGS -DBLE_BUFF_MAX_LEN=516"
 CFLAGS="$CFLAGS -DCH32V20x_D8W"
 CFLAGS="$CFLAGS -DBLE_MEMHEAP_SIZE=10240"
 CFLAGS="$CFLAGS -DBLE_TX_NUM_EVENT=5"
-CFLAGS="$CFLAGS -DCLK_OSC32K=0"
-# ENABLE_BLE, version, ENABLE_UAC all handled by Version_selection.h #ifndef guards
+# 0 = external 32K (32768Hz) — needs physical crystal
+# 1 = internal 32000Hz RC
+# 2 = internal 32768Hz RC
+CFLAGS="$CFLAGS -DCLK_OSC32K=1"
+
+# Enable BLE, version 1 (kvm go)
+CFLAGS="$CFLAGS -DENABLE_BLE"
+CFLAGS="$CFLAGS -Dversion=1"
 
 LINKER_SCRIPT="$REPO_ROOT/HAL/Link.ld"
 OUTPUT="$BUILD_DIR/openterface-km-firmware"
