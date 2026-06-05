@@ -6,7 +6,7 @@
 #include "Version_selection.h"
 
 /* Queue size definitions */
-#define KB_QUEUE_SIZE      2048   // Keyboard report queue size
+#define KB_QUEUE_SIZE      512    // Keyboard report queue size
 #define MS_REL_QUEUE_SIZE  28     // Relative mouse report queue size
 #define MS_ABS_QUEUE_SIZE  28     // Absolute mouse report queue size
 #define RESP_QUEUE_SIZE    28     // Response packet queue size
@@ -113,5 +113,12 @@ bool Queue_Pop_Media(Media_Report_t *out);
 /* Send functions */
 void USB_SendFromQueues(void);        // Send keyboard/mouse reports via USBFS
 void USBD_SendFromRespQueue(void);    // Send response packets via USBD (endpoint)
+
+/* USB debug ring buffer — sends debug strings via USBFS EP2 (relative mouse endpoint).
+ * Debug reports use mouse HID format with a 0xFF marker byte in data[0].
+ * Monitor on macOS with a raw HID reader (e.g. pyhidapi). */
+#define USB_DEBUG_RING_SIZE 256
+void USB_DEBUG(const char *fmt, ...);
+void USB_DEBUG_Poll(void);
 
 #endif /* KM_RING_H */

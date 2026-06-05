@@ -197,6 +197,57 @@ python tools/test_usb_mode_hid_windows.py --reboot
 5. Add host-side TCP command interception for CH9329-framed payloads. Done in `APP/ecm_bridge.c`: host-to-device Ethernet frames are parsed as IPv4/TCP, payloads made entirely of valid CH9329 frames are routed into the HID control parser, and nonmatching frames continue through the bridge.
 6. Verify enumeration on ECM-capable hosts first. Stock Windows is expected not to bind CDC ECM as a NIC.
 
+#### Mode 4 Bring-up Findings (macOS, 2026-06)
+
+These notes capture the root causes and fixes that mattered for getting CDC ECM mode stable on macOS (ARP resolution + TCP reachability). They’re intentionally behavior-first and point at the relevant subsystems rather than preserving every incremental debug log.
+
+Known-good configuration (example):
+
+- Runtime mode: `USB_WORK_MODE_HID_ECM_BRIDGE` (mode `4`)
+- macOS interface: `enXX` (for example `en20`)
+- Host IP: `192.168.11.1/24`
+- Firmware synthetic peer:
+  - IP: `192.168.11.3`
+  - MAC used in ARP replies and as Ethernet src: `02:00:00:00:00:31`
+- CDC ECM descriptor MAC string (iMACAddress=4): `020000000030` (i.e. `02:00:00:00:00:30`)
+
+Root causes and fixes:
+
+1. **EP7 IN stuck before the ECM data altsetting is active**
+   - Do not pre-queue ECM TX before the host selects the data interface altsetting.
+   - On `USB_SET_INTERFACE` for the ECM data interface, clear EP7 TX state (`UEP7_TX_LEN`, `USBFS_Endp_Busy[DEF_UEP7]`) and reset `g_garp_sent`.
+   - Defer GARP until the data interface is active.
+
+2. **RX frame reassembly can be “poisoned” by unsupported short frames**
+   - Unknown short frames must be consumed/dropped so the reassembly state cannot stall forever.
+   - IPv6 frame-length handling needs to be exact.
+
+3. **Unhandled target-side frames were being reflected back**
+   - Ensure target-side frames are always consumed (even if unhandled) to avoid echo loops on the ECM link.
+
+4. **ARP reply MAC conflict with the interface identity**
+   - macOS can reject ARP replies if the firmware answers with the same MAC as the interface descriptor.
+   - Keep descriptor MAC (`...:30`) and firmware peer MAC (`...:31`) distinct.
+
+Diagnostics:
+
+- HID Feature report `0x30` includes ECM diagnostics (data IF active, GARP state, EP6 RX count, EP7 TX/busy state, EP7 IN completion count).
+- On macOS, `python3 tools/usb_mode_switch_mac.py` prints the status + diagnostics (target-facing USBFS path needs no sudo).
+
+Bring-up validation:
+
+```bash
+# ARP is the first “real” signal of ECM health
+arp -an | grep 192.168.11.3
+
+# TCP reachability to the target service (SSH)
+nc -vz -G 2 192.168.11.1 22
+```
+
+Notes:
+
+- `ping 192.168.11.3` is not a meaningful failure signal unless ICMP echo is implemented; use ARP resolution + TCP/SSH banner tests instead.
+
 ### Phase 6: Persistent Runtime Selection
 
 Add persistent mode selection only after static profile builds work.

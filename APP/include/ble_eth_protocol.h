@@ -37,11 +37,7 @@ extern "C" {
 #define BLE_ETH_FRAME_HEAD2       0xABU
 #define BLE_ETH_FRAME_MIN_LEN     6U    /* head1+head2+addr+cmd+len+csum */
 #define BLE_ETH_FRAME_HEAD_LEN    5U    /* bytes before payload */
-#define BLE_ETH_MAX_PAYLOAD_LEN   252U  /* max payload in a single frame */
-/* Note: For single-chunk BLE notification, complete frame (5 + payload + 1)
-   must fit in BLE_ETH_TX_CHUNK_SIZE (255). Effective max for single-chunk:
-   249 bytes payload → 255-byte frame. Larger payloads will be split by
-   tx_queue_push and require multiple notifications. */
+#define BLE_ETH_MAX_PAYLOAD_LEN   249U  /* max payload in one 255-byte notification */
 
 /* ======================== Status Codes =================================== */
 
@@ -142,6 +138,31 @@ extern "C" {
  *  The actual TCP data length = payload_len - BLE_ETH_FRAG_HEADER_LEN.
  */
 
+/* ======================== Data ACK Payload ===============================
+ *
+ *  BLE_ETH_CMD_DATA_RESP payload supports two formats:
+ *
+ *  Legacy format (1 byte):
+ *    [0] : status
+ *
+ *  Metadata format (4 bytes):
+ *    [0] : status
+ *    [1] : conn_id
+ *    [2] : seq (received fragment sequence)
+ *    [3] : expected_seq (next sequence expected by receiver)
+ *
+ *  Metadata+window format (5 bytes):
+ *    [0] : status
+ *    [1] : conn_id
+ *    [2] : seq (received fragment sequence)
+ *    [3] : expected_seq (next sequence expected by receiver)
+ *    [4] : rx_window (recommended sender in-flight fragment window, 1..15)
+ */
+
+#define BLE_ETH_DATA_ACK_PAYLOAD_LEN          1U
+#define BLE_ETH_DATA_ACK_META_PAYLOAD_LEN     4U
+#define BLE_ETH_DATA_ACK_WINDOW_PAYLOAD_LEN   5U
+
 /* ======================== Info Payload ===================================
  *
  *  BLE_ETH_CMD_INFO request: no payload (len=0)
@@ -153,6 +174,8 @@ extern "C" {
  *    [4]   : supported features bitmask
  *             bit 0: TCP tunneling
  *             bit 1: SSH-optimized mode
+ *             bit 2: DATA ACK metadata ([status, conn_id, seq, expected_seq])
+ *             bit 3: DATA ACK receiver window ([status, conn_id, seq, expected_seq, rx_window])
  *    [5..7]: reserved
  */
 
@@ -160,6 +183,8 @@ extern "C" {
 #define BLE_ETH_PROTO_VERSION      0x01U
 #define BLE_ETH_FEAT_TCP_TUNNEL    0x01U
 #define BLE_ETH_FEAT_SSH_OPT       0x02U
+#define BLE_ETH_FEAT_DATA_ACK_META 0x04U
+#define BLE_ETH_FEAT_DATA_ACK_WINDOW 0x08U
 
 /* ======================== Parser State =================================== */
 
@@ -200,12 +225,15 @@ typedef struct {
     /* TCP state for ECM frame generation */
     ble_eth_tcp_state_t tcp_state;
     uint32_t local_seq;           /* next seq to send to target */
+    uint32_t syn_seq;             /* initial SYN sequence for retransmit */
     uint32_t local_ack;           /* next ack expected from target */
     uint32_t remote_seq;          /* next seq from target */
     uint32_t remote_ack;          /* ack we expect target to send */
     uint16_t local_port;          /* source port for ECM frames */
     uint8_t  target_mac[6];       /* Resolved target MAC via ARP */
     uint16_t arp_timeout_ticks;   /* ARP resolution countdown */
+    uint8_t  syn_retries_left;    /* TCP SYN retries before connect timeout */
+    uint8_t  peer_addr;           /* BLE protocol address from CONNECT */
 } ble_eth_conn_t;
 
 /* ======================== Parser Context ================================= */
@@ -228,6 +256,26 @@ typedef struct {
     uint8_t  next_seq;
     bool     in_progress;
 } ble_eth_reassembly_t;
+
+/* ======================== Reliability Hooks ============================== */
+
+typedef struct {
+    uint32_t frag_rx_total;
+    uint32_t frag_rx_duplicate;
+    uint32_t frag_rx_out_of_order;
+    uint32_t frag_reassembly_start;
+    uint32_t frag_reassembly_complete;
+    uint32_t frag_reassembly_abort;
+    uint32_t frag_reassembly_bytes;
+    uint32_t tx_ack_sent;
+    uint32_t tx_queue_full_drop;
+
+    /* Frame-level integrity / parser diagnostics */
+    uint32_t frame_rx_total;
+    uint32_t frame_rx_checksum_err;
+    uint32_t frame_rx_len_err;
+    uint32_t frame_rx_cmd_unknown;
+} ble_eth_reliability_stats_t;
 
 /* ======================== Event Types ==================================== */
 
@@ -360,10 +408,17 @@ bool BLE_Eth_PushTargetData(uint8_t conn_id, const uint8_t *data, uint16_t len);
 /**
  * @brief Get the next BLE notification chunk to send.
  *        Call repeatedly until it returns 0.
- * @param buf  Output buffer (size should fit BLE MTU - 3).
+ * @param buf      Output buffer.
+ * @param max_len  Maximum bytes that fit in the current BLE notification.
  * @return Number of bytes to send, 0 if nothing pending.
  */
-uint16_t BLE_Eth_GetNextTxChunk(uint8_t *buf);
+uint16_t BLE_Eth_GetNextTxChunk(uint8_t *buf, uint16_t max_len);
+
+/**
+ * @brief Consume bytes returned by BLE_Eth_GetNextTxChunk after notify success.
+ * @param len Number of bytes accepted by the BLE stack.
+ */
+void BLE_Eth_ConsumeTxChunk(uint16_t len);
 
 /**
  * @brief Reset parser state (e.g., after connection loss).
@@ -430,8 +485,19 @@ void BLE_Eth_LearnHostMac(const uint8_t *mac);
 /**
  * @brief Periodic tick handler for ARP timeout processing.
  *        Call from periodic task (e.g., every 1 second).
+ * @return true if a BLE response was queued and TX should be scheduled.
  */
-void BLE_Eth_PeriodicTick(void);
+bool BLE_Eth_PeriodicTick(void);
+
+/**
+ * @brief Read a snapshot of protocol reliability counters.
+ */
+void BLE_Eth_GetReliabilityStats(ble_eth_reliability_stats_t *out_stats);
+
+/**
+ * @brief Reset protocol reliability counters.
+ */
+void BLE_Eth_ResetReliabilityStats(void);
 
 #ifdef __cplusplus
 }

@@ -169,6 +169,52 @@ def _print_status(payload: bytes):
     supported = [str(m) for m in range(1, 5) if capability & (1 << m)]
     print(f"  capability:    0x{capability:08X} (modes: {', '.join(supported) if supported else 'none'})")
 
+    if len(payload) >= 32:
+        ep6_count = int.from_bytes(payload[17:21], "little")
+        ep6_len = int.from_bytes(payload[22:24], "little")
+        ep7_in_count = int.from_bytes(payload[30:32], "little")
+        print("  ECM diag:")
+        print(f"    data_if_active: {payload[11]}")
+        print(f"    garp_sent:      {payload[12]}")
+        print(f"    tx_state:       {payload[13]}")
+        print(f"    led_override:   {payload[14]}")
+        print(f"    ep7_tx_count:   {int.from_bytes(payload[15:17], 'little')}")
+        print(f"    ep6_rx_count:   {ep6_count}")
+        print(f"    ep6_tog_ok:     {payload[21]}")
+        print(f"    ep6_rx_len:     {ep6_len}")
+        print(f"    ep7_busy:       {payload[24]}")
+        print(f"    ep7_tx_ctrl:    0x{payload[25]:02X}")
+        print(f"    ep7_tx_len:     {int.from_bytes(payload[26:28], 'little')}")
+        print(f"    ep6_rx_ctrl:    0x{payload[28]:02X}")
+        print(f"    ep5_tx_ctrl:    0x{payload[29]:02X}")
+        print(f"    ep7_in_count:   {ep7_in_count}")
+
+    # Extended diagnostics (append-only; safe with older firmware)
+    if len(payload) >= 34:
+        diag_version = payload[32]
+        diag_flags = payload[33]
+        ble_eth_present = bool(diag_flags & 0x01)
+        if diag_version != 0 and ble_eth_present:
+            base = 34
+            need = base + (7 * 4)
+            if len(payload) >= need:
+                frag_rx_total = int.from_bytes(payload[base + 0:base + 4], "little")
+                frag_rx_dup = int.from_bytes(payload[base + 4:base + 8], "little")
+                frag_rx_ooo = int.from_bytes(payload[base + 8:base + 12], "little")
+                reassembly_abort = int.from_bytes(payload[base + 12:base + 16], "little")
+                tx_queue_full_drop = int.from_bytes(payload[base + 16:base + 20], "little")
+                frame_len_err = int.from_bytes(payload[base + 20:base + 24], "little")
+                frame_csum_err = int.from_bytes(payload[base + 24:base + 28], "little")
+
+                print("  BLE-Eth diag:")
+                print(f"    frag_rx_total:       {frag_rx_total}")
+                print(f"    frag_rx_duplicate:   {frag_rx_dup}")
+                print(f"    frag_rx_out_of_order: {frag_rx_ooo}")
+                print(f"    frag_reassembly_abort: {reassembly_abort}")
+                print(f"    tx_queue_full_drop:  {tx_queue_full_drop}")
+                print(f"    frame_len_err:       {frame_len_err}")
+                print(f"    frame_checksum_err:  {frame_csum_err}")
+
 
 # ---------------------------------------------------------------------------
 # Method A: HID Feature Report (target-facing, PID 0xFE00, IF 3)

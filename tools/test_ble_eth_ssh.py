@@ -44,6 +44,7 @@ sys.path.insert(0, ".")
 from tools.ble_eth_tunnel import (
     BleEthClient,
     BleTcpProxy,
+    ParsedFrame,
     TunnelEvent,
     MAX_PAYLOAD_LEN,
     build_connect,
@@ -57,6 +58,7 @@ from tools.ble_eth_tunnel import (
     SERVICE_UUID,
     TX_CHAR_UUID,
     RX_CHAR_UUID,
+    CMD_DATA_RESP,
     CMD_INFO_RESP,
     CMD_PONG,
     STATUS_SUCCESS,
@@ -193,6 +195,199 @@ def test_parser_resync():
     print("  [PASS] Partial frame then completion")
 
 
+async def _test_strict_ack_window_async():
+    client = BleEthClient(data_ack_policy="meta")
+    client._ack_mode = "meta"
+    client._ack_strict = True
+    client._data_ack_window_size = 2
+    client._data_frame_gap_s = 0.0
+
+    sent_frames: list[tuple[int, int]] = []
+
+    async def fake_send_frame(frame: bytes):
+        payload_len = frame[4]
+        payload = frame[5:5 + payload_len]
+        header = client._extract_data_header(payload)
+        if header is not None:
+            sent_frames.append(header)
+
+    client._send_frame = fake_send_frame  # type: ignore[method-assign]
+
+    data = bytes(range(256)) * 3
+    send_task = asyncio.create_task(client.send_data(0, data))
+
+    await asyncio.sleep(0)
+    assert sent_frames[:2] == [(0, 0), (0, 1)], f"expected two in-flight fragments, got {sent_frames}"
+    assert len(client._data_ack_waiters) == 2, f"expected 2 pending waiters, got {len(client._data_ack_waiters)}"
+
+    client._data_ack_waiters[(0, 0)].set_result({
+        "status": STATUS_SUCCESS,
+        "conn_id": 0,
+        "seq": 0,
+        "expected_seq": 1,
+    })
+    for _ in range(20):
+        if len(sent_frames) >= 3:
+            break
+        await asyncio.sleep(0)
+
+    assert sent_frames[:3] == [(0, 0), (0, 1), (0, 2)], f"expected third fragment after first ACK, got {sent_frames}"
+
+    client._data_ack_waiters[(0, 1)].set_result({
+        "status": STATUS_SUCCESS,
+        "conn_id": 0,
+        "seq": 1,
+        "expected_seq": 2,
+    })
+    for _ in range(20):
+        if len(sent_frames) >= 4 and (0, 3) in client._data_ack_waiters:
+            break
+        await asyncio.sleep(0)
+
+    client._data_ack_waiters[(0, 2)].set_result({
+        "status": STATUS_SUCCESS,
+        "conn_id": 0,
+        "seq": 2,
+        "expected_seq": 3,
+    })
+    client._data_ack_waiters[(0, 3)].set_result({
+        "status": STATUS_SUCCESS,
+        "conn_id": 0,
+        "seq": 3,
+        "expected_seq": 4,
+    })
+
+    await send_task
+
+
+def test_strict_ack_window():
+    asyncio.run(_test_strict_ack_window_async())
+    print("  [PASS] Strict ACK sender window")
+
+
+async def _test_cumulative_data_ack_async():
+    client = BleEthClient(data_ack_policy="meta")
+    client._ack_mode = "meta"
+    client._ack_strict = True
+
+    loop = asyncio.get_running_loop()
+    futures = {}
+    for seq in range(4):
+        fut = loop.create_future()
+        client._data_ack_waiters[(0, seq)] = fut
+        futures[seq] = fut
+
+    # One ACK indicating expected_seq=4 should release seq 0..3 waiters.
+    client._handle_frame(ParsedFrame(addr=0, cmd=CMD_DATA_RESP, payload=bytes([
+        STATUS_SUCCESS,
+        0,   # conn_id
+        0,   # ack_seq (can be stale/duplicate)
+        4,   # expected_seq (cumulative)
+        2,   # rx_window
+    ])))
+
+    assert not client._data_ack_waiters, "expected all waiters to be resolved"
+    for seq, fut in futures.items():
+        assert fut.done(), f"expected waiter for seq={seq} to be done"
+        result = fut.result()
+        assert result.get("status") == STATUS_SUCCESS
+        assert result.get("conn_id") == 0
+        assert result.get("seq") == seq
+        assert result.get("expected_seq") == 4
+        assert result.get("rx_window") == 2
+
+    assert client.get_reliability_stats().get("data_ack_cumulative_resolved") == 3
+
+
+def test_cumulative_data_ack():
+    asyncio.run(_test_cumulative_data_ack_async())
+    print("  [PASS] Cumulative metadata DATA ACK")
+
+
+async def _test_ack_rx_window_feedback_async():
+    client = BleEthClient(data_ack_policy="meta")
+    client._ack_mode = "meta"
+    client._ack_strict = True
+    client._data_ack_window_size = 2
+    client._data_ack_window_limit = 2
+    client._data_frame_gap_s = 0.0
+
+    sent_frames: list[tuple[int, int]] = []
+
+    async def fake_send_frame(frame: bytes):
+        payload_len = frame[4]
+        payload = frame[5:5 + payload_len]
+        header = client._extract_data_header(payload)
+        if header is not None:
+            sent_frames.append(header)
+
+    client._send_frame = fake_send_frame  # type: ignore[method-assign]
+
+    data = bytes(range(256)) * 3
+    send_task = asyncio.create_task(client.send_data(0, data))
+
+    await asyncio.sleep(0)
+    assert sent_frames[:2] == [(0, 0), (0, 1)], f"expected two initial fragments, got {sent_frames}"
+
+    client._handle_frame(ParsedFrame(addr=0, cmd=CMD_DATA_RESP, payload=bytes([
+        STATUS_SUCCESS,
+        0,
+        0,
+        1,
+        1,
+    ])))
+
+    for _ in range(10):
+        await asyncio.sleep(0)
+
+    assert client.get_reliability_stats()["last_data_resp_rx_window"] == 1
+    assert client.get_reliability_stats()["ack_window_limit"] == 1
+    assert sent_frames == [(0, 0), (0, 1)], f"rx_window=1 should block the next fragment, got {sent_frames}"
+
+    client._handle_frame(ParsedFrame(addr=0, cmd=CMD_DATA_RESP, payload=bytes([
+        STATUS_SUCCESS,
+        0,
+        1,
+        2,
+        1,
+    ])))
+
+    for _ in range(20):
+        if len(sent_frames) >= 3:
+            break
+        await asyncio.sleep(0)
+
+    assert sent_frames[:3] == [(0, 0), (0, 1), (0, 2)], f"expected third fragment after second ACK, got {sent_frames}"
+
+    client._handle_frame(ParsedFrame(addr=0, cmd=CMD_DATA_RESP, payload=bytes([
+        STATUS_SUCCESS,
+        0,
+        2,
+        3,
+        1,
+    ])))
+
+    for _ in range(20):
+        if len(sent_frames) >= 4:
+            break
+        await asyncio.sleep(0)
+
+    client._handle_frame(ParsedFrame(addr=0, cmd=CMD_DATA_RESP, payload=bytes([
+        STATUS_SUCCESS,
+        0,
+        3,
+        4,
+        1,
+    ])))
+
+    await send_task
+
+
+def test_ack_rx_window_feedback():
+    asyncio.run(_test_ack_rx_window_feedback_async())
+    print("  [PASS] DATA ACK receiver window feedback")
+
+
 def run_unit_tests():
     """Run all unit tests."""
     print("=" * 60)
@@ -203,6 +398,9 @@ def run_unit_tests():
     test_checksum()
     test_fragmentation()
     test_parser_resync()
+    test_strict_ack_window()
+    test_cumulative_data_ack()
+    test_ack_rx_window_feedback()
 
     print("=" * 60)
     print("All unit tests passed!")
@@ -222,6 +420,7 @@ async def test_ble_connection(args):
     client = BleEthClient(
         device_name=args.device_name,
         ble_address=args.ble_addr,
+        strict_data_ack_window_size=args.ack_window,
     )
 
     try:
@@ -260,6 +459,7 @@ async def test_ble_eth_data_path(args):
     client = BleEthClient(
         device_name=args.device_name,
         ble_address=args.ble_addr,
+        strict_data_ack_window_size=args.ack_window,
     )
 
     try:
@@ -328,6 +528,7 @@ async def test_ssh_tunnel(args):
     client = BleEthClient(
         device_name=args.device_name,
         ble_address=args.ble_addr,
+        strict_data_ack_window_size=args.ack_window,
     )
 
     def event_handler(evt: TunnelEvent):
@@ -343,6 +544,8 @@ async def test_ssh_tunnel(args):
             logger.info(f"  [EVENT] {type_names[evt.type]} conn={evt.conn_id} {evt.error_msg}")
 
     client.add_event_callback(event_handler)
+
+    ok = True
 
     try:
         # Step 1: Connect to BLE device
@@ -392,16 +595,22 @@ async def test_ssh_tunnel(args):
                 )
                 # Read SSH banner
                 banner = await asyncio.wait_for(reader.readline(), timeout=10)
-                print(f"  SSH Banner: {banner.decode().strip()}")
+                if not banner:
+                    raise RuntimeError("empty SSH banner (connection closed)")
+                banner_text = banner.decode(errors="replace").strip()
+                print(f"  SSH Banner: {banner_text}")
+                if not banner_text.startswith("SSH-"):
+                    raise RuntimeError(f"invalid SSH banner: {banner_text!r}")
                 writer.close()
                 await writer.wait_closed()
                 print("  [PASS] TCP tunnel works!")
             except Exception as e:
                 print(f"  [FAIL] TCP test failed: {e}")
+                ok = False
 
             await proxy.stop()
             await client.close_tunnel(conn_id)
-            return
+            return 0 if ok else 1
 
         # Interactive mode: keep proxy running
         print("\nProxy is running. Press Ctrl+C to stop.")
@@ -423,9 +632,12 @@ async def test_ssh_tunnel(args):
         print(f"\n  ERROR: {e}")
         import traceback
         traceback.print_exc()
+        ok = False
     finally:
         await client.disconnect()
         print("Disconnected from BLE device.")
+
+    return 0 if ok else 1
 
 
 # ---------------------------------------------------------------------------
@@ -490,6 +702,11 @@ def main():
     parser.add_argument(
         "-v", "--verbose", action="store_true",
         help="Enable verbose logging",
+    )
+
+    parser.add_argument(
+        "--ack-window", type=int, default=2,
+        help="Strict in-flight DATA fragment window size when metadata ACKs are enabled (default: 2)",
     )
 
     args = parser.parse_args()

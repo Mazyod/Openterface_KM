@@ -23,6 +23,7 @@
 #include "include/uac_handler.h"
 #include "include/acm_bridge.h"
 #include "include/ecm_bridge.h"
+#include "include/ble_eth_protocol.h"
 #include "include/usb_mode_config.h"
 /*******************************************************************************/
 /* Variable Definition */
@@ -54,6 +55,19 @@ volatile uint8_t  USBFS_HidProtocol[ 4 ];
 #define USBFS_MODE_HID_REPORT_LEN      DEF_USBD_UEP0_SIZE
 static uint8_t USBFS_ModeHidLastStatus = STATUS_SUCCESS;
 
+#define USBFS_MODE_HID_DIAG_VERSION_OFFSET          33u
+#define USBFS_MODE_HID_DIAG_FLAGS_OFFSET            34u
+#define USBFS_MODE_HID_DIAG_BLE_ETH_STATS_OFFSET    35u
+
+static void USBFS_ModeHid_WriteU32LE(uint8_t *buf, uint16_t off, uint32_t v)
+{
+    if (!buf || (uint16_t)(off + 4u) > USBFS_MODE_HID_REPORT_LEN) return;
+    buf[off + 0u] = (uint8_t)(v);
+    buf[off + 1u] = (uint8_t)(v >> 8);
+    buf[off + 2u] = (uint8_t)(v >> 16);
+    buf[off + 3u] = (uint8_t)(v >> 24);
+}
+
 static void USBFS_ModeHid_FillReport(uint8_t *report)
 {
     uint16_t flags = USB_ModeConfig_GetFlags();
@@ -72,6 +86,43 @@ static void USBFS_ModeHid_FillReport(uint8_t *report)
     report[9] = (uint8_t)(capability_mask >> 8);
     report[10] = (uint8_t)(capability_mask >> 16);
     report[11] = (uint8_t)(capability_mask >> 24);
+#if USB_WORK_MODE_COMPILES_BRIDGE_ECM
+    report[12] = g_ecm_data_if_active;
+    report[13] = g_garp_sent;
+    report[14] = g_ecm_tx_state;
+    report[15] = g_ecm_led_override;
+    report[16] = (uint8_t)g_ecm_tx_count;
+    report[17] = (uint8_t)(g_ecm_tx_count >> 8);
+    report[18] = (uint8_t)g_usbfs_ep6_rx_count;
+    report[19] = (uint8_t)(g_usbfs_ep6_rx_count >> 8);
+    report[20] = (uint8_t)(g_usbfs_ep6_rx_count >> 16);
+    report[21] = (uint8_t)(g_usbfs_ep6_rx_count >> 24);
+    report[22] = g_usbfs_ep6_tog_ok;
+    report[23] = (uint8_t)g_usbfs_ep6_rx_len;
+    report[24] = (uint8_t)(g_usbfs_ep6_rx_len >> 8);
+    report[25] = USBFS_Endp_Busy[DEF_UEP7];
+    report[26] = USBFSD->UEP7_TX_CTRL;
+    report[27] = (uint8_t)USBFSD->UEP7_TX_LEN;
+    report[28] = (uint8_t)(USBFSD->UEP7_TX_LEN >> 8);
+    report[29] = USBFSD->UEP6_RX_CTRL;
+    report[30] = USBFSD->UEP5_TX_CTRL;
+    report[31] = (uint8_t)g_usbfs_ep7_in_count;
+    report[32] = (uint8_t)(g_usbfs_ep7_in_count >> 8);
+#endif
+
+    /* Append-only diagnostics (do not change existing offsets above). */
+    report[USBFS_MODE_HID_DIAG_VERSION_OFFSET] = 0x01u;
+    report[USBFS_MODE_HID_DIAG_FLAGS_OFFSET] = 0x01u; /* bit0: BLE-Eth stats present */
+
+    ble_eth_reliability_stats_t st;
+    BLE_Eth_GetReliabilityStats(&st);
+    USBFS_ModeHid_WriteU32LE(report, USBFS_MODE_HID_DIAG_BLE_ETH_STATS_OFFSET + 0u,  st.frag_rx_total);
+    USBFS_ModeHid_WriteU32LE(report, USBFS_MODE_HID_DIAG_BLE_ETH_STATS_OFFSET + 4u,  st.frag_rx_duplicate);
+    USBFS_ModeHid_WriteU32LE(report, USBFS_MODE_HID_DIAG_BLE_ETH_STATS_OFFSET + 8u,  st.frag_rx_out_of_order);
+    USBFS_ModeHid_WriteU32LE(report, USBFS_MODE_HID_DIAG_BLE_ETH_STATS_OFFSET + 12u, st.frag_reassembly_abort);
+    USBFS_ModeHid_WriteU32LE(report, USBFS_MODE_HID_DIAG_BLE_ETH_STATS_OFFSET + 16u, st.tx_queue_full_drop);
+    USBFS_ModeHid_WriteU32LE(report, USBFS_MODE_HID_DIAG_BLE_ETH_STATS_OFFSET + 20u, st.frame_rx_len_err);
+    USBFS_ModeHid_WriteU32LE(report, USBFS_MODE_HID_DIAG_BLE_ETH_STATS_OFFSET + 24u, st.frame_rx_checksum_err);
 }
 
 static void USBFS_ModeHid_HandleSetReport(uint8_t *report, uint16_t report_len)
@@ -150,6 +201,13 @@ __attribute__ ((aligned(4))) uint8_t USBFS_EP6_Buf[ UAC_ISO_PACKET_SIZE ];     /
 
 /* USB IN Endpoint Busy Flag */
 volatile uint8_t  USBFS_Endp_Busy[ DEF_UEP_NUM ];
+
+/* EP6 OUT diagnostic — set in USBFS_IRQHandler, read by main loop */
+volatile uint8_t  g_usbfs_ep6_int_flag = 0;  /* 1 = EP6 OUT interrupt fired */
+volatile uint8_t  g_usbfs_ep6_tog_ok = 0;    /* last TOG_OK result */
+volatile uint16_t g_usbfs_ep6_rx_len = 0;    /* last RX length */
+volatile uint32_t g_usbfs_ep6_rx_count = 0;  /* total EP6 OUT interrupts (any TOG state) */
+volatile uint16_t g_usbfs_ep7_in_count = 0;   /* total EP7 IN completions */
 
 /******************************************************************************/
 /* Interrupt Service Routine Declaration*/
@@ -637,6 +695,7 @@ void USBFS_IRQHandler( void )
 
 #if USB_WORK_MODE_COMPILES_TARGET_CDC_ACM || USB_WORK_MODE_COMPILES_TARGET_CDC_ECM
                     case USBFS_UIS_TOKEN_IN | DEF_UEP7:
+                        g_usbfs_ep7_in_count++;
                         USBFSD->UEP7_TX_CTRL = ( USBFSD->UEP7_TX_CTRL & ~USBFS_UEP_T_RES_MASK ) | USBFS_UEP_T_RES_NAK;
                         USBFSD->UEP7_TX_CTRL ^= USBFS_UEP_T_TOG;
                         USBFS_Endp_Busy[ DEF_UEP7 ] = 0;
@@ -736,6 +795,12 @@ void USBFS_IRQHandler( void )
                         else
 #endif
                         {
+                        /* Diagnostic: capture EP6 OUT interrupt state for main-loop LED display */
+                        g_usbfs_ep6_int_flag = 1;
+                        g_usbfs_ep6_tog_ok = (intst & USBFS_UIS_TOG_OK) ? 1 : 0;
+                        g_usbfs_ep6_rx_len = USBFSD->RX_LEN;
+                        g_usbfs_ep6_rx_count++;  /* count every OUT interrupt */
+
                         if( intst & USBFS_UIS_TOG_OK )
                         {
                             if (USB_ModeConfig_ActiveModeBridgeAcm()) {
@@ -1413,14 +1478,23 @@ void USBFS_IRQHandler( void )
                                     USBFSD->UEP6_RX_CTRL = USBFS_UEP_R_RES_ACK;
                                     USBFSD->UEP7_TX_CTRL = USBFS_UEP_T_RES_NAK;
                                     USBFSD->UEP7_TX_LEN  = 0;
+                                    USBFS_Endp_Busy[DEF_UEP7] = 0;
+                                    /* Reset GARP flag so it gets re-queued on every activation. */
+                                    g_garp_sent = 0;
                                     /* Externally visible flag — ecm_bridge.c checks this
                                      * before sending through USBFS EP7. */
                                     g_ecm_data_if_active = 1;
                                 }
                                 else {
-                                    USBFSD->UEP6_RX_CTRL = USBFS_UEP_R_RES_NAK;
+                                    /* Keep EP6 RX active even on alt=0 — macOS CDC ECM
+                                       may deactivate then immediately reactivate, and we
+                                       need to receive ARP requests during this window. */
+                                    USBFSD->UEP6_RX_CTRL = USBFS_UEP_R_RES_ACK;
                                     USBFSD->UEP7_TX_CTRL = USBFS_UEP_T_RES_NAK;
-                                    g_ecm_data_if_active = 0;
+                                    USBFSD->UEP7_TX_LEN  = 0;
+                                    USBFS_Endp_Busy[DEF_UEP7] = 0;
+                                    /* Keep active so GARP/ARP-reply TX path stays open */
+                                    g_ecm_data_if_active = 1;
                                 }
                             }
                             break;

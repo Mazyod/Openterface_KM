@@ -6,9 +6,9 @@ This protocol enables TCP tunneling over BLE using the CH9329-compatible frame f
 
 - **SSH over BLE**: Tunnel TCP port 22 through a BLE connection
 - **Low-latency control traffic**: Optimized for small interactive packets
-- **Transparent crypto**: SSE/crypto is handled by the host application; this layer is pure transport
+- **Transparent crypto**: SSH crypto is end-to-end; this layer only tunnels raw TCP bytes
 
-The protocol runs on the CH32V203 MCU firmware and communicates with a host app (desktop/mobile) via BLE GATT characteristics.
+The protocol runs on the CH32V208 / CH32V20x MCU firmware and communicates with a host app (desktop/mobile) via BLE GATT characteristics.
 
 ## Transport
 
@@ -31,9 +31,14 @@ Each frame uses the CH9329-compatible layout:
 | 1 | Header 2 | 1 | `0xAB` |
 | 2 | Address | 1 | Channel/address (reserved, use `0x00`) |
 | 3 | Command | 1 | Command byte |
-| 4 | Payload Length | 1 | `N` (0-252) |
+| 4 | Payload Length | 1 | `N` (0-249) |
 | 5 | Payload | N | Command-specific data |
 | 5+N | Checksum | 1 | 8-bit additive sum of bytes 0..(4+N) |
+
+Notes:
+
+- The protocol frame is designed to fit in a single 255-byte BLE notification (`5 + N + 1 <= 255`), hence the `N <= 249` payload cap.
+- Implementations may intentionally cap notifications/writes to smaller “safe” chunks (for example 180 bytes) for high-flow stability.
 
 ### Parser Behavior
 
@@ -68,6 +73,11 @@ Follows the CH9329 convention:
 |--------|-------|------|-------------|
 | 0 | Connection ID | 1 | Assigned connection ID (0-1) or `0xFF` on failure |
 | 1 | Status | 1 | `0x00` = success, error code otherwise |
+
+Behavior notes:
+
+- The firmware reports **success only after the TCP handshake is established** (SYN+ACK received). This prevents the host from sending SSH bytes before the target-side TCP state exists.
+- The firmware retries TCP SYN a small number of times and returns a deterministic timeout (`0xE1`) instead of hanging without a response.
 
 **Example:**
 
@@ -113,11 +123,21 @@ When the remote TCP side closes the connection, the device pushes:
 | 2 | Connection ID | 1 | Target connection ID |
 | 3+ | TCP Payload | N | TCP payload data to tunnel |
 
-**Response (`0x91`) payload (1 byte):**
+**Response / ACK (`0x91`) payload:**
 
-| Offset | Field | Size | Description |
-|--------|-------|------|-------------|
-| 0 | Status | 1 | `0x00` = data accepted |
+The firmware supports multiple ACK formats (advertised via INFO feature bits):
+
+- **Legacy ACK (1 byte)**: `[status]`
+- **Metadata ACK (4 bytes)**: `[status, conn_id, seq, expected_seq]`
+- **Metadata + receiver window (5 bytes)**: `[status, conn_id, seq, expected_seq, rx_window]`
+    - `rx_window` is the receiver-recommended sender in-flight fragment window (1..15).
+
+Demux note:
+
+- Command `0x91` is used for both **DATA_PUSH** (fragments from the device) and **DATA_RESP** (ACKs from the device).
+- Host implementations should demultiplex by payload shape:
+    - ACK payloads are `len ∈ {1,4,5}` and start with a status byte (`0x00` or `0xEx`).
+    - DATA payloads start with a fragment header: `[frag_flags, seq, conn_id, ...]`.
 
 **Incoming data push (`0x91`):**
 
@@ -145,6 +165,8 @@ When data arrives from the remote TCP side, the device pushes DATA frames with t
 |-----|------|-------------|
 | 0 | TCP Tunnel | TCP tunneling supported |
 | 1 | SSH Optimized | SSH traffic optimization available |
+| 2 | DATA ACK metadata | DATA_RESP uses `[status, conn_id, seq, expected_seq]` |
+| 3 | DATA ACK rx_window | DATA_RESP uses `[status, conn_id, seq, expected_seq, rx_window]` |
 
 ## Fragmentation
 
@@ -163,23 +185,28 @@ BLE has MTU limitations. The protocol supports fragmenting larger TCP payloads:
 
 - **Single fragment**: `FIRST=1, MORE=0, count=1, seq=0`
 - **Multi-fragment**: First has `FIRST=1, MORE=1`, middle has `FIRST=0, MORE=1`, last has `FIRST=0, MORE=0`
-- **Max reassembled size**: 15 fragments x ~247 bytes = ~3.7 KB
+- **Max reassembled size (firmware)**: 1536 bytes (`ble_eth_reassembly_t.data[1536]`, ~= 6 fragments x 246 bytes)
 - **Out-of-order detection**: If sequence doesn't match expected, reassembly aborts
-- **Maximum data per fragment**: `BLE_ETH_MAX_PAYLOAD_LEN - 3` = 249 bytes
+- **Maximum data per fragment**: `BLE_ETH_MAX_PAYLOAD_LEN - 3` = 246 bytes
+
+Sender guidance:
+
+- The fragment header supports `count=1..15`, but the current firmware reassembly buffer only fits about 6 full-size fragments.
+- Host implementations should cap a single reassembled message to the firmware buffer (or split higher-level TCP data into multiple protocol messages).
 
 ### Fragmentation Example
 
 Sending 500 bytes of SSH data on connection 0:
 
 ```
-Fragment 0 (249 bytes data):
-57 AB 00 91 02 <C2: FIRST|MORE|count=3> <seq=0> <conn_id=0> <249 bytes> CS
+Fragment 0 (246 bytes data, payload_len=249=0xF9):
+57 AB 00 91 F9 <C3: FIRST|MORE|count=3> <seq=0> <conn_id=0> <246 bytes> CS
 
-Fragment 1 (249 bytes data):
-57 AB 00 91 02 <82: MORE|count=3> <seq=1> <conn_id=0> <249 bytes> CS
+Fragment 1 (246 bytes data, payload_len=249=0xF9):
+57 AB 00 91 F9 <83: MORE|count=3> <seq=1> <conn_id=0> <246 bytes> CS
 
-Fragment 2 (2 bytes data):
-57 AB 00 91 05 <02: count=3> <seq=2> <conn_id=0> <2 bytes> CS
+Fragment 2 (8 bytes data, payload_len=11=0x0B):
+57 AB 00 91 0B <03: count=3> <seq=2> <conn_id=0> <8 bytes> CS
 ```
 
 ## Status Codes
@@ -298,9 +325,10 @@ void on_ble_eth_event(ble_eth_evt_t *evt) {
 
 ## Design Constraints
 
-- **MCU**: CH32V203 (64KB flash, 20KB RAM)
+- **MCU**: CH32V208 / CH32V20x (448 KB flash span including a reserved 4 KB config page, 64 KB SRAM)
 - **Max connections**: 2 simultaneous tunnels
-- **Max fragment data**: ~247 bytes per fragment
-- **Max reassembled payload**: ~3.7 KB (15 fragments)
+- **Max fragment data**: 246 bytes per fragment (payload cap 249 minus 3-byte fragment header)
+- **Max reassembled payload (firmware)**: 1536 bytes (~6 fragments)
 - **BLE MTU**: Negotiated at connection, default 23 bytes (20 bytes payload)
-- **TX queue depth**: 4 chunks (non-blocking send)
+- **TX queue depth**: 8 chunks (non-blocking send)
+- **Recommended high-flow notify chunk**: 180 bytes per notification (implementation-defined stability cap)

@@ -26,14 +26,16 @@
 #define ECM_ETH_TYPE_QINQ               0x88A8u
 #define ECM_IPV4_PROTO_TCP              0x06u
 #define ECM_ETH_HEADER_LEN              14u
+#define ECM_IPV4_HEADER_LEN_OFFSET      16u  /* IP total_length offset within IP header */
 #define ECM_IPV4_MIN_HEADER_LEN         20u
 #define ECM_TCP_MIN_HEADER_LEN          20u
 #define ECM_CH9329_MIN_FRAME_LEN        6u
+#define ECM_ARP_FRAME_LEN               42u  /* 14 eth + 28 arp */
 
-/* Device-side MAC and IP for ECM frames (must match ble_eth_protocol.c). */
-/* Device-side MAC and IP for ECM frames (must match USB CDC ECM descriptors).
-   USBD iMACAddress = 02:00:00:00:00:02 (from usb_desc.c USBD_StringEcmMac). */
-static const uint8_t ECM_DEV_MAC[6] = { 0x02, 0x00, 0x00, 0x00, 0x00, 0x02 };
+/* Firmware-side peer identity on the target CDC ECM link. The descriptor MAC
+    02:00:00:00:00:30 becomes macOS's en20 MAC, so ARP replies must use a
+    distinct peer MAC or macOS ignores them as self-MAC replies. */
+static const uint8_t ECM_DEV_MAC[6] = { 0x02, 0x00, 0x00, 0x00, 0x00, 0x31 };
 static const uint8_t ECM_DEV_IP[4]  = { 192, 168, 11, 3 };
 
 typedef struct {
@@ -52,6 +54,7 @@ typedef struct {
 typedef struct {
     uint8_t data[ECM_BRIDGE_MTU_FRAME_SIZE];
     uint16_t len;
+    uint16_t expected_len;
     uint8_t drop;
     volatile uint32_t overflow;
 } ECM_RxFrame_t;
@@ -76,6 +79,20 @@ static uint8_t g_host_notify_state;
    activated by the host. Set in ch32v20x_usbfs_device.c SET_INTERFACE handler.
    Prevents sending through EP7 before the host is ready. */
 volatile uint8_t g_ecm_data_if_active = 0;
+volatile uint16_t g_ecm_tx_count = 0;       /* successful EP7 TX count */
+/* LED debug overrides (set by RX path, read by main loop).
+   0 = no override (normal pattern)
+   1 = HostRxDone called (data arrived on EP6)
+   2 = handle_arp_frame detected ARP (EtherType 0x0806)
+   3 = ARP target IP matched device (reply queued)
+   4 = ARP request but wrong IP
+   5 = frame received but not ARP */
+volatile uint8_t g_ecm_led_override = 0;
+/* GARP queued flag — reset to 0 in SET_INTERFACE handler on every activation
+   so GARP is re-queued each time the Mac enables the data interface. */
+volatile uint8_t g_garp_sent = 0;
+/* Diagnostic: 0=idle, 1=GARP queued, 2=DataUp called & SUCCESS, 3=EP7 busy, 4=DataUp FAILED */
+volatile uint8_t g_ecm_tx_state = 0;
 
 extern uint8_t USBD_Endp1_Busy;
 extern uint8_t USBD_Endp3_Busy;
@@ -150,10 +167,16 @@ static uint8_t queue_push(ECM_FrameQueue_t *queue, const uint8_t *data, uint16_t
    can resolve our MAC address and route packets back to us. */
 static uint8_t handle_arp_frame(const uint8_t *frame, uint16_t frame_len)
 {
-    if (frame_len < 28) return 0;  /* minimum ARP frame size */
+    if (frame_len < 28) {
+        return 0;
+    }
 
     uint16_t eth_type = (uint16_t)(frame[12] << 8) | frame[13];
-    if (eth_type != 0x0806) return 0;  /* not ARP */
+    if (eth_type != 0x0806) {
+        g_ecm_led_override = 5;  /* not ARP */
+        return 0;
+    }
+    g_ecm_led_override = 2;  /* ARP detected */
 
     uint16_t arp_op = (uint16_t)(frame[20] << 8) | frame[21];
 
@@ -164,8 +187,15 @@ static uint8_t handle_arp_frame(const uint8_t *frame, uint16_t frame_len)
          *                    32-37 = target MAC, 38-41 = target IP */
         if (frame[38] != ECM_DEV_IP[0] || frame[39] != ECM_DEV_IP[1] ||
             frame[40] != ECM_DEV_IP[2] || frame[41] != ECM_DEV_IP[3]) {
+            g_ecm_led_override = 4;  /* wrong IP */
+            USB_DEBUG("ARP req but wrong IP %d.%d.%d.%d\r\n",
+                       frame[38], frame[39], frame[40], frame[41]);
             return 0;
         }
+
+        g_ecm_led_override = 3;  /* ARP reply queued */
+
+        USB_DEBUG("ARP req matched, queuing reply\r\n");
 
         /* Build ARP reply: sender=us, target=requestor */
         uint8_t reply[42];
@@ -191,7 +221,7 @@ static uint8_t handle_arp_frame(const uint8_t *frame, uint16_t frame_len)
         memcpy(sender_mac, &frame[22], 6);
         memcpy(sender_ip, &frame[28], 4);
         if (BLE_Eth_HandleArpReply(sender_ip, sender_mac)) {
-            PRINT("BLE-Eth: ARP reply processed from host side\r\n");
+            USB_DEBUG("ARP reply processed\r\n");
         }
         /* Don't consume the frame - let it also go to Mac's queue */
     }
@@ -377,11 +407,15 @@ static uint8_t queue_push(ECM_FrameQueue_t *queue, const uint8_t *data, uint16_t
     }
     if (queue->count >= ECM_BRIDGE_QUEUE_DEPTH) {
         queue->overflow++;
-        return 0;
+        /* Queue is full — likely previous TX failed. Flush old data
+           and push the new frame so it gets a chance to be sent. */
+        queue->rd = queue->wr;
+        queue->count = 0;
     }
 
     memcpy(queue->frames[queue->wr].data, data, len);
     queue->frames[queue->wr].len = len;
+    USB_DEBUG("Q: wr=%d len=%d cnt=%d\r\n", queue->wr, len, queue->count + 1);
     queue->wr++;
     if (queue->wr >= ECM_BRIDGE_QUEUE_DEPTH) {
         queue->wr = 0;
@@ -401,6 +435,7 @@ static void queue_clear(ECM_FrameQueue_t *queue)
 static void rx_frame_clear(ECM_RxFrame_t *frame)
 {
     frame->len = 0;
+    frame->expected_len = 0;
     frame->drop = 0;
     frame->overflow = 0;
 }
@@ -425,6 +460,38 @@ static void queue_pop(ECM_FrameQueue_t *queue)
     queue->count--;
 }
 
+static uint16_t eth_frame_length(const uint8_t *data, uint16_t accumulated)
+{
+    /* Once we have at least 14 bytes (Ethernet header), extract the total
+       frame length. */
+    if (accumulated < 14) {
+        return 0;
+    }
+    uint16_t ether = get_be16(&data[12]);
+    if (ether == 0x0806) {
+        /* ARP over Ethernet: fixed 28-byte payload + 14-byte header = 42 */
+        return 42;
+    }
+    if (ether == 0x0800 && accumulated >= 18) {
+        /* IPv4: Total Length is at offset 16 (2 bytes into IPv4 header,
+           which is 16 bytes into the Ethernet frame).
+           Total Ethernet frame = 14 + IPv4 total length. */
+        uint16_t ipv4_total = get_be16(&data[16]);
+        return (uint16_t)(14 + ipv4_total);
+    }
+    if (ether == 0x86DD && accumulated >= 20) {
+        /* IPv6 payload length is at bytes 4..5 of the IPv6 header. */
+        uint16_t ipv6_payload = get_be16(&data[18]);
+        return (uint16_t)(14 + 40 + ipv6_payload);
+    }
+    if (ether < 0x0600) {
+        /* IEEE 802.3 length field = payload length after 14-byte header */
+        return (uint16_t)(14 + ether);
+    }
+    /* Unknown EtherType — can't determine length from header */
+    return 0;
+}
+
 static void rx_frame_append(ECM_RxFrame_t *frame,
                             ECM_FrameQueue_t *queue,
                             const uint8_t *data,
@@ -432,8 +499,7 @@ static void rx_frame_append(ECM_RxFrame_t *frame,
                             uint16_t max_packet,
                             ECM_FrameHandler_t frame_handler)
 {
-    uint8_t end_of_frame = (len < max_packet) ? 1u : 0u;
-
+    /* Append the chunk first (if not dropping) so we can parse headers. */
     if (!frame->drop && len > 0) {
         if ((uint32_t)frame->len + len <= ECM_BRIDGE_MTU_FRAME_SIZE) {
             memcpy(&frame->data[frame->len], data, len);
@@ -445,6 +511,49 @@ static void rx_frame_append(ECM_RxFrame_t *frame,
         }
     }
 
+    /* Try to determine expected frame length from accumulated Ethernet data.
+       This lets us handle fragmented USB transfers (e.g., 16+16+10 byte
+       chunks for a 42-byte ARP frame) instead of incorrectly treating each
+       short chunk as a complete frame. */
+    if (frame->expected_len == 0 && !frame->drop && frame->len > 0) {
+        uint16_t elen = eth_frame_length(frame->data, frame->len);
+        if (elen > 0) {
+            frame->expected_len = elen;
+        }
+    }
+
+    uint8_t end_of_frame = 0;
+    if (frame->expected_len > 0) {
+        /* We know the exact frame length from Ethernet/protocol header */
+        if (frame->len >= frame->expected_len) {
+            end_of_frame = 1;
+        }
+    } else {
+        /* Fallback: short-packet detection. Only fire if we either have
+           enough data to have parsed headers (>= 18 bytes for IPv4) or the
+           packet is too small to contain a valid Ethernet header (< 14).
+           This prevents prematurely firing on fragmented EtherType frames
+           where the first chunk is < max_packet but more data follows. */
+        if (len < max_packet) {
+            if (frame->len < 14) {
+                /* Tiny fragment — treat as end of frame (likely an error) */
+                end_of_frame = 1;
+            } else {
+                /* We have >= 14 bytes accumulated. Check if this is a known
+                   EtherType where we should wait for more data. */
+                uint16_t ether = get_be16(&frame->data[12]);
+                if (ether == 0x0800 && frame->len < 18) {
+                    /* IPv4 but not enough for Total Length field yet */
+                    end_of_frame = 0;
+                } else if (ether >= 0x0600 && ether != 0x0806) {
+                    end_of_frame = 1;
+                } else {
+                    end_of_frame = 1;
+                }
+            }
+        }
+    }
+
     if (end_of_frame) {
         if (!frame->drop && frame->len > 0) {
             if (frame_handler == 0 || !frame_handler(frame->data, frame->len)) {
@@ -453,6 +562,7 @@ static void rx_frame_append(ECM_RxFrame_t *frame,
         }
         frame->len = 0;
         frame->drop = 0;
+        frame->expected_len = 0;
     }
 }
 
@@ -495,16 +605,27 @@ static void poll_target_notification(void)
     uint8_t packet[16];
     uint8_t len;
 
-    if (g_target_notify_state == 0 || USBFS_Endp_Busy[DEF_UEP5] != 0) {
+    if (g_target_notify_state == 0) {
+        return;
+    }
+
+    USB_DEBUG("ECM: notif state=%d busy=%d\r\n",
+              g_target_notify_state, USBFS_Endp_Busy[DEF_UEP5]);
+
+    if (USBFS_Endp_Busy[DEF_UEP5] != 0) {
         return;
     }
 
     len = make_notification(g_target_notify_state, ECM_BRIDGE_TARGET_COMM_IF, packet);
     if (USBFS_Endp_DataUp(DEF_UEP5, packet, len, DEF_UEP_CPY_LOAD) == READY) {
+        USB_DEBUG("ECM: notif sent state=%d len=%d\r\n", g_target_notify_state, len);
         g_target_notify_state++;
         if (g_target_notify_state > 2) {
             g_target_notify_state = 0;
         }
+    }
+    else {
+        USB_DEBUG("ECM: notif FAILED to send\r\n");
     }
 }
 
@@ -531,6 +652,9 @@ static void poll_target_tx(void)
     ECM_Frame_t *frame;
     uint16_t len;
 
+    /* Guard against EP7 being in use — poll_host_tx() also drives EP7.
+     * Without this busy check, poll_target_tx() and poll_host_tx() can
+     * overwrite each other's data or send out-of-order fragments. */
     if (USBFS_Endp_Busy[DEF_UEP7] != 0) {
         return;
     }
@@ -574,49 +698,27 @@ static void poll_host_tx(void)
 {
     ECM_Frame_t *frame;
     uint16_t len;
-    uint8_t usbd_active = (bDeviceState == CONFIGURED) ? 1u : 0u;
 
-    if (!usbd_active) {
-        /* Mac is connected via USBFS (Target USB port). Use USBFS EP7. */
-        if (!g_ecm_data_if_active || USBFS_Endp_Busy[DEF_UEP7] != 0) {
-            return;
-        }
-        frame = queue_peek(&g_target_to_host);
-        if (frame == 0) {
-            g_host_tx_offset = 0;
-            g_host_zlp_pending = 0;
-            return;
-        }
-        if (g_host_zlp_pending) {
-            if (USBFS_Endp_DataUp(DEF_UEP7, frame->data, 0, DEF_UEP_CPY_LOAD) == READY) {
-                g_host_zlp_pending = 0;
-                g_host_tx_offset = 0;
-                queue_pop(&g_target_to_host);
-            }
-            return;
-        }
-        len = (uint16_t)(frame->len - g_host_tx_offset);
-        if (len > ECM_BRIDGE_USBFS_PACKET_SIZE) {
-            len = ECM_BRIDGE_USBFS_PACKET_SIZE;
-        }
-        if (USBFS_Endp_DataUp(DEF_UEP7, &frame->data[g_host_tx_offset], len, DEF_UEP_CPY_LOAD) == READY) {
-            g_host_tx_offset = (uint16_t)(g_host_tx_offset + len);
-            if (g_host_tx_offset >= frame->len) {
-                if (len == ECM_BRIDGE_USBFS_PACKET_SIZE) {
-                    g_host_zlp_pending = 1;
-                }
-                else {
-                    g_host_tx_offset = 0;
-                    queue_pop(&g_target_to_host);
-                }
-            }
-        }
-        return;
-    }
-
-    /* Mac is connected via USBD (Host USB port). Use USBD EP3. */
-    if (USBD_Endp3_Busy != 0) {
-        return;
+    /* When the CDC ECM data interface first becomes active (Mac sent
+       SET_INTERFACE), queue a gratuitous ARP so the Mac's ARP cache
+       gets populated immediately. */
+    if (g_ecm_data_if_active && !g_garp_sent) {
+        USB_DEBUG("ECM: IF active, queuing GARP\r\n");
+        uint8_t garp[42];
+        memset(garp, 0xFF, 6);
+        memcpy(&garp[6], ECM_DEV_MAC, 6);
+        garp[12] = 0x08; garp[13] = 0x06;
+        garp[14] = 0x00; garp[15] = 0x01;
+        garp[16] = 0x08; garp[17] = 0x00;
+        garp[18] = 6;  garp[19] = 4;
+        garp[20] = 0x00; garp[21] = 0x02;
+        memcpy(&garp[22], ECM_DEV_MAC, 6);
+        memcpy(&garp[28], ECM_DEV_IP, 4);
+        memcpy(&garp[32], ECM_DEV_MAC, 6);
+        memcpy(&garp[38], ECM_DEV_IP, 4);
+        queue_push(&g_target_to_host, garp, sizeof(garp));
+        g_garp_sent = 1;
+        g_ecm_tx_state = 1;
     }
 
     frame = queue_peek(&g_target_to_host);
@@ -626,24 +728,51 @@ static void poll_host_tx(void)
         return;
     }
 
+    /* USBFS EP7 path (target port, en20). Only attempt TX after the Mac
+       has activated the CDC ECM data interface via SET_INTERFACE(IF5, alt=1).
+       Without this, USBFS_Endp_DataUp returns READY but the endpoint never
+       responds to host IN tokens. */
+    if (!g_ecm_data_if_active) {
+        return;
+    }
+
+    if (USBFS_Endp_Busy[DEF_UEP7] != 0) {
+        g_ecm_tx_state = 3;
+        return;
+    }
+
+    static uint8_t tx_count = 0;
+    if ((++tx_count & 0x0F) == 0) {
+        USB_DEBUG("EP7 TX len=%d busy=%d if_active=%d\r\n", frame->len,
+                   USBFS_Endp_Busy[DEF_UEP7], g_ecm_data_if_active);
+    }
+
     if (g_host_zlp_pending) {
-        if (USBD_ENDPx_DataUp(ENDP3, frame->data, 0) == USB_SUCCESS) {
+        g_ecm_tx_state = 2;
+        if (USBFS_Endp_DataUp(DEF_UEP7, frame->data, 0, DEF_UEP_CPY_LOAD) == READY) {
+            g_ecm_tx_count++;
+            g_ecm_tx_state = 2;  /* success */
             g_host_zlp_pending = 0;
             g_host_tx_offset = 0;
             queue_pop(&g_target_to_host);
+        }
+        else {
+            g_ecm_tx_state = 4;  /* DataUp failed */
         }
         return;
     }
 
     len = (uint16_t)(frame->len - g_host_tx_offset);
-    if (len > ECM_BRIDGE_USBD_PACKET_SIZE) {
-        len = ECM_BRIDGE_USBD_PACKET_SIZE;
+    if (len > ECM_BRIDGE_USBFS_PACKET_SIZE) {
+        len = ECM_BRIDGE_USBFS_PACKET_SIZE;
     }
 
-    if (USBD_ENDPx_DataUp(ENDP3, &frame->data[g_host_tx_offset], len) == USB_SUCCESS) {
+    if (USBFS_Endp_DataUp(DEF_UEP7, &frame->data[g_host_tx_offset], len, DEF_UEP_CPY_LOAD) == READY) {
+        g_ecm_tx_count++;
+        g_ecm_tx_state = 2;  /* success */
         g_host_tx_offset = (uint16_t)(g_host_tx_offset + len);
         if (g_host_tx_offset >= frame->len) {
-            if (len == ECM_BRIDGE_USBD_PACKET_SIZE) {
+            if (len == ECM_BRIDGE_USBFS_PACKET_SIZE) {
                 g_host_zlp_pending = 1;
             }
             else {
@@ -666,41 +795,50 @@ void ECM_Bridge_Init(void)
     g_host_zlp_pending = 0;
     g_target_notify_state = 1;
     g_host_notify_state = 1;
+    g_garp_sent = 0;
 
-    /* Send gratuitous ARP to populate the host's ARP cache immediately.
-       This avoids the race condition where the host hasn't sent an ARP
-       request yet but needs to route packets to the device.
-       Per RFC 5944, gratuitous ARP has target IP = sender IP. */
-    uint8_t garp[42];
-    memset(garp, 0xFF, 6);              /* dst MAC = broadcast */
-    memcpy(&garp[6], ECM_DEV_MAC, 6);   /* src MAC = device */
-    garp[12] = 0x08; garp[13] = 0x06;   /* EtherType = ARP */
-    garp[14] = 0x00; garp[15] = 0x01;   /* hardware type = Ethernet */
-    garp[16] = 0x08; garp[17] = 0x00;   /* protocol type = IPv4 */
-    garp[18] = 6;  garp[19] = 4;        /* MAC len=6, IP len=4 */
-    garp[20] = 0x00; garp[21] = 0x02;   /* op = ARP reply (gratuitous) */
-    memcpy(&garp[22], ECM_DEV_MAC, 6);  /* sender MAC */
-    memcpy(&garp[28], ECM_DEV_IP, 4);   /* sender IP */
-    memcpy(&garp[32], ECM_DEV_MAC, 6);  /* target MAC (same as sender for gratuitous) */
-    memcpy(&garp[38], ECM_DEV_IP, 4);   /* target IP (same as sender for gratuitous) */
-    queue_push(&g_target_to_host, garp, sizeof(garp));
+     g_ecm_data_if_active = 0;
+
+    /* Force enable EP7 TX at the hardware level */
+    USBFSD_UEP_MOD(3) |= USBFS_UEP7_TX_EN;
+
+    /* Also configure EP6 RX to ACK so we can receive data from the Mac
+       without SET_INTERFACE. Without this, EP6 stays in NAK state and
+       the Mac's bulk OUT (ARP requests etc.) is silently dropped. */
+    USBFSD->UEP6_RX_CTRL = USBFS_UEP_R_RES_ACK;
+
+    USB_DEBUG("ECM init done\r\n");
 }
 
 void ECM_Bridge_SendRawFrame(const uint8_t *data, uint16_t len)
 {
     /* Queue raw Ethernet frame directly to target_to_host, bypassing
        CH9329 protocol handler. Used by BLE-Eth TCP frame injection. */
-    queue_push(&g_target_to_host, data, len);
+    USB_DEBUG("ECM send: len=%d\r\n", len);
+    if (len > 0 && len <= 54) {
+        USB_DEBUG("  First 16: ");
+        for (int i = 0; i < 16 && i < len; i++) {
+            USB_DEBUG("%02x ", data[i]);
+        }
+        USB_DEBUG("\r\n");
+    }
+    uint8_t ok = queue_push(&g_target_to_host, data, len);
+    USB_DEBUG("  q: %s\r\n", ok ? "OK" : "FAIL");
 }
 
 void ECM_Bridge_HostRxDone(const uint8_t *data, uint16_t len)
 {
+    /* LED: blink ON briefly when data arrives via EP6 */
+    if (len > 0) g_ecm_led_override = 1;
     rx_frame_append(&g_host_rx_frame, &g_host_to_target, data, len,
                     ECM_BRIDGE_USBD_PACKET_SIZE, handle_host_control_frame);
 }
 
 void ECM_Bridge_TargetRxDone(const uint8_t *data, uint16_t len)
 {
+    /* Force active state if we are receiving data (bypasses missed SET_INTERFACE) */
+    g_ecm_data_if_active = 1;
+
     rx_frame_append(&g_target_rx_frame, &g_target_to_host, data, len,
                     ECM_BRIDGE_USBFS_PACKET_SIZE, handle_target_frame);
 }
@@ -709,7 +847,7 @@ static uint8_t handle_target_frame(const uint8_t *frame, uint16_t frame_len)
 {
     /* Learn host MAC from any incoming frame (point-to-point CDC ECM link) */
     if (frame_len >= 14) {
-        BLE_Eth_LearnHostMac(&frame[0]);  /* source MAC is the host's MAC */
+        BLE_Eth_LearnHostMac(&frame[6]);  /* source MAC is the host's MAC */
     }
 
     /* Handle ARP replies from target side (USBFS) for BLE-Eth connections */
@@ -720,7 +858,7 @@ static uint8_t handle_target_frame(const uint8_t *frame, uint16_t frame_len)
             memcpy(sender_mac, &frame[22], 6);
             memcpy(sender_ip, &frame[28], 4);
             if (BLE_Eth_HandleArpReply(sender_ip, sender_mac)) {
-                PRINT("BLE-Eth: ARP reply processed from target side\r\n");
+                USB_DEBUG("ARP reply from target side\r\n");
             }
         }
     }
@@ -734,8 +872,7 @@ static uint8_t handle_target_frame(const uint8_t *frame, uint16_t frame_len)
     if (BLE_Eth_HandleTargetFrame(frame, frame_len) && g_ble_tx_event_cb) {
         g_ble_tx_event_cb();
     }
-    /* Return 0 so the frame still goes to the g_target_to_host queue for Mac */
-    return 0;
+    return 1;
 }
 
 void ECM_Bridge_Poll(void)

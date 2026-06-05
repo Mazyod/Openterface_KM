@@ -1,0 +1,253 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+ROOT_DIR="$(CDPATH= cd -- "$SCRIPT_DIR/.." && pwd)"
+
+REMOTE_USER="admin"
+REMOTE_HOST="192.168.100.63"
+REMOTE_SSH="${REMOTE_USER}@${REMOTE_HOST}"
+
+LOCAL_ZIP="/tmp/openterface-km-build.zip"
+REMOTE_ZIP="/tmp/openterface-km-build.zip"
+REMOTE_PROJECT_UNIX="/c/tmp/openterface-km-build"
+REMOTE_BIN="/tmp/openterface-km-build/obj/openterface-km-firmware.bin"
+LOCAL_BIN="/tmp/openterface-km-firmware.bin"
+
+WINDOWS_BUILD_DIR='C:\tmp\openterface-km-build'
+WINDOWS_ZIP='C:\tmp\openterface-km-build.zip'
+MSYS_BASH='C:\msys64\usr\bin\bash.exe'
+
+CONTROL_PORT="/dev/cu.usbmodem212101"
+WCHISP_BIN="${HOME}/.cargo/bin/wchisp"
+
+DO_BUILD=1
+DO_FLASH=1
+DO_VERIFY=1
+DRY_RUN=0
+
+usage() {
+    cat <<'EOF'
+Build on remote Windows + flash locally via wchisp.
+
+Usage:
+  tools/build_flash_cycle.sh [options]
+
+Options:
+  --remote-user <user>         Default: admin
+  --remote-host <host>         Default: 192.168.100.63
+  --control-port <port>        Default: /dev/cu.usbmodem212101
+  --local-bin <path>           Default: /tmp/openterface-km-firmware.bin
+  --wchisp <path>              Default: ~/.cargo/bin/wchisp
+  --no-build                   Skip zip/upload/remote build/download
+  --no-flash                   Skip flash/power-cycle steps
+  --no-verify                  Skip post-flash ioreg verification
+  --dry-run                    Print commands without executing
+  -h, --help                   Show this help
+
+Examples:
+  tools/build_flash_cycle.sh
+  tools/build_flash_cycle.sh --control-port /dev/cu.usbmodem212101
+  tools/build_flash_cycle.sh --no-build --local-bin /tmp/openterface-km-firmware.bin
+EOF
+}
+
+log() {
+    printf '[build-flash] %s\n' "$*"
+}
+
+run() {
+    if [[ "$DRY_RUN" -eq 1 ]]; then
+        printf '+ %q ' "$@"
+        printf '\n'
+        return 0
+    fi
+    "$@"
+}
+
+run_in_root() {
+    if [[ "$DRY_RUN" -eq 1 ]]; then
+        printf '+ (cd %q && ' "$ROOT_DIR"
+        printf '%q ' "$@"
+        printf ')\n'
+        return 0
+    fi
+    (
+        cd "$ROOT_DIR"
+        "$@"
+    )
+}
+
+require_cmd() {
+    if ! command -v "$1" >/dev/null 2>&1; then
+        echo "ERROR: required command not found: $1" >&2
+        exit 1
+    fi
+}
+
+send_control_frame() {
+    local hex="$1"
+    if [[ "$DRY_RUN" -eq 1 ]]; then
+        printf '+ echo -n %q | xxd -r -p > %q\n' "$hex" "$CONTROL_PORT"
+        return 0
+    fi
+    echo -n "$hex" | xxd -r -p > "$CONTROL_PORT"
+}
+
+parse_args() {
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --remote-user)
+                REMOTE_USER="$2"
+                shift 2
+                ;;
+            --remote-host)
+                REMOTE_HOST="$2"
+                shift 2
+                ;;
+            --control-port)
+                CONTROL_PORT="$2"
+                shift 2
+                ;;
+            --local-bin)
+                LOCAL_BIN="$2"
+                shift 2
+                ;;
+            --wchisp)
+                WCHISP_BIN="$2"
+                shift 2
+                ;;
+            --no-build)
+                DO_BUILD=0
+                shift
+                ;;
+            --no-flash)
+                DO_FLASH=0
+                shift
+                ;;
+            --no-verify)
+                DO_VERIFY=0
+                shift
+                ;;
+            --dry-run)
+                DRY_RUN=1
+                shift
+                ;;
+            -h|--help)
+                usage
+                exit 0
+                ;;
+            *)
+                echo "ERROR: unknown option: $1" >&2
+                usage
+                exit 1
+                ;;
+        esac
+    done
+
+    REMOTE_SSH="${REMOTE_USER}@${REMOTE_HOST}"
+}
+
+build_remote() {
+    log "Cleaning local stale object files"
+    run_in_root rm -f obj/APP/pwm_led.o obj/peripheral_main.o obj/RGB.o
+
+    log "Creating project zip"
+    run_in_root zip -r "$LOCAL_ZIP" \
+        SRC/ Profile/ HAL/ LIB/ APP/ \
+        tools/build_firmware.sh \
+        tools/wchisp_c.c \
+        HAL/Link.ld \
+        -x "*/.DS_Store" -x "__MACOSX/*"
+
+    log "Uploading zip to remote Windows host"
+    run scp "$LOCAL_ZIP" "${REMOTE_SSH}:${REMOTE_ZIP}"
+
+    log "Extracting remote build tree"
+    run ssh "$REMOTE_SSH" "powershell -NoProfile -Command \"Remove-Item -Recurse -Force ${WINDOWS_BUILD_DIR} -ErrorAction SilentlyContinue; Expand-Archive -Path ${WINDOWS_ZIP} -DestinationPath ${WINDOWS_BUILD_DIR} -Force\""
+
+    log "Building firmware on remote MSYS2"
+    run ssh "$REMOTE_SSH" "${MSYS_BASH} -l -c \"cd ${REMOTE_PROJECT_UNIX} && rm -rf obj && bash tools/build_firmware.sh\""
+
+    log "Downloading built firmware binary"
+    run scp "${REMOTE_SSH}:${REMOTE_BIN}" "$LOCAL_BIN"
+}
+
+flash_local() {
+    if [[ ! -f "$LOCAL_BIN" ]]; then
+        echo "ERROR: firmware binary not found: $LOCAL_BIN" >&2
+        exit 1
+    fi
+
+    log "Entering ISP mode via control port ${CONTROL_PORT}"
+    send_control_frame "57AB001A01001D" # power off
+    run sleep 0.5
+    send_control_frame "57AB001901011D" # BOOT high
+    run sleep 0.5
+    send_control_frame "57AB001A01011E" # power on
+    run sleep 3
+
+    log "Flashing binary with wchisp"
+    run "$WCHISP_BIN" flash "$LOCAL_BIN"
+
+    log "Releasing BOOT and power-cycling target"
+    send_control_frame "57AB001901001C" # BOOT low
+    run sleep 0.5
+    send_control_frame "57AB001A01001D" # power off
+    run sleep 1
+    send_control_frame "57AB001A01011E" # power on
+    run sleep 5
+}
+
+verify_local() {
+    log "Verifying target USB identity"
+    if [[ "$DRY_RUN" -eq 1 ]]; then
+        echo "+ ioreg -p IOUSB -l | grep 'Openterface Target'"
+        return 0
+    fi
+
+    if ioreg -p IOUSB -l 2>/dev/null | grep -q "Openterface Target"; then
+        log "Verification passed: Openterface Target detected"
+    else
+        echo "WARNING: Openterface Target not detected in ioreg output" >&2
+        return 1
+    fi
+}
+
+main() {
+    parse_args "$@"
+
+    require_cmd zip
+    require_cmd scp
+    require_cmd ssh
+    require_cmd xxd
+    if [[ "$DO_VERIFY" -eq 1 ]]; then
+        require_cmd ioreg
+    fi
+    if [[ "$DO_FLASH" -eq 1 && "$DRY_RUN" -eq 0 && ! -x "$WCHISP_BIN" ]]; then
+        echo "ERROR: wchisp binary not found or not executable: $WCHISP_BIN" >&2
+        exit 1
+    fi
+
+    if [[ "$DO_BUILD" -eq 1 ]]; then
+        build_remote
+    else
+        log "Skipping remote build"
+    fi
+
+    if [[ "$DO_FLASH" -eq 1 ]]; then
+        flash_local
+    else
+        log "Skipping flash"
+    fi
+
+    if [[ "$DO_VERIFY" -eq 1 ]]; then
+        verify_local
+    else
+        log "Skipping verification"
+    fi
+
+    log "Done"
+}
+
+main "$@"

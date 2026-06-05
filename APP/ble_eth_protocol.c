@@ -21,8 +21,15 @@ static ble_eth_conn_t       g_connections[BLE_ETH_MAX_CONNECTIONS];
 static ble_eth_event_cb_t   g_event_cb;
 
 /* TX queue: holds pre-built frames ready for BLE notification */
-#define BLE_ETH_TX_QUEUE_DEPTH  2U
+#define BLE_ETH_TX_QUEUE_DEPTH  8U
 #define BLE_ETH_TX_CHUNK_SIZE   255U  /* fits in ble notify (uint8_t len param, max 255) */
+/* Reserve a small number of TX queue slots for control/ACK frames so
+ * large DATA_PUSH bursts cannot completely block host->device progress.
+ */
+#define BLE_ETH_TX_QUEUE_CTRL_RESERVE  1U
+
+#define BLE_ETH_SYN_RETRY_TICKS 2U
+#define BLE_ETH_SYN_MAX_RETRIES 3U
 
 typedef struct {
     uint8_t  data[BLE_ETH_TX_CHUNK_SIZE];
@@ -37,27 +44,105 @@ typedef struct {
 } ble_eth_tx_queue_t;
 
 static ble_eth_tx_queue_t  g_tx_queue;
+/* When the head TX chunk has been partially consumed (because the BLE notify
+ * length is smaller than a full framed packet), we must not insert new frames
+ * ahead of it. Doing so would interleave bytes from different protocol frames
+ * and corrupt the stream seen by the host parser.
+ */
+static bool g_tx_head_partial;
+
+static inline void txq_lock(void)
+{
+    __disable_irq();
+}
+
+static inline void txq_unlock(void)
+{
+    __enable_irq();
+}
 
 /* Reassembly buffer (one at a time, since BLE is single-connection) */
 static ble_eth_reassembly_t g_reassembly;
+static ble_eth_reliability_stats_t g_reliability_stats;
+
+typedef struct {
+    bool    valid;
+    uint8_t conn_id;
+    uint8_t seq;
+    uint8_t expected_seq;
+} ble_eth_last_data_ack_t;
+
+static ble_eth_last_data_ack_t g_last_data_ack;
+
+static uint8_t compute_rx_window(void)
+{
+    /* Advertise a conservative in-flight fragment window based on:
+     *  - reassembly buffer remaining (receiver-side storage)
+     *  - TX queue headroom (so ACK frames themselves don't overflow the notify queue)
+     *
+     * Notes:
+     *  - Protocol defines rx_window as 1..15.
+     *  - Firmware reassembly buffer fits ~6 full-size (246B) fragments.
+     */
+    const uint16_t max_frag_data = 246U; /* BLE_ETH_MAX_PAYLOAD_LEN - BLE_ETH_FRAG_HEADER_LEN */
+    const uint8_t  max_frags_fit = (uint8_t)(sizeof(g_reassembly.data) / max_frag_data); /* ~= 6 */
+
+    uint8_t window_by_buf = max_frags_fit;
+    if (window_by_buf < 1U) window_by_buf = 1U;
+
+    if (g_reassembly.in_progress) {
+        uint16_t remaining_bytes = (uint16_t)(sizeof(g_reassembly.data) - g_reassembly.received_len);
+        uint8_t remaining_by_buf = (uint8_t)(remaining_bytes / max_frag_data);
+        if (remaining_by_buf < 1U) remaining_by_buf = 1U;
+
+        uint8_t remaining_by_msg = 1U;
+        if (g_reassembly.total_frags > g_reassembly.next_seq) {
+            remaining_by_msg = (uint8_t)(g_reassembly.total_frags - g_reassembly.next_seq);
+            if (remaining_by_msg < 1U) remaining_by_msg = 1U;
+        }
+
+        window_by_buf = remaining_by_buf;
+        if (remaining_by_msg < window_by_buf) window_by_buf = remaining_by_msg;
+    }
+
+    /* Ensure we have room to enqueue ACK frames into the notify TX queue.
+     * Keep at least one slot reserved for non-ACK traffic.
+     */
+    uint8_t occupancy = g_tx_queue.count;
+    uint8_t headroom = 0U;
+    if (occupancy < BLE_ETH_TX_QUEUE_DEPTH) {
+        headroom = (uint8_t)(BLE_ETH_TX_QUEUE_DEPTH - occupancy);
+    }
+    if (headroom > 1U) {
+        headroom = (uint8_t)(headroom - 1U);
+    } else {
+        headroom = 1U;
+    }
+
+    uint8_t window = window_by_buf;
+    if (headroom < window) window = headroom;
+    if (window < 1U) window = 1U;
+    if (window > 15U) window = 15U;
+    return window;
+}
 
 /* Callback for sending complete Ethernet frames to ECM bridge.
    Set by peripheral.c via BLE_Eth_SetEcmtxCb(). */
 typedef void (*ble_eth_ecm_tx_cb_t)(const uint8_t *data, uint16_t len);
 static ble_eth_ecm_tx_cb_t g_ecm_tx_cb;
 
-/* Device-side MAC and IP for ECM frames.
-   On CDC ECM point-to-point USB link, the host MAC is assigned by the device.
-   USBD (Mac-facing) iMACAddress = 02:00:00:00:00:02 (from usb_desc.c USBD_StringEcmMac).
-   The Mac's CDC ECM interface gets 02:00:00:00:00:01.
-   Device uses its own MAC 02:00:00:00:00:02 (matching the descriptor). */
-static const uint8_t g_dev_mac[6] = { 0x02, 0x00, 0x00, 0x00, 0x00, 0x02 };
+/* Firmware-side peer identity on the target CDC ECM link. */
+static const uint8_t g_dev_mac[6] = { 0x02, 0x00, 0x00, 0x00, 0x00, 0x31 };
 static const uint8_t g_host_mac[6] = { 0x02, 0x00, 0x00, 0x00, 0x00, 0x01 };
 static const uint8_t g_dev_ip[4] = { 192, 168, 11, 3 };
 
 /* Learned host MAC from incoming frames (overrides hardcoded g_host_mac) */
 static uint8_t g_host_mac_learned[6];
 static bool g_host_mac_valid = false;
+static uint16_t g_next_local_port = 50000U;
+static uint32_t g_next_initial_seq = 0x12345678U;
+static bool g_tcp_alloc_seeded = false;
+extern volatile uint32_t systick_ms;
 
 void BLE_Eth_SetEcmtxCb(ble_eth_ecm_tx_cb_t cb)
 {
@@ -85,6 +170,30 @@ static uint8_t calc_checksum(const uint8_t *data, uint16_t len)
     return sum;
 }
 
+static uint16_t alloc_local_port(void)
+{
+    if (!g_tcp_alloc_seeded) {
+        uint16_t offset = (uint16_t)(systick_ms % 9000U);
+        g_next_local_port = (uint16_t)(50000U + offset);
+        g_next_initial_seq ^= ((uint32_t)systick_ms << 8);
+        g_tcp_alloc_seeded = true;
+    }
+
+    uint16_t port = g_next_local_port;
+    g_next_local_port = (uint16_t)(g_next_local_port + 17U);
+    if (g_next_local_port > 60999U) {
+        g_next_local_port = 50000U;
+    }
+    return port;
+}
+
+static uint32_t alloc_initial_seq(void)
+{
+    uint32_t seq = g_next_initial_seq;
+    g_next_initial_seq += 0x01010101U;
+    return seq;
+}
+
 static uint16_t build_frame(uint8_t *buf, uint8_t addr, uint8_t cmd,
                             const uint8_t *payload, uint16_t plen)
 {
@@ -105,33 +214,103 @@ static uint16_t build_frame(uint8_t *buf, uint8_t addr, uint8_t cmd,
     return off;
 }
 
+static void normalize_frame_checksum(uint8_t *data, uint16_t len)
+{
+    if (!data || len < BLE_ETH_FRAME_MIN_LEN) return;
+    if (data[0] != BLE_ETH_FRAME_HEAD1 || data[1] != BLE_ETH_FRAME_HEAD2) return;
+
+    uint16_t expected_len = (uint16_t)data[4] + BLE_ETH_FRAME_MIN_LEN;
+    if (expected_len != len) return;
+
+    data[len - 1] = calc_checksum(data, (uint16_t)(len - 1));
+}
+
 static void tx_queue_clear(void)
 {
+    txq_lock();
     g_tx_queue.rd = 0;
     g_tx_queue.wr = 0;
     g_tx_queue.count = 0;
+    g_tx_head_partial = false;
+    txq_unlock();
 }
 
 static bool tx_queue_push(const uint8_t *data, uint16_t len)
 {
     if (len == 0) return true;
-    if (g_tx_queue.count >= BLE_ETH_TX_QUEUE_DEPTH) return false;
 
-    uint16_t copy_len = len;
-    if (copy_len > BLE_ETH_TX_CHUNK_SIZE) copy_len = BLE_ETH_TX_CHUNK_SIZE;
+    txq_lock();
 
-    memcpy(g_tx_queue.chunks[g_tx_queue.wr].data, data, copy_len);
-    g_tx_queue.chunks[g_tx_queue.wr].len = copy_len;
-
-    g_tx_queue.wr++;
-    if (g_tx_queue.wr >= BLE_ETH_TX_QUEUE_DEPTH) g_tx_queue.wr = 0;
-    g_tx_queue.count++;
-
-    /* If data was larger than one chunk, push remainder recursively */
-    if (len > BLE_ETH_TX_CHUNK_SIZE) {
-        tx_queue_push(data + BLE_ETH_TX_CHUNK_SIZE, len - BLE_ETH_TX_CHUNK_SIZE);
+    /* Enqueue must be all-or-nothing to avoid truncating framed payloads. */
+    uint16_t needed_chunks = (uint16_t)((len + BLE_ETH_TX_CHUNK_SIZE - 1U) / BLE_ETH_TX_CHUNK_SIZE);
+    if ((uint16_t)(g_tx_queue.count + needed_chunks) > BLE_ETH_TX_QUEUE_DEPTH) {
+        g_reliability_stats.tx_queue_full_drop++;
+        txq_unlock();
+        return false;
     }
 
+    uint16_t offset = 0;
+    while (offset < len) {
+        uint16_t copy_len = (uint16_t)(len - offset);
+        if (copy_len > BLE_ETH_TX_CHUNK_SIZE) copy_len = BLE_ETH_TX_CHUNK_SIZE;
+
+        memcpy(g_tx_queue.chunks[g_tx_queue.wr].data, data + offset, copy_len);
+        normalize_frame_checksum(g_tx_queue.chunks[g_tx_queue.wr].data, copy_len);
+        g_tx_queue.chunks[g_tx_queue.wr].len = copy_len;
+
+        g_tx_queue.wr++;
+        if (g_tx_queue.wr >= BLE_ETH_TX_QUEUE_DEPTH) g_tx_queue.wr = 0;
+        g_tx_queue.count++;
+
+        offset = (uint16_t)(offset + copy_len);
+    }
+
+    txq_unlock();
+
+    return true;
+}
+
+static bool tx_queue_push_front(const uint8_t *data, uint16_t len)
+{
+    if (len == 0) return true;
+    if (len > BLE_ETH_TX_CHUNK_SIZE) {
+        /* Should not happen under protocol limits; fall back to normal push. */
+        return tx_queue_push(data, len);
+    }
+
+    txq_lock();
+
+    if (g_tx_queue.count >= BLE_ETH_TX_QUEUE_DEPTH) {
+        g_reliability_stats.tx_queue_full_drop++;
+        txq_unlock();
+        return false;
+    }
+
+    if (g_tx_head_partial) {
+        /* We are mid-frame: do not preempt, enqueue at tail instead.
+         * This preserves frame byte ordering (no interleaving).
+         */
+        memcpy(g_tx_queue.chunks[g_tx_queue.wr].data, data, len);
+        normalize_frame_checksum(g_tx_queue.chunks[g_tx_queue.wr].data, len);
+        g_tx_queue.chunks[g_tx_queue.wr].len = len;
+        g_tx_queue.wr++;
+        if (g_tx_queue.wr >= BLE_ETH_TX_QUEUE_DEPTH) g_tx_queue.wr = 0;
+        g_tx_queue.count++;
+    } else {
+        /* Insert one chunk before current rd (priority). */
+        if (g_tx_queue.rd == 0) {
+            g_tx_queue.rd = (uint8_t)(BLE_ETH_TX_QUEUE_DEPTH - 1U);
+        } else {
+            g_tx_queue.rd--;
+        }
+
+        memcpy(g_tx_queue.chunks[g_tx_queue.rd].data, data, len);
+        normalize_frame_checksum(g_tx_queue.chunks[g_tx_queue.rd].data, len);
+        g_tx_queue.chunks[g_tx_queue.rd].len = len;
+        g_tx_queue.count++;
+    }
+
+    txq_unlock();
     return true;
 }
 
@@ -193,7 +372,25 @@ static void evt_conn_closed(uint8_t conn_id, uint8_t status)
 
 static uint8_t send_tcp_frame(uint8_t conn_id, uint16_t tcp_flags,
                               const uint8_t *payload, uint16_t payload_len);
+static uint8_t send_tcp_syn(uint8_t conn_id);
 static void send_arp_request(uint8_t conn_id);
+static void queue_connect_response(uint8_t addr, uint8_t conn_id, uint8_t status);
+
+static void queue_data_ack(uint8_t addr, uint8_t status, uint8_t conn_id, uint8_t seq, uint8_t expected_seq)
+{
+    uint8_t rsp[BLE_ETH_DATA_ACK_WINDOW_PAYLOAD_LEN] = {
+        status,
+        conn_id,
+        seq,
+        expected_seq,
+        compute_rx_window(),
+    };
+    uint8_t buf[16];
+    uint16_t len = build_frame(buf, addr, BLE_ETH_CMD_DATA_RESP, rsp, BLE_ETH_DATA_ACK_WINDOW_PAYLOAD_LEN);
+    if (tx_queue_push_front(buf, len)) {
+        g_reliability_stats.tx_ack_sent++;
+    }
+}
 
 static void dispatch_frame(const ble_eth_frame_t *frame)
 {
@@ -210,10 +407,7 @@ static void dispatch_frame(const ble_eth_frame_t *frame)
         /* Parse connect payload */
         if (frame->payload_len < BLE_ETH_CONNECT_PAYLOAD_LEN) {
             uint8_t status = BLE_ETH_STATUS_PARAM_ERR;
-            uint8_t rsp[2] = { BLE_ETH_INVALID_CONN_ID, status };
-            uint8_t buf[16];
-            uint16_t len = build_frame(buf, addr, BLE_ETH_CMD_CONNECT_RESP, rsp, 2);
-            tx_queue_push(buf, len);
+            queue_connect_response(addr, BLE_ETH_INVALID_CONN_ID, status);
             evt_conn_opened(BLE_ETH_INVALID_CONN_ID, status);
             return;
         }
@@ -226,27 +420,31 @@ static void dispatch_frame(const ble_eth_frame_t *frame)
                          ? BLE_ETH_STATUS_SUCCESS
                          : BLE_ETH_STATUS_CONN_FULL;
 
-        /* If connection succeeded, send TCP SYN immediately.
-         * On CDC ECM point-to-point USB link, there's only one other node
-         * (the Mac) — no ARP needed. The Mac routes based on IP. */
-        if (status == BLE_ETH_STATUS_SUCCESS) {
-            /* Mark host MAC as valid if not yet learned — on point-to-point
-             * CDC ECM the Mac will accept any MAC address. */
-            if (!g_host_mac_valid) {
-                memcpy(g_host_mac_learned, g_host_mac, 6);
-                g_host_mac_valid = true;
-            }
-            ble_eth_conn_t *c = &g_connections[conn_id];
-            memcpy(c->target_mac, g_host_mac_learned, 6);
-            c->tcp_state = BLE_ETH_TCP_SYN_SENT;
-            send_tcp_frame(conn_id, 0x02, NULL, 0);  /* SYN */
+        if (status != BLE_ETH_STATUS_SUCCESS) {
+            queue_connect_response(addr, BLE_ETH_INVALID_CONN_ID, status);
+            evt_conn_opened(BLE_ETH_INVALID_CONN_ID, status);
+            return;
         }
 
-        uint8_t rsp[2] = { conn_id, status };
-        uint8_t buf[16];
-        uint16_t len = build_frame(buf, addr, BLE_ETH_CMD_CONNECT_RESP, rsp, 2);
-        tx_queue_push(buf, len);
-        evt_conn_opened(conn_id, status);
+        /* Send TCP SYN immediately, but only report CONNECT success after
+         * the target answers SYN+ACK. This keeps the local proxy from sending
+         * SSH bytes before the firmware TCP state is established. */
+        if (!g_host_mac_valid) {
+            memcpy(g_host_mac_learned, g_host_mac, 6);
+            g_host_mac_valid = true;
+        }
+        ble_eth_conn_t *c = &g_connections[conn_id];
+        c->peer_addr = addr;
+        memcpy(c->target_mac, g_host_mac_learned, 6);
+        c->tcp_state = BLE_ETH_TCP_SYN_SENT;
+        c->syn_seq = c->local_seq;
+        c->syn_retries_left = BLE_ETH_SYN_MAX_RETRIES;
+        c->arp_timeout_ticks = BLE_ETH_SYN_RETRY_TICKS;
+        if (!send_tcp_syn(conn_id)) {
+            BLE_Eth_FreeConnection(conn_id);
+            queue_connect_response(addr, BLE_ETH_INVALID_CONN_ID, BLE_ETH_STATUS_NO_ROUTE);
+            evt_conn_opened(BLE_ETH_INVALID_CONN_ID, BLE_ETH_STATUS_NO_ROUTE);
+        }
         break;
     }
 
@@ -255,17 +453,23 @@ static void dispatch_frame(const ble_eth_frame_t *frame)
             uint8_t buf[16];
             uint16_t len = build_frame(buf, addr, BLE_ETH_CMD_DISCONN_RESP,
                                        NULL, 0);
-            tx_queue_push(buf, len);
+            tx_queue_push_front(buf, len);
             return;
         }
 
         uint8_t conn_id = frame->payload[0];
+        if (conn_id < BLE_ETH_MAX_CONNECTIONS && g_connections[conn_id].active) {
+            ble_eth_conn_t *c = &g_connections[conn_id];
+            if (c->tcp_state == BLE_ETH_TCP_ESTABLISHED || c->tcp_state == BLE_ETH_TCP_SYN_SENT) {
+                send_tcp_frame(conn_id, 0x14, NULL, 0);  /* RST+ACK */
+            }
+        }
         BLE_Eth_FreeConnection(conn_id);
 
         uint8_t rsp[2] = { conn_id, BLE_ETH_STATUS_SUCCESS };
         uint8_t buf[16];
         uint16_t len = build_frame(buf, addr, BLE_ETH_CMD_DISCONN_RESP, rsp, 2);
-        tx_queue_push(buf, len);
+        tx_queue_push_front(buf, len);
         evt_conn_closed(conn_id, BLE_ETH_STATUS_SUCCESS);
         break;
     }
@@ -275,7 +479,7 @@ static void dispatch_frame(const ble_eth_frame_t *frame)
         if (frame->payload_len < BLE_ETH_FRAG_HEADER_LEN) {
             uint8_t buf[16];
             uint16_t len = build_frame(buf, addr, BLE_ETH_CMD_ERROR, NULL, 0);
-            tx_queue_push(buf, len);
+            tx_queue_push_front(buf, len);
             return;
         }
 
@@ -285,6 +489,7 @@ static void dispatch_frame(const ble_eth_frame_t *frame)
         const uint8_t *frag_data = &frame->payload[3];
         uint16_t frag_data_len = frame->payload_len - BLE_ETH_FRAG_HEADER_LEN;
         uint8_t total_frags = frag_flags & BLE_ETH_FRAG_COUNT_MASK;
+        g_reliability_stats.frag_rx_total++;
 
         if (total_frags == 0) total_frags = 1;
 
@@ -295,17 +500,39 @@ static void dispatch_frame(const ble_eth_frame_t *frame)
             g_reassembly.total_frags = total_frags;
             g_reassembly.next_seq = 0;
             g_reassembly.in_progress = true;
+            g_reliability_stats.frag_reassembly_start++;
+            g_last_data_ack.valid = false;
 
             /* Pre-allocate buffer size estimate */
             g_reassembly.total_len = 0; /* will be set as we go */
         }
 
         if (!g_reassembly.in_progress) {
+            if (g_last_data_ack.valid
+                && g_last_data_ack.conn_id == conn_id
+                && g_last_data_ack.seq == seq) {
+                /* Replay ACK for lost-ACK retransmission of final fragment. */
+                g_reliability_stats.frag_rx_duplicate++;
+                queue_data_ack(addr, BLE_ETH_STATUS_SUCCESS, conn_id, seq, g_last_data_ack.expected_seq);
+                return;
+            }
+            queue_data_ack(addr, BLE_ETH_STATUS_FRAME_ERR, conn_id, seq, g_reassembly.next_seq);
             return; /* no reassembly in progress, drop */
         }
 
         if (seq != g_reassembly.next_seq) {
-            /* Out of order, abort */
+            if (seq < g_reassembly.next_seq) {
+                /* Duplicate retransmission (ACK likely lost): ACK current progress. */
+                g_reliability_stats.frag_rx_duplicate++;
+                queue_data_ack(addr, BLE_ETH_STATUS_SUCCESS, conn_id, seq, g_reassembly.next_seq);
+                return;
+            }
+
+            /* Future out-of-order fragment, abort reassembly. */
+            g_reliability_stats.frag_rx_out_of_order++;
+            g_reliability_stats.frag_reassembly_abort++;
+            queue_data_ack(addr, BLE_ETH_STATUS_FRAME_ERR, conn_id, seq, g_reassembly.next_seq);
+            g_last_data_ack.valid = false;
             reassembly_clear();
             return;
         }
@@ -316,20 +543,27 @@ static void dispatch_frame(const ble_eth_frame_t *frame)
                    frag_data, frag_data_len);
             g_reassembly.received_len += frag_data_len;
             g_reassembly.next_seq++;
+            g_reliability_stats.frag_reassembly_bytes += frag_data_len;
+            queue_data_ack(addr, BLE_ETH_STATUS_SUCCESS, conn_id, seq, g_reassembly.next_seq);
+            g_last_data_ack.valid = true;
+            g_last_data_ack.conn_id = conn_id;
+            g_last_data_ack.seq = seq;
+            g_last_data_ack.expected_seq = g_reassembly.next_seq;
+        } else {
+            g_reliability_stats.frag_reassembly_abort++;
+            queue_data_ack(addr, BLE_ETH_STATUS_PARAM_ERR, conn_id, seq, g_reassembly.next_seq);
+            g_last_data_ack.valid = false;
+            reassembly_clear();
+            return;
         }
 
         /* Check if this is the last fragment */
         if (!(frag_flags & BLE_ETH_FRAG_MORE)) {
             /* Reassembly complete */
             g_reassembly.in_progress = false;
+            g_reliability_stats.frag_reassembly_complete++;
             evt_data_ready(conn_id, g_reassembly.data, g_reassembly.received_len);
             reassembly_clear();
-
-            /* Send ACK */
-            uint8_t rsp[1] = { BLE_ETH_STATUS_SUCCESS };
-            uint8_t buf[16];
-            uint16_t len = build_frame(buf, addr, BLE_ETH_CMD_DATA_RESP, rsp, 1);
-            tx_queue_push(buf, len);
         }
         break;
     }
@@ -341,11 +575,11 @@ static void dispatch_frame(const ble_eth_frame_t *frame)
         rsp[1] = BLE_ETH_MAX_CONNECTIONS;
         rsp[2] = 0x00;  /* high byte of max single-frag payload */
         rsp[3] = BLE_ETH_MAX_PAYLOAD_LEN - BLE_ETH_FRAG_HEADER_LEN;  /* low byte */
-        rsp[4] = BLE_ETH_FEAT_TCP_TUNNEL | BLE_ETH_FEAT_SSH_OPT;
+        rsp[4] = BLE_ETH_FEAT_TCP_TUNNEL | BLE_ETH_FEAT_SSH_OPT | BLE_ETH_FEAT_DATA_ACK_META | BLE_ETH_FEAT_DATA_ACK_WINDOW;
 
         uint8_t buf[24];
         uint16_t len = build_frame(buf, addr, BLE_ETH_CMD_INFO_RESP, rsp, BLE_ETH_INFO_PAYLOAD_LEN);
-        tx_queue_push(buf, len);
+        tx_queue_push_front(buf, len);
         break;
     }
 
@@ -354,16 +588,17 @@ static void dispatch_frame(const ble_eth_frame_t *frame)
         uint8_t buf[8 + BLE_ETH_MAX_PAYLOAD_LEN];
         uint16_t len = build_frame(buf, addr, BLE_ETH_CMD_PONG,
                                    frame->payload, frame->payload_len);
-        tx_queue_push(buf, len);
+        tx_queue_push_front(buf, len);
         break;
     }
 
     default:
         /* Unknown command - send error */
         {
+            g_reliability_stats.frame_rx_cmd_unknown++;
             uint8_t buf[16];
             uint16_t len = build_frame(buf, addr, BLE_ETH_CMD_ERROR, NULL, 0);
-            tx_queue_push(buf, len);
+            tx_queue_push_front(buf, len);
         }
         break;
     }
@@ -425,6 +660,7 @@ void BLE_Eth_Parse(const uint8_t *data, uint16_t len)
                 g_parser.state = BLE_ETH_PARSER_WAIT_CSUM;
             } else if (byte > BLE_ETH_MAX_PAYLOAD_LEN) {
                 /* Payload too long, skip this frame */
+                g_reliability_stats.frame_rx_len_err++;
                 g_parser.state = BLE_ETH_PARSER_WAIT_HEAD1;
             } else {
                 g_parser.rx_index = 0;
@@ -444,7 +680,10 @@ void BLE_Eth_Parse(const uint8_t *data, uint16_t len)
         case BLE_ETH_PARSER_WAIT_CSUM:
             if (byte == g_parser.checksum) {
                 /* Valid frame, dispatch */
+                g_reliability_stats.frame_rx_total++;
                 dispatch_frame(&g_parser.frame);
+            } else {
+                g_reliability_stats.frame_rx_checksum_err++;
             }
             /* Either way, restart */
             g_parser.state = BLE_ETH_PARSER_WAIT_HEAD1;
@@ -455,14 +694,36 @@ void BLE_Eth_Parse(const uint8_t *data, uint16_t len)
 
 /* ======================== Public API ===================================== */
 
+static void queue_connect_response(uint8_t addr, uint8_t conn_id, uint8_t status)
+{
+    uint8_t rsp[2] = { conn_id, status };
+    uint8_t buf[16];
+    uint16_t len = build_frame(buf, addr, BLE_ETH_CMD_CONNECT_RESP, rsp, 2);
+    tx_queue_push_front(buf, len);
+}
+
 void BLE_Eth_Init(ble_eth_event_cb_t event_cb)
 {
     g_event_cb = event_cb;
     memset(&g_parser, 0, sizeof(g_parser));
     g_parser.state = BLE_ETH_PARSER_WAIT_HEAD1;
     memset(g_connections, 0, sizeof(g_connections));
+    g_tcp_alloc_seeded = false;
     tx_queue_clear();
+    memset(&g_reliability_stats, 0, sizeof(g_reliability_stats));
+    memset(&g_last_data_ack, 0, sizeof(g_last_data_ack));
     reassembly_clear();
+}
+
+void BLE_Eth_GetReliabilityStats(ble_eth_reliability_stats_t *out_stats)
+{
+    if (!out_stats) return;
+    *out_stats = g_reliability_stats;
+}
+
+void BLE_Eth_ResetReliabilityStats(void)
+{
+    memset(&g_reliability_stats, 0, sizeof(g_reliability_stats));
 }
 
 uint16_t BLE_Eth_BuildConnect(uint8_t *buf, const uint8_t remote_ip[4], uint16_t remote_port)
@@ -530,13 +791,14 @@ uint8_t BLE_Eth_AllocConnection(const uint8_t remote_ip[4], uint16_t remote_port
             memcpy(g_connections[i].remote_ip, remote_ip, 4);
             g_connections[i].remote_port = remote_port;
             g_connections[i].tcp_state = BLE_ETH_TCP_CLOSED;
-            g_connections[i].local_seq = 0x12345678 + i;  /* unique per conn */
+            g_connections[i].local_seq = alloc_initial_seq();
             g_connections[i].local_ack = 0;
             g_connections[i].remote_seq = 0;
             g_connections[i].remote_ack = 0;
-            g_connections[i].local_port = 50000 + i * 10;
+            g_connections[i].local_port = alloc_local_port();
             memset(g_connections[i].target_mac, 0, 6);
             g_connections[i].arp_timeout_ticks = 10;  /* 10 second timeout */
+            g_connections[i].peer_addr = 0;
             return i;
         }
     }
@@ -558,10 +820,17 @@ bool BLE_Eth_HandleArpReply(const uint8_t sender_ip[4], const uint8_t sender_mac
             memcmp(c->remote_ip, sender_ip, 4) == 0) {
             memcpy(c->target_mac, sender_mac, 6);
             c->tcp_state = BLE_ETH_TCP_SYN_SENT;
+            c->syn_seq = c->local_seq;
+            c->syn_retries_left = BLE_ETH_SYN_MAX_RETRIES;
+            c->arp_timeout_ticks = BLE_ETH_SYN_RETRY_TICKS;
             PRINT("BLE-Eth ARP resolved: conn=%d mac=%02X:%02X:%02X:%02X:%02X:%02X\r\n",
                   i, sender_mac[0], sender_mac[1], sender_mac[2],
                   sender_mac[3], sender_mac[4], sender_mac[5]);
-            send_tcp_frame(i, 0x02, NULL, 0);  /* SYN with resolved MAC */
+            if (!send_tcp_syn(i)) {
+                c->tcp_state = BLE_ETH_TCP_CLOSED;
+                c->active = false;
+                queue_connect_response(c->peer_addr, BLE_ETH_INVALID_CONN_ID, BLE_ETH_STATUS_NO_ROUTE);
+            }
             return true;
         }
     }
@@ -577,9 +846,11 @@ bool BLE_Eth_HasActiveOrPendingConnection(void)
     return false;
 }
 
-/* Periodic tick handler for ARP timeout processing. */
-void BLE_Eth_PeriodicTick(void)
+/* Periodic tick handler for ARP/SYN timeout processing. */
+bool BLE_Eth_PeriodicTick(void)
 {
+    bool tx_queued = false;
+
     for (uint8_t i = 0; i < BLE_ETH_MAX_CONNECTIONS; i++) {
         ble_eth_conn_t *c = &g_connections[i];
         if (c->active && c->tcp_state == BLE_ETH_TCP_ARP_PENDING) {
@@ -589,11 +860,42 @@ void BLE_Eth_PeriodicTick(void)
                     PRINT("BLE-Eth ARP timeout: conn=%d\r\n", i);
                     c->tcp_state = BLE_ETH_TCP_CLOSED;
                     c->active = false;
+                    queue_connect_response(c->peer_addr, BLE_ETH_INVALID_CONN_ID, BLE_ETH_STATUS_NO_ROUTE);
+                    tx_queued = true;
                     evt_conn_closed(i, BLE_ETH_STATUS_NO_ROUTE);
                 }
             }
         }
+        else if (c->active && c->tcp_state == BLE_ETH_TCP_SYN_SENT) {
+            if (c->arp_timeout_ticks > 0) {
+                c->arp_timeout_ticks--;
+                if (c->arp_timeout_ticks == 0) {
+                    if (c->syn_retries_left > 0) {
+                        c->syn_retries_left--;
+                        c->arp_timeout_ticks = BLE_ETH_SYN_RETRY_TICKS;
+                        PRINT("BLE-Eth SYN retry: conn=%d retries_left=%d\r\n",
+                              i, c->syn_retries_left);
+                        if (!send_tcp_syn(i)) {
+                            c->tcp_state = BLE_ETH_TCP_CLOSED;
+                            c->active = false;
+                            queue_connect_response(c->peer_addr, BLE_ETH_INVALID_CONN_ID, BLE_ETH_STATUS_NO_ROUTE);
+                            tx_queued = true;
+                            evt_conn_opened(BLE_ETH_INVALID_CONN_ID, BLE_ETH_STATUS_NO_ROUTE);
+                        }
+                    } else {
+                        PRINT("BLE-Eth SYN timeout: conn=%d\r\n", i);
+                        c->tcp_state = BLE_ETH_TCP_CLOSED;
+                        c->active = false;
+                        queue_connect_response(c->peer_addr, BLE_ETH_INVALID_CONN_ID, BLE_ETH_STATUS_TIMEOUT);
+                        tx_queued = true;
+                        evt_conn_opened(BLE_ETH_INVALID_CONN_ID, BLE_ETH_STATUS_TIMEOUT);
+                    }
+                }
+            }
+        }
     }
+
+    return tx_queued;
 }
 
 bool BLE_Eth_PushTargetData(uint8_t conn_id, const uint8_t *data, uint16_t len)
@@ -602,24 +904,39 @@ bool BLE_Eth_PushTargetData(uint8_t conn_id, const uint8_t *data, uint16_t len)
 
     /* Calculate fragmentation */
     uint16_t max_frag_data = BLE_ETH_MAX_PAYLOAD_LEN - BLE_ETH_FRAG_HEADER_LEN;
-    uint16_t total_frags = (len + max_frag_data - 1) / max_frag_data;
-    if (total_frags > 6) return false; /* Too large (limited by reassembly buffer) */
+    uint8_t total_frags = (uint8_t)((len + max_frag_data - 1U) / max_frag_data);
+    if (total_frags == 0) total_frags = 1;
+    if (total_frags > 6U) return false; /* Too large (fits one full-size TCP segment) */
+
+    /* Enqueue fragments atomically. If we enqueue only a prefix of a TCP segment
+     * but still ACK it at the TCP layer, the byte stream becomes corrupted.
+     */
+    txq_lock();
+    uint8_t depth_for_data = BLE_ETH_TX_QUEUE_DEPTH;
+    if (depth_for_data > BLE_ETH_TX_QUEUE_CTRL_RESERVE) {
+        depth_for_data = (uint8_t)(depth_for_data - BLE_ETH_TX_QUEUE_CTRL_RESERVE);
+    }
+    if ((uint16_t)(g_tx_queue.count + total_frags) > depth_for_data) {
+        g_reliability_stats.tx_queue_full_drop++;
+        txq_unlock();
+        return false;
+    }
 
     uint16_t offset = 0;
     for (uint8_t seq = 0; seq < total_frags; seq++) {
-        uint16_t chunk_len = len - offset;
+        uint16_t chunk_len = (uint16_t)(len - offset);
         if (chunk_len > max_frag_data) chunk_len = max_frag_data;
 
         uint8_t frag_header[3];
-        frag_header[0] = BLE_ETH_FRAG_COUNT_MASK & total_frags;  /* count */
+        frag_header[0] = (uint8_t)(BLE_ETH_FRAG_COUNT_MASK & total_frags);  /* count */
         if (seq == 0) frag_header[0] |= BLE_ETH_FRAG_FIRST;
-        if (seq < total_frags - 1) frag_header[0] |= BLE_ETH_FRAG_MORE;
+        if (seq < (uint8_t)(total_frags - 1U)) frag_header[0] |= BLE_ETH_FRAG_MORE;
         frag_header[1] = seq;
         frag_header[2] = conn_id;
 
         /* Build complete frame: header + frag_header + data + checksum */
-        uint16_t total_payload = BLE_ETH_FRAG_HEADER_LEN + chunk_len;
-        uint8_t full_buf[8 + BLE_ETH_MAX_PAYLOAD_LEN];
+        uint16_t total_payload = (uint16_t)(BLE_ETH_FRAG_HEADER_LEN + chunk_len);
+        uint8_t full_buf[BLE_ETH_TX_CHUNK_SIZE];
         uint16_t off = 0;
 
         full_buf[off++] = BLE_ETH_FRAME_HEAD1;
@@ -633,27 +950,66 @@ bool BLE_Eth_PushTargetData(uint8_t conn_id, const uint8_t *data, uint16_t len)
         off += chunk_len;
         full_buf[off++] = calc_checksum(full_buf, off);
 
-        tx_queue_push(full_buf, off);
+        memcpy(g_tx_queue.chunks[g_tx_queue.wr].data, full_buf, off);
+        normalize_frame_checksum(g_tx_queue.chunks[g_tx_queue.wr].data, off);
+        g_tx_queue.chunks[g_tx_queue.wr].len = off;
 
-        offset += chunk_len;
+        g_tx_queue.wr++;
+        if (g_tx_queue.wr >= BLE_ETH_TX_QUEUE_DEPTH) g_tx_queue.wr = 0;
+        g_tx_queue.count++;
+
+        offset = (uint16_t)(offset + chunk_len);
     }
 
+    txq_unlock();
     return true;
 }
 
-uint16_t BLE_Eth_GetNextTxChunk(uint8_t *buf)
+uint16_t BLE_Eth_GetNextTxChunk(uint8_t *buf, uint16_t max_len)
 {
-    if (g_tx_queue.count == 0) return 0;
+    if (max_len == 0) return 0;
+
+    txq_lock();
+
+    if (g_tx_queue.count == 0) {
+        txq_unlock();
+        return 0;
+    }
 
     ble_eth_tx_chunk_t *chunk = &g_tx_queue.chunks[g_tx_queue.rd];
-    memcpy(buf, chunk->data, chunk->len);
     uint16_t len = chunk->len;
+    if (len > max_len) len = max_len;
+    memcpy(buf, chunk->data, len);
 
-    g_tx_queue.rd++;
-    if (g_tx_queue.rd >= BLE_ETH_TX_QUEUE_DEPTH) g_tx_queue.rd = 0;
-    g_tx_queue.count--;
+    txq_unlock();
 
     return len;
+}
+
+void BLE_Eth_ConsumeTxChunk(uint16_t len)
+{
+    txq_lock();
+
+    while (len > 0 && g_tx_queue.count > 0) {
+        ble_eth_tx_chunk_t *chunk = &g_tx_queue.chunks[g_tx_queue.rd];
+
+        if (len < chunk->len) {
+            memmove(chunk->data, chunk->data + len, chunk->len - len);
+            chunk->len = (uint16_t)(chunk->len - len);
+            g_tx_head_partial = true;
+            txq_unlock();
+            return;
+        }
+
+        len = (uint16_t)(len - chunk->len);
+
+        g_tx_queue.rd++;
+        if (g_tx_queue.rd >= BLE_ETH_TX_QUEUE_DEPTH) g_tx_queue.rd = 0;
+        g_tx_queue.count--;
+        g_tx_head_partial = false;
+    }
+
+    txq_unlock();
 }
 
 /* ======================== ECM TCP frame generation ======================= */
@@ -705,7 +1061,7 @@ static uint16_t tcp_checksum(const uint8_t *tcp_hdr, uint16_t tcp_len,
     sum += (uint16_t)(dst_ip[0] << 8) | dst_ip[1];
     sum += (uint16_t)(dst_ip[2] << 8) | dst_ip[3];
     sum += 0x0006;  /* zero + protocol (TCP=6) */
-    sum += (tcp_len >> 8) + (tcp_len & 0xFF);  /* TCP length (split into two bytes) */
+    sum += tcp_len;  /* TCP length in network byte order */
 
     /* TCP header + payload */
     for (uint16_t i = 0; i < tcp_len; i += 2) {
@@ -768,16 +1124,21 @@ static uint8_t send_tcp_frame(uint8_t conn_id, uint16_t tcp_flags,
     buf[off + 12] = 0x50;             /* data offset = 5 (20 bytes) */
     buf[off + 13] = tcp_flags;        /* flags */
     ecm_put_be16(&buf[off + 14], 0xFFFF); /* window */
+    ecm_put_be16(&buf[off + 16], 0);      /* checksum placeholder */
+    buf[off + 18] = 0; buf[off + 19] = 0; /* urgent pointer */
+
+    if (payload && payload_len > 0) {
+        memcpy(&buf[off + 20], payload, payload_len);
+    }
+
     /* TCP checksum: pseudo-header + TCP header + payload */
     uint16_t tcp_len = 20 + payload_len;
     uint16_t tcp_chk = tcp_checksum(&buf[off], tcp_len, g_dev_ip, c->remote_ip);
     ecm_put_be16(&buf[off + 16], tcp_chk);
-    buf[off + 18] = 0; buf[off + 19] = 0; /* urgent pointer */
     off += 20;
 
     /* Payload */
     if (payload && payload_len > 0) {
-        memcpy(&buf[off], payload, payload_len);
         off += payload_len;
     }
 
@@ -794,6 +1155,19 @@ static uint8_t send_tcp_frame(uint8_t conn_id, uint16_t tcp_flags,
           c->remote_port);
     g_ecm_tx_cb(buf, total);
     return 1;
+}
+
+static uint8_t send_tcp_syn(uint8_t conn_id)
+{
+    if (conn_id >= BLE_ETH_MAX_CONNECTIONS) return 0;
+
+    ble_eth_conn_t *c = &g_connections[conn_id];
+    uint32_t saved_next_seq = c->local_seq;
+
+    c->local_seq = c->syn_seq;
+    uint8_t ok = send_tcp_frame(conn_id, 0x02, NULL, 0);  /* SYN */
+    c->local_seq = ok ? (c->syn_seq + 1U) : saved_next_seq;
+    return ok;
 }
 
 /* Build and send an ARP request for a connection's target IP.
@@ -909,33 +1283,60 @@ bool BLE_Eth_HandleTargetFrame(const uint8_t *frame, uint16_t len)
     /* Handle SYN-ACK: complete TCP handshake */
     if ((tcp_flags & 0x12) == 0x12) {  /* SYN+ACK */
         c->tcp_state = BLE_ETH_TCP_ESTABLISHED;
+        c->arp_timeout_ticks = 0;
+        c->syn_retries_left = 0;
         c->remote_seq = remote_seq;
         c->remote_ack = remote_ack;
         c->local_ack = remote_seq + 1;  /* ACK the SYN */
         send_tcp_frame((uint8_t)conn_id, 0x10, NULL, 0);  /* ACK */
-        /* PRINT("BLE-Eth TCP connected: conn=%d\r\n", conn_id); */
+        queue_connect_response(c->peer_addr, (uint8_t)conn_id, BLE_ETH_STATUS_SUCCESS);
+        evt_conn_opened((uint8_t)conn_id, BLE_ETH_STATUS_SUCCESS);
         return true;
     }
 
     /* Handle RST: connection refused */
     if (tcp_flags & 0x04) {
+        uint8_t was_connecting = (c->tcp_state == BLE_ETH_TCP_SYN_SENT) ? 1u : 0u;
         c->tcp_state = BLE_ETH_TCP_CLOSED;
-        /* PRINT("BLE-Eth TCP RST: conn=%d\r\n", conn_id); */
+        c->active = false;
+        if (was_connecting) {
+            queue_connect_response(c->peer_addr, BLE_ETH_INVALID_CONN_ID, BLE_ETH_STATUS_NO_ROUTE);
+            return true;
+        }
         return false;
     }
-
-    /* Handle data from target */
-    if (tcp_payload_len == 0) return false;
 
     /* Update ack number from target's response */
     if (remote_ack > c->remote_ack) {
         c->remote_ack = remote_ack;
     }
-    c->local_ack = remote_seq + tcp_payload_len;
+
+    /* Handle pure ACKs from target */
+    if (tcp_payload_len == 0) return false;
+
+
+
+    /* Only forward in-order TCP payload. Any silent drop while advancing ACK
+     * will corrupt the byte stream (e.g. SSH MAC errors). Apply backpressure by
+     * withholding ACK advancement when the BLE TX queue is full.
+     */
+    uint32_t expected_seq = c->local_ack;
+    if (remote_seq != expected_seq) {
+        /* Duplicate or out-of-order segment: don't forward; just ACK what we've
+         * already accepted.
+         */
+        send_tcp_frame((uint8_t)conn_id, 0x10, NULL, 0);
+        return true;
+    }
 
     /* Push TCP payload back to BLE host */
     const uint8_t *tcp_payload = &tcp[tcp_header_len];
-    return BLE_Eth_PushTargetData((uint8_t)conn_id, tcp_payload, tcp_payload_len);
+    bool pushed = BLE_Eth_PushTargetData((uint8_t)conn_id, tcp_payload, tcp_payload_len);
+    if (pushed) {
+        c->local_ack = remote_seq + tcp_payload_len;
+    }
+    send_tcp_frame((uint8_t)conn_id, 0x10, NULL, 0);  /* ACK received data (or dup-ACK for backpressure) */
+    return pushed;
 }
 
 /* ======================== Public API ===================================== */

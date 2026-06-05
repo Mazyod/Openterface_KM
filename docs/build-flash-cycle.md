@@ -4,6 +4,36 @@
 
 Firmware must be **built on a Windows machine** (MounRiver Studio toolchain) and **flashed locally** (macOS/linux via `wchisp`). The local xpack GCC toolchain produces non-booting binaries.
 
+## Recommended Automation
+
+For day-to-day use, prefer the wrapper script in [tools/build_flash_cycle.sh](../tools/build_flash_cycle.sh). It performs the full cycle described below:
+
+1. Clean local object files.
+2. Zip and upload the project to the Windows builder.
+3. Expand and build with `tools/build_firmware.sh` on Windows/MSYS2.
+4. Download `openterface-km-firmware.bin` back to the local machine.
+5. Enter ISP mode over the control serial port and flash with `wchisp`.
+6. Release BOOT, power-cycle the target, and verify that the firmware enumerates again.
+
+Quick run:
+
+```bash
+bash tools/build_flash_cycle.sh
+```
+
+Dry-run the command sequence without touching the device or remote host:
+
+```bash
+bash tools/build_flash_cycle.sh --dry-run
+```
+
+Useful overrides:
+
+```bash
+bash tools/build_flash_cycle.sh --control-port /dev/cu.usbmodem212101
+bash tools/build_flash_cycle.sh --no-build --local-bin /tmp/openterface-km-firmware.bin
+```
+
 ## Prerequisites
 
 ### Remote Windows Machine
@@ -185,3 +215,20 @@ With PWM1 + High polarity on an active-low LED:
 - Links against `libwchble.a` in `LIB/`
 - Toolchain: `C:/MounRiver/.../riscv-none-embed-gcc`
 - Flags: `-march=rv32imacxw -mabi=ilp32 -Os`
+
+## LED Debug Codes (PC7)
+
+The PC7 external LED signals firmware state so you can diagnose without USB debug traffic:
+
+| Pattern | Timing | Meaning |
+|---------|--------|---------|
+| **OFF** | First 3s after boot | Boot phase — firmware initializing |
+| **Slow blink** | 1s ON / 1s OFF | ECM data interface activated (SET_INTERFACE received), idle — waiting for data |
+| **Fast blink** | 100ms ON / 100ms OFF | TX activity on EP7 — data is flowing |
+| **Double flash** | 2×150ms flashes, 1.2s cycle | Error: >10s elapsed but host never activated data interface (SET_INTERFACE never received) |
+
+### Interpreting patterns
+
+- **Double flash** → check USB descriptor, SET_INTERFACE handler, or whether Mac driver loaded
+- **Slow blink but no fast blink on ping** → EP7 TX path not triggering; check `poll_host_tx()` queue logic
+- **Fast blink on ping** → data leaving EP7; if ping still fails, problem is on Mac side (routing, ARP cache)

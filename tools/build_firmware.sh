@@ -8,13 +8,23 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 BUILD_DIR="$REPO_ROOT/obj"
 
-TOOLCHAIN="C:/MounRiver/MounRiver_Studio2/resources/app/resources/win32/components/WCH/Toolchain/RISC-V Embedded GCC/bin"
-PREFIX="$TOOLCHAIN/riscv-none-embed"
-
-CC="$PREFIX-gcc"
-OBJCOPY="$PREFIX-objcopy"
-OBJDUMP="$PREFIX-objdump"
-SIZE="$PREFIX-size"
+# Toolchain selection:
+# - On macOS/Linux, prefer `riscv-none-embed-*` from PATH (this repo often
+#   provides wrapper scripts that map to an installed xPack toolchain).
+# - On Windows, fall back to the MounRiver Studio bundled toolchain.
+if command -v riscv-none-embed-gcc >/dev/null 2>&1; then
+  CC="riscv-none-embed-gcc"
+  OBJCOPY="riscv-none-embed-objcopy"
+  OBJDUMP="riscv-none-embed-objdump"
+  SIZE="riscv-none-embed-size"
+else
+  TOOLCHAIN="C:/MounRiver/MounRiver_Studio2/resources/app/resources/win32/components/WCH/Toolchain/RISC-V Embedded GCC/bin"
+  PREFIX="$TOOLCHAIN/riscv-none-embed"
+  CC="$PREFIX-gcc"
+  OBJCOPY="$PREFIX-objcopy"
+  OBJDUMP="$PREFIX-objdump"
+  SIZE="$PREFIX-size"
+fi
 
 # MCU flags
 MARCH="-march=rv32imacxw"

@@ -39,6 +39,9 @@
 // How often to perform periodic event
 #define SBP_PERIODIC_EVT_PERIOD              1600
 
+// Keep BLE-Eth notifications below large ATT payload sizes that corrupt on some hosts.
+#define BLE_ETH_SAFE_NOTIFY_LEN              180
+
 // How often to perform read rssi event
 #define SBP_READ_RSSI_EVT_PERIOD             3200
 
@@ -484,14 +487,20 @@ uint16_t Peripheral_ProcessEvent(uint8_t task_id, uint16_t events)
     {
         /* Send pending BLE-Eth frames over BLE notification */
         uint8_t tx_buf[256];
+        uint16_t max_notify_len = (peripheralMTU > 3) ? (uint16_t)(peripheralMTU - 3) : 0;
         uint16_t len;
 
-        while ((len = BLE_Eth_GetNextTxChunk(tx_buf)) > 0) {
+        if (max_notify_len > BLE_ETH_SAFE_NOTIFY_LEN) {
+            max_notify_len = BLE_ETH_SAFE_NOTIFY_LEN;
+        }
+
+        while ((len = BLE_Eth_GetNextTxChunk(tx_buf, max_notify_len)) > 0) {
             if (app_usb_notify(tx_buf, (uint8_t)len) != SUCCESS) {
                 /* BLE notify failed, re-schedule for retry */
                 tmos_set_event(Peripheral_TaskID, SBP_PROCESS_BLEETH_TX_EVT);
                 break;
             }
+            BLE_Eth_ConsumeTxChunk(len);
         }
         return (events ^ SBP_PROCESS_BLEETH_TX_EVT);
     }
@@ -785,7 +794,9 @@ static void peripheralStateNotificationCB(gapRole_States_t newState, gapRoleEven
 static void performPeriodicTask(void)
 {
     /* Process BLE-Eth ARP timeouts */
-    BLE_Eth_PeriodicTick();
+    if (BLE_Eth_PeriodicTick()) {
+        tmos_set_event(Peripheral_TaskID, SBP_PROCESS_BLEETH_TX_EVT);
+    }
 }
 
 /*********************************************************************
