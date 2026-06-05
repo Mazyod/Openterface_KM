@@ -14,3 +14,4 @@ tools/wchisp_c
 stdout
 *.pyc
 CLAUDE.md
+.claude/
