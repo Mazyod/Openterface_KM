@@ -15,17 +15,40 @@ void ECM_Bridge_TargetRxDone(const uint8_t *data, uint16_t len);
 void ECM_Bridge_Poll(void);
 void ECM_Bridge_SetBleTxCallback(void (*cb)(void));
 void ECM_Bridge_SendRawFrame(const uint8_t *data, uint16_t len);
+/* Set when USBD CDC ECM data interface (IF1, alt=1) is activated. */
+extern volatile uint8_t g_host_ecm_data_if_active;
 /* Set when USBFS CDC ECM data interface (IF5, alt=1) is activated. */
-extern volatile uint8_t g_ecm_data_if_active;
-/* Incremented on each successful EP7 TX. */
+extern volatile uint8_t g_target_ecm_data_if_active;
+/* Incremented on each successful TX. */
 extern volatile uint16_t g_ecm_tx_count;
-/* Reset in SET_INTERFACE handler so GARP is re-queued on every activation. */
-extern volatile uint8_t g_garp_sent;
-/* Diagnostic: 0=idle, 1=GARP queued, 2=DataUp called, 3=EP7 busy */
+/* Reset in USBD SET_INTERFACE handler so GARP is re-queued on every activation. */
+extern volatile uint8_t g_host_garp_sent;
+/* Reset in USBFS SET_INTERFACE handler so GARP is re-queued on every activation. */
+extern volatile uint8_t g_target_garp_sent;
+/* Diagnostic: 0=idle, 1=GARP queued, 2=DataUp called, 3=EP3 busy */
 extern volatile uint8_t g_ecm_tx_state;
 /* LED override: 0=normal, 1=LED solid ON, 2=LED solid OFF.
    Set by HostRxDone (1 on data received) and handle_arp_frame (1 on ARP detected). */
 extern volatile uint8_t g_ecm_led_override;
+/* DHCP diagnostic LED (highest priority, separate from g_ecm_led_override).
+   0=no DHCP activity, 9=host_control entered, 10=port 67 hit,
+   11=msg type parsed, 12=ACK queued. */
+extern volatile uint8_t g_dhcp_led_mode;
+/* EP6 OUT diagnostic — set in USBFS_IRQHandler, cleared by main loop. */
+extern volatile uint8_t  g_usbfs_ep6_int_flag;  /* 1 = EP6 OUT interrupt fired */
+extern volatile uint8_t  g_usbfs_ep6_tog_ok;    /* last TOG_OK result */
+extern volatile uint16_t g_usbfs_ep6_rx_len;    /* last RX length */
+extern volatile uint32_t g_usbfs_ep6_rx_count;  /* total EP6 OUT interrupts (any TOG) */
+extern volatile uint16_t g_usbfs_ep7_in_count;  /* total EP7 IN completions */
+/* Diagnostic: 0=idle, 1=GARP queued, 2=DataUp called, 3=EP3 busy */
+extern volatile uint8_t g_ecm_tx_state;
+/* LED override: 0=normal, 1=LED solid ON, 2=LED solid OFF.
+   Set by HostRxDone (1 on data received) and handle_arp_frame (1 on ARP detected). */
+extern volatile uint8_t g_ecm_led_override;
+/* DHCP diagnostic LED (highest priority, separate from g_ecm_led_override).
+   0=no DHCP activity, 9=host_control entered, 10=port 67 hit,
+   11=msg type parsed, 12=ACK queued. */
+extern volatile uint8_t g_dhcp_led_mode;
 /* EP6 OUT diagnostic — set in USBFS_IRQHandler, cleared by main loop. */
 extern volatile uint8_t  g_usbfs_ep6_int_flag;  /* 1 = EP6 OUT interrupt fired */
 extern volatile uint8_t  g_usbfs_ep6_tog_ok;    /* last TOG_OK result */

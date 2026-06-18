@@ -11,8 +11,16 @@
  *******************************************************************************/
 
 #include "include/ble_eth_protocol.h"
+#include "include/default_target_config.h"
 #include <string.h>
 #include "debug.h"
+#include "include/pwm_led.h"
+
+/* LED diagnostic patterns for BLE-Eth tunnel debugging */
+#define LED_DIAG_CONNECT_RX      90   /* CONNECT received from BLE */
+#define LED_DIAG_SYN_SENT        91   /* TCP SYN sent to HOST */
+#define LED_DIAG_SYN_ACK_RX      92   /* TCP SYN-ACK received from TARGET */
+#define LED_DIAG_TIMEOUT         93   /* CONNECT timeout */
 
 /* ======================== Internal State ================================= */
 
@@ -28,8 +36,8 @@ static ble_eth_event_cb_t   g_event_cb;
  */
 #define BLE_ETH_TX_QUEUE_CTRL_RESERVE  1U
 
-#define BLE_ETH_SYN_RETRY_TICKS 2U
-#define BLE_ETH_SYN_MAX_RETRIES 3U
+#define BLE_ETH_SYN_RETRY_TICKS 10U
+#define BLE_ETH_SYN_MAX_RETRIES 5U
 
 typedef struct {
     uint8_t  data[BLE_ETH_TX_CHUNK_SIZE];
@@ -132,9 +140,9 @@ typedef void (*ble_eth_ecm_tx_cb_t)(const uint8_t *data, uint16_t len);
 static ble_eth_ecm_tx_cb_t g_ecm_tx_cb;
 
 /* Firmware-side peer identity on the target CDC ECM link. */
-static const uint8_t g_dev_mac[6] = { 0x02, 0x00, 0x00, 0x00, 0x00, 0x31 };
+static const uint8_t g_dev_mac[6] = { 0x02, 0x00, 0x00, 0x00, 0x03, 0x00 };
 static const uint8_t g_host_mac[6] = { 0x02, 0x00, 0x00, 0x00, 0x00, 0x01 };
-static const uint8_t g_dev_ip[4] = { 192, 168, 11, 3 };
+static const uint8_t g_dev_ip[4] = { 192, 168, 11, 5 };  /* Target-side firmware IP */
 
 /* Learned host MAC from incoming frames (overrides hardcoded g_host_mac) */
 static uint8_t g_host_mac_learned[6];
@@ -435,16 +443,15 @@ static void dispatch_frame(const ble_eth_frame_t *frame)
         }
         ble_eth_conn_t *c = &g_connections[conn_id];
         c->peer_addr = addr;
-        memcpy(c->target_mac, g_host_mac_learned, 6);
-        c->tcp_state = BLE_ETH_TCP_SYN_SENT;
-        c->syn_seq = c->local_seq;
         c->syn_retries_left = BLE_ETH_SYN_MAX_RETRIES;
+        /* Start in ARP_PENDING so we discover the target PC's actual MAC
+         * before sending the SYN. The SYN will be sent after the ARP reply
+         * arrives (in BLE_Eth_HandleArpReply) or via SYN retry timer. */
+        c->tcp_state = BLE_ETH_TCP_ARP_PENDING;
         c->arp_timeout_ticks = BLE_ETH_SYN_RETRY_TICKS;
-        if (!send_tcp_syn(conn_id)) {
-            BLE_Eth_FreeConnection(conn_id);
-            queue_connect_response(addr, BLE_ETH_INVALID_CONN_ID, BLE_ETH_STATUS_NO_ROUTE);
-            evt_conn_opened(BLE_ETH_INVALID_CONN_ID, BLE_ETH_STATUS_NO_ROUTE);
-        }
+
+        PWM_LED_SetBrightness(LED_DIAG_SYN_SENT);  // LED pattern 91: ARP request sent
+        send_arp_request(conn_id);
         break;
     }
 
@@ -588,6 +595,52 @@ static void dispatch_frame(const ble_eth_frame_t *frame)
         uint8_t buf[8 + BLE_ETH_MAX_PAYLOAD_LEN];
         uint16_t len = build_frame(buf, addr, BLE_ETH_CMD_PONG,
                                    frame->payload, frame->payload_len);
+        tx_queue_push_front(buf, len);
+        break;
+    }
+
+    case BLE_ETH_CMD_SET_DEFAULT: {
+        /* Set default target IP/port
+         * Payload: [IP 4 bytes][Port 2 bytes] = 6 bytes
+         */
+        if (frame->payload_len < BLE_ETH_CONNECT_PAYLOAD_LEN) {
+            uint8_t rsp[1] = { BLE_ETH_STATUS_PARAM_ERR };
+            uint8_t buf[16];
+            uint16_t len = build_frame(buf, addr, BLE_ETH_CMD_SET_DEFAULT_RESP, rsp, 1);
+            tx_queue_push_front(buf, len);
+            break;
+        }
+
+        const uint8_t *ip = frame->payload;
+        uint16_t port = ((uint16_t)frame->payload[4] << 8) | frame->payload[5];
+
+        if (DefaultTargetConfig_Set(ip, port)) {
+            uint8_t rsp[1] = { BLE_ETH_STATUS_SUCCESS };
+            uint8_t buf[16];
+            uint16_t len = build_frame(buf, addr, BLE_ETH_CMD_SET_DEFAULT_RESP, rsp, 1);
+            tx_queue_push_front(buf, len);
+        } else {
+            uint8_t rsp[1] = { BLE_ETH_STATUS_CONN_FULL };
+            uint8_t buf[16];
+            uint16_t len = build_frame(buf, addr, BLE_ETH_CMD_SET_DEFAULT_RESP, rsp, 1);
+            tx_queue_push_front(buf, len);
+        }
+        break;
+    }
+
+    case BLE_ETH_CMD_GET_DEFAULT: {
+        /* Get default target IP/port
+         * Response: [IP 4 bytes][Port 2 bytes][Enabled 1 byte] = 7 bytes
+         */
+        uint8_t rsp[7];
+        DefaultTargetConfig_GetIP(rsp);
+        uint16_t port = DefaultTargetConfig_GetPort();
+        rsp[4] = (port >> 8) & 0xFF;
+        rsp[5] = port & 0xFF;
+        rsp[6] = DefaultTargetConfig_IsEnabled() ? 1 : 0;
+
+        uint8_t buf[16];
+        uint16_t len = build_frame(buf, addr, BLE_ETH_CMD_GET_DEFAULT_RESP, rsp, 7);
         tx_queue_push_front(buf, len);
         break;
     }
@@ -857,12 +910,20 @@ bool BLE_Eth_PeriodicTick(void)
             if (c->arp_timeout_ticks > 0) {
                 c->arp_timeout_ticks--;
                 if (c->arp_timeout_ticks == 0) {
-                    PRINT("BLE-Eth ARP timeout: conn=%d\r\n", i);
-                    c->tcp_state = BLE_ETH_TCP_CLOSED;
-                    c->active = false;
-                    queue_connect_response(c->peer_addr, BLE_ETH_INVALID_CONN_ID, BLE_ETH_STATUS_NO_ROUTE);
-                    tx_queued = true;
-                    evt_conn_closed(i, BLE_ETH_STATUS_NO_ROUTE);
+                    if (c->syn_retries_left > 0) {
+                        c->syn_retries_left--;
+                        c->arp_timeout_ticks = BLE_ETH_SYN_RETRY_TICKS;
+                        PRINT("BLE-Eth ARP retry: conn=%d retries_left=%d\r\n",
+                              i, c->syn_retries_left);
+                        send_arp_request(i);
+                    } else {
+                        PRINT("BLE-Eth ARP timeout: conn=%d\r\n", i);
+                        c->tcp_state = BLE_ETH_TCP_CLOSED;
+                        c->active = false;
+                        queue_connect_response(c->peer_addr, BLE_ETH_INVALID_CONN_ID, BLE_ETH_STATUS_TIMEOUT);
+                        tx_queued = true;
+                        evt_conn_opened(BLE_ETH_INVALID_CONN_ID, BLE_ETH_STATUS_TIMEOUT);
+                    }
                 }
             }
         }
@@ -1181,13 +1242,10 @@ static void send_arp_request(uint8_t conn_id)
 
     uint8_t buf[42];
 
-    /* Ethernet header: unicast to learned host MAC if available, else broadcast */
-    if (g_host_mac_valid) {
-        memcpy(&buf[0], g_host_mac_learned, 6);  /* unicast to host */
-    } else {
-        memset(&buf[0], 0xFF, 6);                 /* broadcast */
-    }
-    memcpy(&buf[6], g_dev_mac, 6);      /* src MAC = device */
+    /* Ethernet header: always broadcast for ARP requests so the target PC
+     * actually receives the frame (its NIC would drop unicast to Mac's MAC). */
+    memset(&buf[0], 0xFF, 6);                      /* dst = broadcast */
+    memcpy(&buf[6], g_dev_mac, 6);      /* src MAC = device (target-side) */
     buf[12] = 0x08; buf[13] = 0x06;     /* EtherType = ARP */
 
     /* ARP request */
@@ -1196,8 +1254,8 @@ static void send_arp_request(uint8_t conn_id)
     buf[14 + 4] = 6;  buf[14 + 5] = 4;       /* hlen=6, plen=4 */
     buf[14 + 6] = 0x00; buf[14 + 7] = 0x01;  /* op = ARP request */
     memcpy(&buf[14 + 8], g_dev_mac, 6);       /* sender MAC */
-    memcpy(&buf[14 + 14], g_dev_ip, 4);       /* sender IP */
-    memcpy(&buf[14 + 18], g_host_mac_valid ? (const uint8_t *)g_host_mac_learned : (const uint8_t *)(const char *)"\x00\x00\x00\x00\x00\x00", 6);
+    memcpy(&buf[14 + 14], g_dev_ip, 4);       /* sender IP = firmware target-side */
+    memset(&buf[14 + 18], 0x00, 6);           /* target MAC = unknown (zeros) */
     memcpy(&buf[14 + 24], c->remote_ip, 4);   /* target IP = connection target */
 
     PRINT("BLE-Eth sending ARP request for %d.%d.%d.%d.%d\r\n",
@@ -1282,6 +1340,7 @@ bool BLE_Eth_HandleTargetFrame(const uint8_t *frame, uint16_t len)
 
     /* Handle SYN-ACK: complete TCP handshake */
     if ((tcp_flags & 0x12) == 0x12) {  /* SYN+ACK */
+        PWM_LED_SetBrightness(LED_DIAG_SYN_ACK_RX);  // LED pattern 92: SYN-ACK received
         c->tcp_state = BLE_ETH_TCP_ESTABLISHED;
         c->arp_timeout_ticks = 0;
         c->syn_retries_left = 0;
@@ -1358,4 +1417,43 @@ bool BLE_Eth_HasActiveTunnel(void)
         }
     }
     return false;
+}
+
+bool BLE_Eth_AutoConnect(void)
+{
+    if (!DefaultTargetConfig_IsEnabled()) {
+        PRINT("Auto-connect disabled\r\n");
+        return false;
+    }
+
+    uint8_t ip[4];
+    DefaultTargetConfig_GetIP(ip);
+    uint16_t port = DefaultTargetConfig_GetPort();
+
+    PRINT("Auto-connect to %d.%d.%d.%d:%d\r\n", ip[0], ip[1], ip[2], ip[3], port);
+
+    uint8_t conn_id = BLE_Eth_AllocConnection(ip, port);
+    if (conn_id == BLE_ETH_INVALID_CONN_ID) {
+        PRINT("Auto-connect failed: no free connection\r\n");
+        return false;
+    }
+
+    if (!g_host_mac_valid) {
+        memcpy(g_host_mac_learned, g_host_mac, 6);
+        g_host_mac_valid = true;
+    }
+
+    ble_eth_conn_t *c = &g_connections[conn_id];
+    c->peer_addr = 0;
+    c->syn_retries_left = BLE_ETH_SYN_MAX_RETRIES;
+    /* Start in ARP_PENDING so we discover the target PC's actual MAC
+     * before sending the SYN. The SYN will be sent after the ARP reply
+     * arrives (in BLE_Eth_HandleArpReply) or via SYN retry timer. */
+    c->tcp_state = BLE_ETH_TCP_ARP_PENDING;
+    c->arp_timeout_ticks = BLE_ETH_SYN_RETRY_TICKS;
+
+    send_arp_request(conn_id);
+
+    PRINT("Auto-connect initiated (conn_id=%d, ARP pending)\r\n", conn_id);
+    return true;
 }

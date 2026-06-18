@@ -8,7 +8,7 @@ This guide shows how to:
 
 The examples below use the current validated target-side SSH endpoint:
 
-- target IP: `192.168.11.1`
+- target IP: `192.168.11.2`
 - target port: `22`
 - BLE device name: `KVM-GO`
 
@@ -66,7 +66,7 @@ python3 tools/ssh_through_ble_eth.py --proxy-only --local-port 18048
 When the proxy is ready it listens on:
 
 - local address: `127.0.0.1:18048`
-- remote address: `192.168.11.1:22`
+- remote address: `192.168.11.2:22`
 
 Leave this command running. In another terminal, connect to the local forwarded port.
 
@@ -164,7 +164,7 @@ SSH banner: SSH-2.0-OpenSSH_10.2
 For a repeatable “connect + banner + exit” check (useful for transport validation loops):
 
 ```bash
-python3 tools/test_ble_eth_ssh.py --target 192.168.11.1 --test-only --ack-window 6
+python3 tools/test_ble_eth_ssh.py --target 192.168.11.2 --test-only --ack-window 6
 ```
 
 Notes:
@@ -294,7 +294,7 @@ python3 -m pip install -r tools/requirements.txt
 
 - the tunnel open timed out before the TCP path established
 - retry the session
-- check the target-side SSH service is reachable on `192.168.11.1:22`
+- check the target-side SSH service is reachable on `192.168.11.2:22`
 
 ## Recommended Workflow
 
@@ -306,7 +306,7 @@ For manual use:
 
 For automation:
 
-1. Start `tools/ssh_through_ble_eth.py --proxy-only --local-port <port>`.
+1. Start `tools/ssh_through_ble_eth.py --proxy-only --local-port <port> --target 192.168.11.2`.
 2. Wait until the script reports the proxy is active.
 3. Run your `ssh` or `sshpass ssh` command against `127.0.0.1:<port>`.
 4. Stop the proxy when the command finishes.

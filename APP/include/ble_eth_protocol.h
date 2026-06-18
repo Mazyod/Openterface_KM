@@ -62,6 +62,8 @@ extern "C" {
 #define BLE_ETH_CMD_DISCONNECT    0x12U  /* Close TCP tunnel */
 #define BLE_ETH_CMD_INFO          0x1FU  /* Device info / capabilities */
 #define BLE_ETH_CMD_PING          0x1EU  /* Echo/ping test (no network) */
+#define BLE_ETH_CMD_SET_DEFAULT   0x20U  /* Set default target IP/port */
+#define BLE_ETH_CMD_GET_DEFAULT   0x21U  /* Get default target IP/port */
 
 /* Response / push commands */
 #define BLE_ETH_CMD_CONNECT_RESP  0x90U  /* Connect response (0x10 | 0x80) */
@@ -71,7 +73,22 @@ extern "C" {
 #define BLE_ETH_CMD_CONN_CLOSED   0xD2U  /* Remote-side closed (0x12 | 0xC0) */
 #define BLE_ETH_CMD_INFO_RESP     0x9FU  /* Info response */
 #define BLE_ETH_CMD_PONG          0x9EU  /* Ping response (echo) */
+#define BLE_ETH_CMD_SET_DEFAULT_RESP 0xA0U  /* Set default response */
+#define BLE_ETH_CMD_GET_DEFAULT_RESP 0xA1U  /* Get default response */
 #define BLE_ETH_CMD_ERROR         0xD0U  /* Generic error (cmd | 0xC0) */
+
+/* ======================== Default Target Configuration =================== */
+
+/* Compile-time fallback for default target IP/port when no flash config exists.
+ * These are used for auto-connect on BLE link-up.
+ */
+#ifndef BLE_ETH_DEFAULT_TARGET_IP
+#define BLE_ETH_DEFAULT_TARGET_IP       { 192, 168, 11, 1 }
+#endif
+
+#ifndef BLE_ETH_DEFAULT_TARGET_PORT
+#define BLE_ETH_DEFAULT_TARGET_PORT     22U
+#endif
 
 /* ======================== Connection Management ========================== */
 
@@ -460,6 +477,14 @@ bool BLE_Eth_HandleTargetFrame(const uint8_t *frame, uint16_t len);
  * @brief Check if any BLE-Eth tunnels are currently active.
  */
 bool BLE_Eth_HasActiveTunnel(void);
+
+/**
+ * @brief Attempt to auto-connect to the configured default target.
+ *        Called from peripheral.c when BLE connection is established
+ *        and ECM bridge is ready. Reads IP/port from flash config.
+ * @return true if auto-connect initiated successfully
+ */
+bool BLE_Eth_AutoConnect(void);
 
 /**
  * @brief Handle an incoming ARP reply and resolve pending connections.

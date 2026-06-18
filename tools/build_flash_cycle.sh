@@ -21,6 +21,12 @@ MSYS_BASH='C:\msys64\usr\bin\bash.exe'
 CONTROL_PORT="/dev/cu.usbmodem212101"
 WCHISP_BIN="${HOME}/.cargo/bin/wchisp"
 
+# Firmware build variables (exported and forwarded through SSH)
+BOARD_VERSION="${BOARD_VERSION:-1}"
+BLE_NAME="${BLE_NAME:-KVM-GO}"
+ENABLE_BLE="${ENABLE_BLE:-1}"
+ENABLE_UAC="${ENABLE_UAC:-0}"
+
 DO_BUILD=1
 DO_FLASH=1
 DO_VERIFY=1
@@ -39,6 +45,10 @@ Options:
   --control-port <port>        Default: /dev/cu.usbmodem212101
   --local-bin <path>           Default: /tmp/openterface-km-firmware.bin
   --wchisp <path>              Default: ~/.cargo/bin/wchisp
+  --board-version <1-3>        Default: 1 (1=kvm go, 2=mini kvm, 3=keymod)
+  --ble-name <name>            Default: KVM-GO
+  --enable-ble <0|1>           Default: 1
+  --enable-uac <0|1>           Default: 0
   --no-build                   Skip zip/upload/remote build/download
   --no-flash                   Skip flash/power-cycle steps
   --no-verify                  Skip post-flash ioreg verification
@@ -48,6 +58,7 @@ Options:
 Examples:
   tools/build_flash_cycle.sh
   tools/build_flash_cycle.sh --control-port /dev/cu.usbmodem212101
+  tools/build_flash_cycle.sh --board-version 3 --ble-name KeyMod --enable-uac 1
   tools/build_flash_cycle.sh --no-build --local-bin /tmp/openterface-km-firmware.bin
 EOF
 }
@@ -117,6 +128,22 @@ parse_args() {
                 WCHISP_BIN="$2"
                 shift 2
                 ;;
+            --board-version)
+                BOARD_VERSION="$2"
+                shift 2
+                ;;
+            --ble-name)
+                BLE_NAME="$2"
+                shift 2
+                ;;
+            --enable-ble)
+                ENABLE_BLE="$2"
+                shift 2
+                ;;
+            --enable-uac)
+                ENABLE_UAC="$2"
+                shift 2
+                ;;
             --no-build)
                 DO_BUILD=0
                 shift
@@ -167,7 +194,7 @@ build_remote() {
     run ssh "$REMOTE_SSH" "powershell -NoProfile -Command \"Remove-Item -Recurse -Force ${WINDOWS_BUILD_DIR} -ErrorAction SilentlyContinue; Expand-Archive -Path ${WINDOWS_ZIP} -DestinationPath ${WINDOWS_BUILD_DIR} -Force\""
 
     log "Building firmware on remote MSYS2"
-    run ssh "$REMOTE_SSH" "${MSYS_BASH} -l -c \"cd ${REMOTE_PROJECT_UNIX} && rm -rf obj && bash tools/build_firmware.sh\""
+    run ssh "$REMOTE_SSH" "${MSYS_BASH} -l -c \"cd ${REMOTE_PROJECT_UNIX} && rm -rf obj && BOARD_VERSION=${BOARD_VERSION} BLE_NAME=${BLE_NAME} ENABLE_BLE=${ENABLE_BLE} ENABLE_UAC=${ENABLE_UAC} bash tools/build_firmware.sh\""
 
     log "Downloading built firmware binary"
     run scp "${REMOTE_SSH}:${REMOTE_BIN}" "$LOCAL_BIN"

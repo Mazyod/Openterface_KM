@@ -292,9 +292,14 @@ void USBD_SetInterface_Impl(void)
             SetEPRxCount(ENDP5, 64);
             _ClearDTOG_RX(ENDP5);
             SetEPRxStatus(ENDP5, EP_RX_VALID);
+            /* Mark interface as active so poll_host_tx() can send GARP/DHCP replies */
+            extern volatile uint8_t g_host_ecm_data_if_active;
+            g_host_ecm_data_if_active = 1;
         } else {
             SetEPTxStatus(ENDP3, EP_TX_DIS);
             SetEPRxStatus(ENDP5, EP_RX_DIS);
+            extern volatile uint8_t g_host_ecm_data_if_active;
+            g_host_ecm_data_if_active = 0;
         }
     }
 #endif

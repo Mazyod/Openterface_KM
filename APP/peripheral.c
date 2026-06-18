@@ -25,6 +25,7 @@
 #include "peripheral.h"
 #include "ble_usb_service.h"
 #include "include/ble_eth_protocol.h"
+#include "include/default_target_config.h"
 #include "usbd_composite_km.h"
 #include "include/ecm_bridge.h"
 
@@ -615,6 +616,12 @@ static void Peripheral_LinkEstablished(gapRoleEvent_t *pEvent)
         tmos_start_task(Peripheral_TaskID, SBP_READ_RSSI_EVT, SBP_READ_RSSI_EVT_PERIOD);
 
         PRINT("Conn %x - Int %x \n", event->connectionHandle, event->connInterval);
+
+        // Auto-connect to default target if configured
+        if (DefaultTargetConfig_IsEnabled()) {
+            PRINT("Auto-connect enabled, attempting connection...\n");
+            BLE_Eth_AutoConnect();
+        }
     }
 }
 

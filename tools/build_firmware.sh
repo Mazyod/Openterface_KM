@@ -99,6 +99,7 @@ C_SOURCES=(
   "$REPO_ROOT/APP/system_ch32v20x.c"
   "$REPO_ROOT/APP/uac_handler.c"
   "$REPO_ROOT/APP/usb_mode_config.c"
+  "$REPO_ROOT/APP/default_target_config.c"
   "$REPO_ROOT/APP/usbd_compostie_km.c"
   "$REPO_ROOT/APP/usbd_desc.c"
 )
@@ -152,9 +153,21 @@ CFLAGS="$CFLAGS -DBLE_TX_NUM_EVENT=5"
 # 2 = internal 32768Hz RC
 CFLAGS="$CFLAGS -DCLK_OSC32K=1"
 
-# Enable BLE, version 1 (kvm go)
-CFLAGS="$CFLAGS -DENABLE_BLE"
-CFLAGS="$CFLAGS -Dversion=1"
+# Enable BLE, board version and BLE name from env (override at call time).
+# Defaults: BOARD_VERSION=1 (KVMGo), BLE_NAME=KVM-GO, ENABLE_BLE=1, ENABLE_UAC=0.
+BOARD_VERSION="${BOARD_VERSION:-1}"
+BLE_NAME="${BLE_NAME:-KVM-GO}"
+ENABLE_BLE="${ENABLE_BLE:-1}"
+ENABLE_UAC="${ENABLE_UAC:-0}"
+
+if [[ "$ENABLE_BLE" == "1" ]]; then
+  CFLAGS="$CFLAGS -DENABLE_BLE"
+  CFLAGS="$CFLAGS -DBLE_DEVICE_NAME=\"$BLE_NAME\""
+fi
+if [[ "$ENABLE_UAC" == "1" ]]; then
+  CFLAGS="$CFLAGS -DENABLE_UAC"
+fi
+CFLAGS="$CFLAGS -Dversion=$BOARD_VERSION"
 
 LINKER_SCRIPT="$REPO_ROOT/HAL/Link.ld"
 OUTPUT="$BUILD_DIR/openterface-km-firmware"

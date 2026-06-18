@@ -405,8 +405,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
     parser.add_argument(
         "--target",
-        default="192.168.11.1",
-        help="Remote SSH server IP reachable from the firmware ECM side (default: 192.168.11.1).",
+        default="192.168.11.2",
+        help="Remote SSH server IP reachable from the firmware ECM side (default: 192.168.11.2).",
     )
     parser.add_argument(
         "--target-port",

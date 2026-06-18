@@ -1,5 +1,6 @@
 #include "include/ecm_bridge.h"
 #include "include/Version_selection.h"
+#include "include/usb_mode_config.h"
 
 #if USB_WORK_MODE_COMPILES_BRIDGE_ECM
 
@@ -17,7 +18,10 @@
 #define ECM_BRIDGE_MTU_FRAME_SIZE       1514u
 #define ECM_BRIDGE_QUEUE_DEPTH          2u
 #define ECM_BRIDGE_USBFS_PACKET_SIZE    64u
-#define ECM_BRIDGE_USBD_PACKET_SIZE     DEF_USBD_MAX_PACK_SIZE
+/* ECM bridge uses 64-byte bulk packets on both USBD and USBFS sides.
+   Note: DEF_USBD_MAX_PACK_SIZE is 16 (legacy ACM), but the runtime ECM
+   descriptor advertises 64-byte max packet for EP5/EP3 bulk endpoints. */
+#define ECM_BRIDGE_USBD_PACKET_SIZE     64u
 #define ECM_BRIDGE_TARGET_COMM_IF       4u
 #define ECM_BRIDGE_HOST_COMM_IF         0u
 #define ECM_BRIDGE_LINK_SPEED_BPS       12000000u
@@ -25,6 +29,7 @@
 #define ECM_ETH_TYPE_VLAN               0x8100u
 #define ECM_ETH_TYPE_QINQ               0x88A8u
 #define ECM_IPV4_PROTO_TCP              0x06u
+#define ECM_IPV4_PROTO_UDP              0x11u
 #define ECM_ETH_HEADER_LEN              14u
 #define ECM_IPV4_HEADER_LEN_OFFSET      16u  /* IP total_length offset within IP header */
 #define ECM_IPV4_MIN_HEADER_LEN         20u
@@ -32,11 +37,41 @@
 #define ECM_CH9329_MIN_FRAME_LEN        6u
 #define ECM_ARP_FRAME_LEN               42u  /* 14 eth + 28 arp */
 
-/* Firmware-side peer identity on the target CDC ECM link. The descriptor MAC
-    02:00:00:00:00:30 becomes macOS's en20 MAC, so ARP replies must use a
-    distinct peer MAC or macOS ignores them as self-MAC replies. */
-static const uint8_t ECM_DEV_MAC[6] = { 0x02, 0x00, 0x00, 0x00, 0x00, 0x31 };
+/* DHCP constants */
+#define ECM_DHCP_CLIENT_PORT            68u
+#define ECM_DHCP_SERVER_PORT            67u
+#define ECM_DHCP_MAGIC_COOKIE           0x63825363u
+
+/* DHCP message types */
+#define ECM_DHCP_DISCOVER               1u
+#define ECM_DHCP_OFFER                  2u
+#define ECM_DHCP_REQUEST                3u
+#define ECM_DHCP_ACK                    5u
+
+/* DHCP option codes */
+#define ECM_DHCP_OPT_SUBNET             1u
+#define ECM_DHCP_OPT_ROUTER             3u
+#define ECM_DHCP_OPT_DNS                6u
+#define ECM_DHCP_OPT_REQUESTED_IP       50u
+#define ECM_DHCP_OPT_LEASE_TIME         51u
+#define ECM_DHCP_OPT_MSG_TYPE           53u
+#define ECM_DHCP_OPT_SERVER_ID          54u
+#define ECM_DHCP_OPT_END                255u
+
+/* IP offered to the Mac (host) on the single CDC-ECM link */
+static const uint8_t ECM_HOST_IP[4]     = { 192, 168, 11, 1 };
+static const uint8_t ECM_SUBNET_MASK[4] = { 255, 255, 255, 0 };
+
+/* Firmware-side peer identity on the CDC ECM link. The descriptor MAC
+   02:00:00:00:00:02 becomes macOS's interface MAC, so ARP replies must use a
+   distinct peer MAC or macOS ignores them as self-MAC replies. */
+static const uint8_t ECM_DEV_MAC[6] = { 0x02, 0x00, 0x00, 0x00, 0x00, 0x32 };
 static const uint8_t ECM_DEV_IP[4]  = { 192, 168, 11, 3 };
+
+/* Firmware-side peer identity on the Target CDC ECM link (USBFS side). */
+static const uint8_t ECM_TARGET_DEV_MAC[6] = { 0x02, 0x00, 0x00, 0x00, 0x03, 0x00 };
+static const uint8_t ECM_TARGET_HOST_IP[4] = { 192, 168, 11, 2 };  /* IP offered to Target PC */
+static const uint8_t ECM_TARGET_DEV_IP[4]  = { 192, 168, 11, 5 };  /* Firmware's Target-side IP */
 
 typedef struct {
     uint8_t data[ECM_BRIDGE_MTU_FRAME_SIZE];
@@ -62,24 +97,35 @@ typedef struct {
 typedef uint8_t (*ECM_FrameHandler_t)(const uint8_t *data, uint16_t len);
 
 /* Forward declaration */
+#if USB_WORK_MODE_COMPILES_TARGET_CDC_ECM
 static uint8_t handle_target_frame(const uint8_t *data, uint16_t len);
+static uint8_t handle_target_dhcp_packet(const uint8_t *frame, uint16_t frame_len);
+#endif
+static uint8_t handle_dhcp_packet(const uint8_t *frame, uint16_t frame_len);
+static uint8_t queue_push(ECM_FrameQueue_t *queue, const uint8_t *data, uint16_t len);
+static void queue_clear(ECM_FrameQueue_t *queue);
+static void put_be16(uint8_t *data, uint16_t value);
+static void put_u16(uint8_t *data, uint16_t value);
 
-static ECM_FrameQueue_t g_host_to_target;
 static ECM_FrameQueue_t g_target_to_host;
 static ECM_RxFrame_t g_host_rx_frame;
+#if USB_WORK_MODE_COMPILES_TARGET_CDC_ECM
+static ECM_FrameQueue_t g_host_to_target;
 static ECM_RxFrame_t g_target_rx_frame;
 static uint16_t g_target_tx_offset;
-static uint16_t g_host_tx_offset;
 static uint8_t g_target_zlp_pending;
-static uint8_t g_host_zlp_pending;
 static uint8_t g_target_notify_state;
+#endif
+static uint16_t g_host_tx_offset;
+static uint8_t g_host_zlp_pending;
 static uint8_t g_host_notify_state;
 
 /* Track whether the USBFS CDC ECM data interface (IF5, alt=1) has been
    activated by the host. Set in ch32v20x_usbfs_device.c SET_INTERFACE handler.
    Prevents sending through EP7 before the host is ready. */
-volatile uint8_t g_ecm_data_if_active = 0;
-volatile uint16_t g_ecm_tx_count = 0;       /* successful EP7 TX count */
+volatile uint8_t g_host_ecm_data_if_active = 0;   /* USBD EP3 TX activated */
+volatile uint8_t g_target_ecm_data_if_active = 0; /* USBFS EP7 TX activated */
+volatile uint16_t g_ecm_tx_count = 0;             /* successful TX count */
 /* LED debug overrides (set by RX path, read by main loop).
    0 = no override (normal pattern)
    1 = HostRxDone called (data arrived on EP6)
@@ -88,10 +134,19 @@ volatile uint16_t g_ecm_tx_count = 0;       /* successful EP7 TX count */
    4 = ARP request but wrong IP
    5 = frame received but not ARP */
 volatile uint8_t g_ecm_led_override = 0;
-/* GARP queued flag — reset to 0 in SET_INTERFACE handler on every activation
-   so GARP is re-queued each time the Mac enables the data interface. */
-volatile uint8_t g_garp_sent = 0;
-/* Diagnostic: 0=idle, 1=GARP queued, 2=DataUp called & SUCCESS, 3=EP7 busy, 4=DataUp FAILED */
+/* DHCP diagnostic LED (separate from g_ecm_led_override so it doesn't
+   get clobbered by every incoming frame).
+   0 = no DHCP activity
+   9 = handle_host_control_frame entered
+   10 = DHCP packet hit port 67 (pause 2s, on 1s)
+   11 = DHCP msg type parsed OK (pause 1s, on 3s)
+   12 = DHCP ACK queued for TX (pause 1s, on 5s) */
+volatile uint8_t g_dhcp_led_mode = 0;
+/* GARP queued flags — reset to 0 in SET_INTERFACE handler on every activation
+   so GARP is re-queued each time the host enables the data interface. */
+volatile uint8_t g_host_garp_sent = 0;   /* USBD EP3 GARP sent */
+volatile uint8_t g_target_garp_sent = 0; /* USBFS EP7 GARP sent */
+/* Diagnostic: 0=idle, 1=GARP queued, 2=DataUp called & SUCCESS, 3=EP3 busy, 4=DataUp FAILED */
 volatile uint8_t g_ecm_tx_state = 0;
 
 extern uint8_t USBD_Endp1_Busy;
@@ -109,6 +164,12 @@ void ECM_Bridge_SetBleTxCallback(void (*cb)(void))
 static uint16_t get_be16(const uint8_t *data)
 {
     return (uint16_t)(((uint16_t)data[0] << 8) | data[1]);
+}
+
+static void put_be16(uint8_t *data, uint16_t value)
+{
+    data[0] = (uint8_t)(value >> 8);
+    data[1] = (uint8_t)(value & 0xFF);
 }
 
 static uint8_t ch9329_frame_valid(const uint8_t *data, uint16_t len, uint16_t *frame_len)
@@ -182,34 +243,30 @@ static uint8_t handle_arp_frame(const uint8_t *frame, uint16_t frame_len)
 
     /* Handle ARP requests for our device IP */
     if (arp_op == 1) {  /* ARP request */
-        /* Check if target IP matches our device IP.
-         * ARP frame offsets: bytes 22-27 = sender MAC, 28-31 = sender IP,
-         *                    32-37 = target MAC, 38-41 = target IP */
-        if (frame[38] != ECM_DEV_IP[0] || frame[39] != ECM_DEV_IP[1] ||
-            frame[40] != ECM_DEV_IP[2] || frame[41] != ECM_DEV_IP[3]) {
-            g_ecm_led_override = 4;  /* wrong IP */
+        if (!(frame[38] == ECM_DEV_IP[0] && frame[39] == ECM_DEV_IP[1] &&
+              frame[40] == ECM_DEV_IP[2] && frame[41] == ECM_DEV_IP[3])) {
+            g_ecm_led_override = 4;  /* wrong ip */
             USB_DEBUG("ARP req but wrong IP %d.%d.%d.%d\r\n",
                        frame[38], frame[39], frame[40], frame[41]);
             return 0;
         }
 
         g_ecm_led_override = 3;  /* ARP reply queued */
-
         USB_DEBUG("ARP req matched, queuing reply\r\n");
 
         /* Build ARP reply: sender=us, target=requestor */
         uint8_t reply[42];
         memcpy(&reply[0], &frame[6], 6);   /* dst MAC = requestor MAC */
-        memcpy(&reply[6], ECM_DEV_MAC, 6); /* src MAC = device MAC */
+        memcpy(&reply[6], ECM_DEV_MAC, 6); /* src MAC = our MAC */
         reply[12] = 0x08; reply[13] = 0x06; /* EtherType = ARP */
         reply[14] = 0x00; reply[15] = 0x01; /* hardware type = Ethernet */
         reply[16] = 0x08; reply[17] = 0x00; /* protocol type = IPv4 */
         reply[18] = 6;  reply[19] = 4;     /* MAC len=6, IP len=4 */
         reply[20] = 0x00; reply[21] = 0x02; /* op = ARP reply */
-        memcpy(&reply[22], ECM_DEV_MAC, 6); /* sender MAC */
-        memcpy(&reply[28], ECM_DEV_IP, 4);  /* sender IP */
-        memcpy(&reply[32], &frame[22], 6);  /* target MAC (from request) */
-        memcpy(&reply[38], &frame[28], 4);  /* target IP = requestor IP */
+        memcpy(&reply[22], ECM_DEV_MAC, 6);  /* sender MAC */
+        memcpy(&reply[28], ECM_DEV_IP, 4);   /* sender IP */
+        memcpy(&reply[32], &frame[22], 6);   /* target MAC (from request) */
+        memcpy(&reply[38], &frame[28], 4);   /* target IP = requestor IP */
 
         queue_push(&g_target_to_host, reply, sizeof(reply));
         return 1;
@@ -228,6 +285,773 @@ static uint8_t handle_arp_frame(const uint8_t *frame, uint16_t frame_len)
 
     return 0;
 }
+
+/* Target-side ARP handler: respond to ARP requests using target-side MAC/IP */
+static uint8_t handle_target_arp_frame(const uint8_t *frame, uint16_t frame_len)
+{
+    if (frame_len < 28) {
+        return 0;
+    }
+
+    uint16_t eth_type = (uint16_t)(frame[12] << 8) | frame[13];
+    if (eth_type != 0x0806) {
+        return 0;
+    }
+
+    uint16_t arp_op = (uint16_t)(frame[20] << 8) | frame[21];
+
+    /* Handle ARP requests for our target device IP */
+    if (arp_op == 1) {  /* ARP request */
+        if (!(frame[38] == ECM_TARGET_DEV_IP[0] && frame[39] == ECM_TARGET_DEV_IP[1] &&
+              frame[40] == ECM_TARGET_DEV_IP[2] && frame[41] == ECM_TARGET_DEV_IP[3])) {
+            USB_DEBUG("Target ARP req but wrong IP %d.%d.%d.%d\r\n",
+                       frame[38], frame[39], frame[40], frame[41]);
+            return 0;
+        }
+
+        USB_DEBUG("Target ARP req matched, queuing reply\r\n");
+
+        /* Build ARP reply: sender=us, target=requestor */
+        uint8_t reply[42];
+        memcpy(&reply[0], &frame[6], 6);   /* dst MAC = requestor MAC */
+        memcpy(&reply[6], ECM_TARGET_DEV_MAC, 6); /* src MAC = our target MAC */
+        reply[12] = 0x08; reply[13] = 0x06; /* EtherType = ARP */
+        reply[14] = 0x00; reply[15] = 0x01; /* hardware type = Ethernet */
+        reply[16] = 0x08; reply[17] = 0x00; /* protocol type = IPv4 */
+        reply[18] = 6;  reply[19] = 4;     /* MAC len=6, IP len=4 */
+        reply[20] = 0x00; reply[21] = 0x02; /* op = ARP reply */
+        memcpy(&reply[22], ECM_TARGET_DEV_MAC, 6);  /* sender MAC */
+        memcpy(&reply[28], ECM_TARGET_DEV_IP, 4);   /* sender IP */
+        memcpy(&reply[32], &frame[22], 6);   /* target MAC (from request) */
+        memcpy(&reply[38], &frame[28], 4);   /* target IP = requestor IP */
+
+        queue_push(&g_host_to_target, reply, sizeof(reply));
+        return 1;
+    }
+
+    /* Handle ARP replies from target side - pass to BLE-Eth for connection resolution */
+    if (arp_op == 2) {  /* ARP reply */
+        uint8_t sender_ip[4], sender_mac[6];
+        memcpy(sender_mac, &frame[22], 6);
+        memcpy(sender_ip, &frame[28], 4);
+        USB_DEBUG("ARP reply from %d.%d.%d.%d MAC=%02X:%02X:%02X:%02X:%02X:%02X\r\n",
+                  sender_ip[0], sender_ip[1], sender_ip[2], sender_ip[3],
+                  sender_mac[0], sender_mac[1], sender_mac[2],
+                  sender_mac[3], sender_mac[4], sender_mac[5]);
+        if (BLE_Eth_HandleArpReply(sender_ip, sender_mac)) {
+            USB_DEBUG("ARP reply from target processed\r\n");
+        }
+    }
+
+    return 0;
+}
+
+/* DHCP handler: respond to DHCP Discover/Request from the Mac so it
+   auto-configures with IP 192.168.11.1 */
+static uint8_t handle_dhcp_packet(const uint8_t *frame, uint16_t frame_len)
+{
+    uint16_t eth_offset;
+    uint16_t eth_type;
+    const uint8_t *ip;
+    const uint8_t *udp;
+    uint16_t ip_total_len;
+    uint16_t ip_header_len;
+    uint16_t udp_len;
+    uint8_t dhcp_msg_type;
+    uint8_t requested_ip[4];
+    uint8_t has_requested_ip = 0;
+    uint8_t reply[576];  /* DHCP response buffer (min DHCP: 14+20+8+240=282, with options ~350) */
+    uint16_t off;
+    uint16_t dhcp_off;
+    uint16_t udp_payload_len;
+    uint32_t sum;
+    uint16_t chk;
+
+    /* Immediate diagnostic: handle_dhcp_packet was called.
+     * Only upgrade g_dhcp_led_mode, never downgrade, so the deepest
+     * failure point seen during a time window is what the LED shows.
+     * Main loop auto-resets to 0 periodically.
+     *
+     * Mode numbering: success modes (20-22) > failure modes (10-19) > entry (1-9)
+     * so success naturally overrides failure in the upgrade logic.
+     *
+     * LED: solid ON (brightness 100) when this function is entered.
+     * Main loop will show LED ON if DHCP processing is happening.
+     */
+    g_dhcp_led_mode = 55;  /* unique value: DHCP handler entered */
+
+    if (frame == NULL || frame_len < ECM_ETH_HEADER_LEN) {
+        if (g_dhcp_led_mode < 10) g_dhcp_led_mode = 10;  /* frame too short */
+        USB_DEBUG("DHCP: frame too short\r\n");
+        return 0;
+    }
+
+    /* Parse Ethernet header */
+    eth_offset = ECM_ETH_HEADER_LEN;
+    eth_type = get_be16(&frame[12]);
+    while ((eth_type == ECM_ETH_TYPE_VLAN || eth_type == ECM_ETH_TYPE_QINQ) &&
+           frame_len >= (uint16_t)(eth_offset + 4u)) {
+        eth_type = get_be16(&frame[eth_offset + 2u]);
+        eth_offset = (uint16_t)(eth_offset + 4u);
+    }
+
+    if (eth_type != ECM_ETH_TYPE_IPV4 ||
+        frame_len < (uint16_t)(eth_offset + ECM_IPV4_MIN_HEADER_LEN)) {
+        if (g_dhcp_led_mode < 11) g_dhcp_led_mode = 11;  /* not IPv4 */
+        USB_DEBUG("DHCP: not IPv4, type=0x%04X\r\n", eth_type);
+        return 0;
+    }
+
+    /* Parse IPv4 header */
+    ip = &frame[eth_offset];
+    if ((ip[0] >> 4) != 4u) {
+        if (g_dhcp_led_mode < 12) g_dhcp_led_mode = 12;  /* not IPv4 version */
+        USB_DEBUG("DHCP: not IPv4 (version=%d)\r\n", ip[0] >> 4);
+        return 0;
+    }
+
+    ip_header_len = (uint16_t)((ip[0] & 0x0Fu) * 4u);
+    if (ip_header_len < ECM_IPV4_MIN_HEADER_LEN) {
+        if (g_dhcp_led_mode < 13) g_dhcp_led_mode = 13;  /* IHL < 5 (invalid) */
+        USB_DEBUG("DHCP: IP header IHL too small, ihl=%d\r\n", ip_header_len);
+        return 0;
+    }
+    if (frame_len < (uint16_t)(eth_offset + ip_header_len)) {
+        if (g_dhcp_led_mode < 14) g_dhcp_led_mode = 14;  /* frame truncated */
+        USB_DEBUG("DHCP: frame truncated for IP header, need=%d have=%d\r\n",
+                  eth_offset + ip_header_len, frame_len);
+        return 0;
+    }
+
+    ip_total_len = get_be16(&ip[2]);
+    if (ip_total_len < (uint16_t)(ip_header_len + 8u) ||
+        frame_len < (uint16_t)(eth_offset + ip_total_len)) {
+        if (g_dhcp_led_mode < 14) g_dhcp_led_mode = 14;  /* IP total len */
+        USB_DEBUG("DHCP: IP total len invalid\r\n");
+        return 0;
+    }
+
+    /* Check if UDP */
+    if (ip[9] != ECM_IPV4_PROTO_UDP) {
+        if (g_dhcp_led_mode < 22) g_dhcp_led_mode = 22;  /* IPv4 but not UDP (4 flashes) */
+        USB_DEBUG("DHCP: not UDP (proto=%d)\r\n", ip[9]);
+        return 0;
+    }
+
+    /* Parse UDP header */
+    udp = &ip[ip_header_len];
+    udp_len = get_be16(&udp[4]);
+    if (udp_len < 8u || udp_len > (uint16_t)(ip_total_len - ip_header_len)) {
+        if (g_dhcp_led_mode < 16) g_dhcp_led_mode = 16;  /* UDP len issue */
+        USB_DEBUG("DHCP: UDP len invalid\r\n");
+        return 0;
+    }
+
+    /* Check if destination port is 67 (DHCP server) */
+    if (get_be16(&udp[2]) != ECM_DHCP_SERVER_PORT) {
+        /* Valid IPv4+UDP but not DHCP — mode 21 (3 flashes) */
+        if (g_dhcp_led_mode < 21) g_dhcp_led_mode = 21;
+        USB_DEBUG("DHCP: dst port=%d (not 67)\r\n", get_be16(&udp[2]));
+        return 0;
+    }
+
+    /* SUCCESS: DHCP packet hit port 67 */
+    if (g_dhcp_led_mode < 20) g_dhcp_led_mode = 20;
+
+    /* Parse DHCP message */
+    const uint8_t *dhcp = &udp[8];
+
+    /* Only handle requests from the single remaining interface (en24, MAC 02:00:00:00:00:02) */
+    const uint8_t *src_mac = &frame[6];
+    if (!(src_mac[0] == 0x02 && src_mac[1] == 0x00 && src_mac[2] == 0x00 &&
+          src_mac[3] == 0x00 && src_mac[4] == 0x00 && src_mac[5] == 0x02)) {
+        g_dhcp_led_mode = 62;  /* unknown MAC */
+        return 0;
+    }
+    g_dhcp_led_mode = 61;  /* Host interface (en24) */
+
+    if (udp_len < 8u + 240u) {  /* min DHCP: 8 UDP + 240 DHCP */
+        USB_DEBUG("DHCP: payload too short\r\n");
+        return 0;
+    }
+
+    /* Check magic cookie */
+    uint32_t cookie = ((uint32_t)dhcp[236] << 24) | ((uint32_t)dhcp[237] << 16) |
+                      ((uint32_t)dhcp[238] << 8) | dhcp[239];
+    if (cookie != ECM_DHCP_MAGIC_COOKIE) {
+        USB_DEBUG("DHCP: bad cookie=0x%08X\r\n", cookie);
+        return 0;
+    }
+
+    /* Verify chaddr (client MAC in DHCP payload) matches the source MAC */
+    const uint8_t *chaddr = &dhcp[28];
+    if (!(chaddr[0] == 0x02 && chaddr[1] == 0x00 && chaddr[2] == 0x00 &&
+          chaddr[3] == 0x00 && chaddr[4] == 0x00 && chaddr[5] == 0x02)) {
+        return 0;  /* chaddr mismatch */
+    }
+
+    /* Parse DHCP options to find message type and requested IP */
+    uint16_t opt_off = 240;
+    dhcp_msg_type = 0;
+    while (opt_off < udp_len - 8u) {
+        uint8_t opt_code = dhcp[opt_off];
+        if (opt_code == ECM_DHCP_OPT_END) {
+            break;
+        }
+        if (opt_off + 1 >= udp_len - 8u) {
+            break;
+        }
+        uint8_t opt_len = dhcp[opt_off + 1];
+        if (opt_off + 2 + opt_len > udp_len - 8u) {
+            break;
+        }
+
+        if (opt_code == ECM_DHCP_OPT_MSG_TYPE && opt_len == 1) {
+            dhcp_msg_type = dhcp[opt_off + 2];
+        } else if (opt_code == ECM_DHCP_OPT_REQUESTED_IP && opt_len == 4) {
+            memcpy(requested_ip, &dhcp[opt_off + 2], 4);
+            has_requested_ip = 1;
+        }
+
+        opt_off = (uint16_t)(opt_off + 2 + opt_len);
+    }
+
+    if (dhcp_msg_type != ECM_DHCP_DISCOVER && dhcp_msg_type != ECM_DHCP_REQUEST) {
+        USB_DEBUG("DHCP: unknown msg type=%d\r\n", dhcp_msg_type);
+        return 0;
+    }
+
+    g_dhcp_led_mode = 11;  /* DHCP msg type parsed - pause 1s, on 3s */
+
+    /* Log xid for debugging */
+    uint32_t xid = ((uint32_t)dhcp[4] << 24) | ((uint32_t)dhcp[5] << 16) |
+                   ((uint32_t)dhcp[6] << 8) | dhcp[7];
+    USB_DEBUG("DHCP type=%d xid=0x%08lX\r\n", dhcp_msg_type, (unsigned long)xid);
+
+    /* Build DHCP response (ACK) */
+    memset(reply, 0, sizeof(reply));
+    off = 0;
+
+    /* Ethernet header - DHCP DISCOVER/OFFER must broadcast */
+    if (dhcp_msg_type == ECM_DHCP_DISCOVER) {
+        memset(&reply[off], 0xFF, 6);  /* dst = broadcast for OFFER */
+    } else {
+        memcpy(&reply[off], &frame[6], 6);  /* dst = original src for ACK */
+    }
+    off += 6;
+    memcpy(&reply[off], ECM_DEV_MAC, 6); /* src = firmware device MAC */
+    off += 6;
+    reply[off++] = 0x08;
+    reply[off++] = 0x00;  /* EtherType = IPv4 */
+
+    /* IPv4 header (20 bytes) */
+    uint16_t ip_start = off;
+    memset(&reply[off], 0, 20);
+    reply[off + 0] = 0x45;  /* version=4, IHL=5 */
+    reply[off + 1] = 0x00;  /* DSCP */
+    reply[off + 4] = 0x00;  /* identification */
+    reply[off + 5] = 0x01;
+    reply[off + 6] = 0x40;  /* DF */
+    reply[off + 7] = 0x00;  /* fragment offset */
+    reply[off + 8] = 64;    /* TTL */
+    reply[off + 9] = ECM_IPV4_PROTO_UDP;  /* protocol = UDP */
+    /* src IP = firmware device IP */
+    memcpy(&reply[off + 12], ECM_DEV_IP, 4);
+    /* dst IP = host IP (broadcast for Discover, unicast for Request) */
+    if (dhcp_msg_type == ECM_DHCP_DISCOVER) {
+        memset(&reply[off + 16], 0xFF, 4);  /* broadcast */
+    } else {
+        memcpy(&reply[off + 16], ECM_HOST_IP, 4);
+    }
+    off += 20;
+
+    /* UDP header (8 bytes) */
+    uint16_t udp_start = off;
+    put_be16(&reply[off + 0], ECM_DHCP_SERVER_PORT);  /* src port */
+    put_be16(&reply[off + 2], ECM_DHCP_CLIENT_PORT);  /* dst port */
+    /* UDP length and checksum filled later */
+    off += 8;
+
+    /* DHCP packet */
+    dhcp_off = off;
+    reply[off++] = 0x02;  /* op = BOOTREPLY */
+    reply[off++] = 0x01;  /* htype = Ethernet */
+    reply[off++] = 0x06;  /* hlen = 6 */
+    reply[off++] = 0x00;  /* hops */
+    /* xid (copy from request) */
+    memcpy(&reply[off], &dhcp[4], 4);
+    off += 4;
+    /* secs (2 bytes) */
+    memset(&reply[off], 0, 2);
+    off += 2;
+    /* flags (2 bytes) - copy from request (preserves broadcast flag) */
+    memcpy(&reply[off], &dhcp[10], 2);
+    off += 2;
+    /* ciaddr (4 bytes) */
+    memset(&reply[off], 0, 4);
+    off += 4;
+    /* yiaddr (4 bytes) - IP offered to client */
+    memcpy(&reply[off], ECM_HOST_IP, 4);
+    off += 4;
+    /* siaddr (4 bytes) - server IP */
+    memcpy(&reply[off], ECM_DEV_IP, 4);
+    off += 4;
+    /* giaddr (4 bytes) */
+    memset(&reply[off], 0, 4);
+    off += 4;
+    /* chaddr (copy from request) */
+    memcpy(&reply[off], &dhcp[28], 16);
+    off += 16;
+    /* sname (64 bytes) */
+    memset(&reply[off], 0, 64);
+    off += 64;
+    /* file (128 bytes) */
+    memset(&reply[off], 0, 128);
+    off += 128;
+    /* magic cookie */
+    reply[off++] = 0x63;
+    reply[off++] = 0x82;
+    reply[off++] = 0x53;
+    reply[off++] = 0x63;
+
+    /* DHCP options */
+    /* Message type: OFFER for DISCOVER, ACK for REQUEST (RFC 2131) */
+    {
+        uint8_t reply_type = (dhcp_msg_type == ECM_DHCP_DISCOVER)
+            ? ECM_DHCP_OFFER : ECM_DHCP_ACK;
+        reply[off++] = ECM_DHCP_OPT_MSG_TYPE;  // Option 53: DHCP Message Type
+        reply[off++] = 0x01;
+        reply[off++] = reply_type;
+    }
+
+    /* Server identifier */
+    reply[off++] = ECM_DHCP_OPT_SERVER_ID;
+    reply[off++] = 0x04;
+    memcpy(&reply[off], ECM_DEV_IP, 4);
+    off += 4;
+
+    /* Lease time: 1 hour */
+    reply[off++] = ECM_DHCP_OPT_LEASE_TIME;
+    reply[off++] = 0x04;
+    reply[off++] = 0x00;
+    reply[off++] = 0x00;
+    reply[off++] = 0x0E;
+    reply[off++] = 0x10;  /* 3600 seconds */
+
+    /* Subnet mask */
+    reply[off++] = ECM_DHCP_OPT_SUBNET;
+    reply[off++] = 0x04;
+    memcpy(&reply[off], ECM_SUBNET_MASK, 4);  /* Same subnet mask for both */
+    off += 4;
+
+    /* Router */
+    reply[off++] = ECM_DHCP_OPT_ROUTER;
+    reply[off++] = 0x04;
+    memcpy(&reply[off], ECM_DEV_IP, 4);
+    off += 4;
+
+    /* DNS server */
+    reply[off++] = ECM_DHCP_OPT_DNS;
+    reply[off++] = 0x04;
+    memcpy(&reply[off], ECM_DEV_IP, 4);
+    off += 4;
+
+    /* End option */
+    reply[off++] = ECM_DHCP_OPT_END;
+
+    /* Pad to minimum DHCP size (300 bytes) */
+    while (off < 300) {
+        reply[off++] = 0x00;
+    }
+
+    /* Fill UDP length */
+    udp_payload_len = (uint16_t)(off - udp_start);
+    put_be16(&reply[udp_start + 4], udp_payload_len);
+
+    /* Calculate UDP checksum */
+    sum = 0;
+    /* Pseudo-header */
+    sum += (uint16_t)(reply[ip_start + 12] << 8) | reply[ip_start + 13];
+    sum += (uint16_t)(reply[ip_start + 14] << 8) | reply[ip_start + 15];
+    sum += (uint16_t)(reply[ip_start + 16] << 8) | reply[ip_start + 17];
+    sum += (uint16_t)(reply[ip_start + 18] << 8) | reply[ip_start + 19];
+    sum += ECM_IPV4_PROTO_UDP;
+    sum += udp_payload_len;
+    /* UDP header + data */
+    for (uint16_t i = 0; i < udp_payload_len; i += 2) {
+        uint16_t idx = udp_start + i;
+        if (idx >= sizeof(reply)) break;
+        if (i + 1 < udp_payload_len && idx + 1 < sizeof(reply)) {
+            sum += (uint16_t)(reply[idx] << 8) | reply[idx + 1];
+        } else {
+            sum += (uint16_t)reply[idx] << 8;
+        }
+    }
+    while (sum >> 16) {
+        sum = (sum & 0xFFFF) + (sum >> 16);
+    }
+    chk = (~sum) & 0xFFFF;
+    if (chk == 0) chk = 0xFFFF;
+    put_be16(&reply[udp_start + 6], chk);
+
+    /* Fill IPv4 total length */
+    uint16_t ip_total = (uint16_t)(off - ip_start);
+    reply[ip_start + 2] = (ip_total >> 8) & 0xFF;
+    reply[ip_start + 3] = ip_total & 0xFF;
+
+    /* Calculate IPv4 checksum */
+    sum = 0;
+    for (int i = 0; i < 20; i += 2) {
+        sum += (uint16_t)(reply[ip_start + i] << 8) | reply[ip_start + i + 1];
+    }
+    while (sum >> 16) {
+        sum = (sum & 0xFFFF) + (sum >> 16);
+    }
+    chk = (~sum) & 0xFFFF;
+    reply[ip_start + 10] = (chk >> 8) & 0xFF;
+    reply[ip_start + 11] = chk & 0xFF;
+
+    USB_DEBUG("DHCP ACK queued, len=%d\r\n", off);
+    g_dhcp_led_mode = 12;  /* DHCP ACK queued - pause 1s, on 5s */
+    /* Flush any stale frames before queuing DHCP reply to ensure
+       the reply is sent immediately without being blocked by old frames. */
+    queue_clear(&g_target_to_host);
+    queue_push(&g_target_to_host, reply, off);
+    return 1;
+}
+
+#if USB_WORK_MODE_COMPILES_TARGET_CDC_ECM
+/* Target-side DHCP handler: respond to DHCP Discover/Request from Target PC
+   so it auto-configures with IP 192.168.11.2 */
+static uint8_t handle_target_dhcp_packet(const uint8_t *frame, uint16_t frame_len)
+{
+    uint16_t eth_offset;
+    uint16_t eth_type;
+    const uint8_t *ip;
+    const uint8_t *udp;
+    uint16_t ip_total_len;
+    uint16_t ip_header_len;
+    uint16_t udp_len;
+    uint8_t dhcp_msg_type;
+    uint8_t requested_ip[4];
+    uint8_t has_requested_ip = 0;
+    uint8_t reply[576];  /* DHCP response buffer */
+    uint16_t off;
+    uint16_t ip_start;
+    uint16_t udp_start;
+    uint16_t dhcp_off;
+    uint16_t udp_payload_len;
+    uint32_t sum;
+    uint16_t chk;
+
+    if (frame == NULL || frame_len < ECM_ETH_HEADER_LEN) {
+        USB_DEBUG("Target DHCP: frame too short\r\n");
+        return 0;
+    }
+
+    /* Parse Ethernet header */
+    eth_offset = ECM_ETH_HEADER_LEN;
+    eth_type = get_be16(&frame[12]);
+    while ((eth_type == ECM_ETH_TYPE_VLAN || eth_type == ECM_ETH_TYPE_QINQ) &&
+           frame_len >= (uint16_t)(eth_offset + 4u)) {
+        eth_type = get_be16(&frame[eth_offset + 2u]);
+        eth_offset = (uint16_t)(eth_offset + 4u);
+    }
+
+    if (eth_type != ECM_ETH_TYPE_IPV4 ||
+        frame_len < (uint16_t)(eth_offset + ECM_IPV4_MIN_HEADER_LEN)) {
+        USB_DEBUG("Target DHCP: not IPv4, type=0x%04X\r\n", eth_type);
+        return 0;
+    }
+
+    /* Parse IPv4 header */
+    ip = &frame[eth_offset];
+    if ((ip[0] >> 4) != 4u) {
+        USB_DEBUG("Target DHCP: not IPv4 (version=%d)\r\n", ip[0] >> 4);
+        return 0;
+    }
+
+    ip_header_len = (uint16_t)((ip[0] & 0x0Fu) * 4u);
+    if (ip_header_len < ECM_IPV4_MIN_HEADER_LEN) {
+        USB_DEBUG("Target DHCP: IP header IHL too small, ihl=%d\r\n", ip_header_len);
+        return 0;
+    }
+    if (frame_len < (uint16_t)(eth_offset + ip_header_len)) {
+        USB_DEBUG("Target DHCP: frame truncated for IP header\r\n");
+        return 0;
+    }
+
+    ip_total_len = get_be16(&ip[2]);
+    if (ip_total_len < (uint16_t)(ip_header_len + 8u) ||
+        frame_len < (uint16_t)(eth_offset + ip_total_len)) {
+        USB_DEBUG("Target DHCP: IP total len invalid\r\n");
+        return 0;
+    }
+
+    /* Check if UDP */
+    if (ip[9] != ECM_IPV4_PROTO_UDP) {
+        USB_DEBUG("Target DHCP: not UDP (proto=%d)\r\n", ip[9]);
+        return 0;
+    }
+
+    /* Parse UDP header */
+    udp = &ip[ip_header_len];
+    udp_len = get_be16(&udp[4]);
+    if (udp_len < 8u || udp_len > (uint16_t)(ip_total_len - ip_header_len)) {
+        USB_DEBUG("Target DHCP: UDP len invalid\r\n");
+        return 0;
+    }
+
+    /* Check if destination port is 67 (DHCP server) */
+    if (get_be16(&udp[2]) != ECM_DHCP_SERVER_PORT) {
+        USB_DEBUG("Target DHCP: dst port=%d (not 67)\r\n", get_be16(&udp[2]));
+        return 0;
+    }
+
+    /* Parse DHCP message */
+    const uint8_t *dhcp = &udp[8];
+
+    /* No MAC filtering for target side - accept any client */
+
+    if (udp_len < 8u + 240u) {  /* min DHCP: 8 UDP + 240 DHCP */
+        USB_DEBUG("Target DHCP: payload too short\r\n");
+        return 0;
+    }
+
+    /* Check magic cookie */
+    uint32_t cookie = ((uint32_t)dhcp[236] << 24) | ((uint32_t)dhcp[237] << 16) |
+                      ((uint32_t)dhcp[238] << 8) | dhcp[239];
+    if (cookie != ECM_DHCP_MAGIC_COOKIE) {
+        USB_DEBUG("Target DHCP: bad cookie=0x%08X\r\n", cookie);
+        return 0;
+    }
+
+    /* Parse DHCP options to find message type and requested IP */
+    uint16_t opt_off = 240;
+    dhcp_msg_type = 0;
+    while (opt_off < udp_len - 8u) {
+        uint8_t opt_code = dhcp[opt_off];
+        if (opt_code == ECM_DHCP_OPT_END) {
+            break;
+        }
+        if (opt_off + 1 >= udp_len - 8u) {
+            break;
+        }
+        uint8_t opt_len = dhcp[opt_off + 1];
+        if (opt_off + 2 + opt_len > udp_len - 8u) {
+            break;
+        }
+
+        if (opt_code == ECM_DHCP_OPT_MSG_TYPE && opt_len == 1) {
+            dhcp_msg_type = dhcp[opt_off + 2];
+        } else if (opt_code == ECM_DHCP_OPT_REQUESTED_IP && opt_len == 4) {
+            memcpy(requested_ip, &dhcp[opt_off + 2], 4);
+            has_requested_ip = 1;
+        }
+
+        opt_off = (uint16_t)(opt_off + 2 + opt_len);
+    }
+
+    if (dhcp_msg_type != ECM_DHCP_DISCOVER && dhcp_msg_type != ECM_DHCP_REQUEST) {
+        USB_DEBUG("Target DHCP: unknown msg type=%d\r\n", dhcp_msg_type);
+        return 0;
+    }
+
+    /* Log xid for debugging */
+    uint32_t xid = ((uint32_t)dhcp[4] << 24) | ((uint32_t)dhcp[5] << 16) |
+                   ((uint32_t)dhcp[6] << 8) | dhcp[7];
+    USB_DEBUG("Target DHCP type=%d xid=0x%08lX\r\n", dhcp_msg_type, (unsigned long)xid);
+
+    /* Build DHCP response (ACK) */
+    memset(reply, 0, sizeof(reply));
+    off = 0;
+
+    /* Ethernet header - DHCP DISCOVER/OFFER must broadcast */
+    if (dhcp_msg_type == ECM_DHCP_DISCOVER) {
+        memset(&reply[off], 0xFF, 6);  /* dst = broadcast for OFFER */
+    } else {
+        memcpy(&reply[off], &frame[6], 6);  /* dst = original src for ACK */
+    }
+    off += 6;
+    memcpy(&reply[off], ECM_TARGET_DEV_MAC, 6); /* src = firmware target device MAC */
+    off += 6;
+    reply[off++] = 0x08;
+    reply[off++] = 0x00;  /* EtherType = IPv4 */
+
+    /* IPv4 header (20 bytes) */
+    ip_start = off;
+    memset(&reply[off], 0, 20);
+    reply[off + 0] = 0x45;  /* version=4, IHL=5 */
+    reply[off + 1] = 0x00;  /* DSCP */
+    reply[off + 4] = 0x00;  /* identification */
+    reply[off + 5] = 0x01;
+    reply[off + 6] = 0x40;  /* DF */
+    reply[off + 7] = 0x00;  /* fragment offset */
+    reply[off + 8] = 64;    /* TTL */
+    reply[off + 9] = ECM_IPV4_PROTO_UDP;  /* protocol = UDP */
+    /* src IP = firmware target device IP */
+    memcpy(&reply[off + 12], ECM_TARGET_DEV_IP, 4);
+    /* dst IP = target host IP (broadcast for Discover, unicast for Request) */
+    if (dhcp_msg_type == ECM_DHCP_DISCOVER) {
+        memset(&reply[off + 16], 0xFF, 4);  /* broadcast */
+    } else {
+        memcpy(&reply[off + 16], ECM_TARGET_HOST_IP, 4);
+    }
+    off += 20;
+
+    /* UDP header (8 bytes) */
+    udp_start = off;
+    put_be16(&reply[off + 0], ECM_DHCP_SERVER_PORT);  /* src port */
+    put_be16(&reply[off + 2], ECM_DHCP_CLIENT_PORT);  /* dst port */
+    /* UDP length and checksum filled later */
+    off += 8;
+
+    /* DHCP packet */
+    dhcp_off = off;
+    reply[off++] = 0x02;  /* op = BOOTREPLY */
+    reply[off++] = 0x01;  /* htype = Ethernet */
+    reply[off++] = 0x06;  /* hlen = 6 */
+    reply[off++] = 0x00;  /* hops */
+    /* xid (copy from request) */
+    memcpy(&reply[off], &dhcp[4], 4);
+    off += 4;
+    /* secs (2 bytes) */
+    memset(&reply[off], 0, 2);
+    off += 2;
+    /* flags (2 bytes) - copy from request (preserves broadcast flag) */
+    memcpy(&reply[off], &dhcp[10], 2);
+    off += 2;
+    /* ciaddr (4 bytes) */
+    memset(&reply[off], 0, 4);
+    off += 4;
+    /* yiaddr (4 bytes) - IP offered to client */
+    memcpy(&reply[off], ECM_TARGET_HOST_IP, 4);
+    off += 4;
+    /* siaddr (4 bytes) - server IP */
+    memcpy(&reply[off], ECM_TARGET_DEV_IP, 4);
+    off += 4;
+    /* giaddr (4 bytes) */
+    memset(&reply[off], 0, 4);
+    off += 4;
+    /* chaddr (copy from request) */
+    memcpy(&reply[off], &dhcp[28], 16);
+    off += 16;
+    /* sname (64 bytes) */
+    memset(&reply[off], 0, 64);
+    off += 64;
+    /* file (128 bytes) */
+    memset(&reply[off], 0, 128);
+    off += 128;
+    /* magic cookie */
+    reply[off++] = 0x63;
+    reply[off++] = 0x82;
+    reply[off++] = 0x53;
+    reply[off++] = 0x63;
+
+    /* DHCP options */
+    /* Message type: OFFER for DISCOVER, ACK for REQUEST (RFC 2131) */
+    {
+        uint8_t reply_type = (dhcp_msg_type == ECM_DHCP_DISCOVER)
+            ? ECM_DHCP_OFFER : ECM_DHCP_ACK;
+        reply[off++] = ECM_DHCP_OPT_MSG_TYPE;  // Option 53: DHCP Message Type
+        reply[off++] = 0x01;
+        reply[off++] = reply_type;
+    }
+
+    /* Server identifier */
+    reply[off++] = ECM_DHCP_OPT_SERVER_ID;
+    reply[off++] = 0x04;
+    memcpy(&reply[off], ECM_TARGET_DEV_IP, 4);
+    off += 4;
+
+    /* Lease time: 1 hour */
+    reply[off++] = ECM_DHCP_OPT_LEASE_TIME;
+    reply[off++] = 0x04;
+    reply[off++] = 0x00;
+    reply[off++] = 0x00;
+    reply[off++] = 0x0E;
+    reply[off++] = 0x10;  /* 3600 seconds */
+
+    /* Subnet mask */
+    reply[off++] = ECM_DHCP_OPT_SUBNET;
+    reply[off++] = 0x04;
+    memcpy(&reply[off], ECM_SUBNET_MASK, 4);
+    off += 4;
+
+    /* Router */
+    reply[off++] = ECM_DHCP_OPT_ROUTER;
+    reply[off++] = 0x04;
+    memcpy(&reply[off], ECM_TARGET_DEV_IP, 4);
+    off += 4;
+
+    /* DNS server */
+    reply[off++] = ECM_DHCP_OPT_DNS;
+    reply[off++] = 0x04;
+    memcpy(&reply[off], ECM_TARGET_DEV_IP, 4);
+    off += 4;
+
+    /* End option */
+    reply[off++] = ECM_DHCP_OPT_END;
+
+    /* Pad to minimum DHCP size (300 bytes) */
+    while (off < 300) {
+        reply[off++] = 0x00;
+    }
+
+    /* Fill UDP length */
+    udp_payload_len = (uint16_t)(off - udp_start);
+    put_be16(&reply[udp_start + 4], udp_payload_len);
+
+    /* Calculate UDP checksum */
+    sum = 0;
+    /* Pseudo-header */
+    sum += (uint16_t)(reply[ip_start + 12] << 8) | reply[ip_start + 13];
+    sum += (uint16_t)(reply[ip_start + 14] << 8) | reply[ip_start + 15];
+    sum += (uint16_t)(reply[ip_start + 16] << 8) | reply[ip_start + 17];
+    sum += (uint16_t)(reply[ip_start + 18] << 8) | reply[ip_start + 19];
+    sum += ECM_IPV4_PROTO_UDP;
+    sum += udp_payload_len;
+    /* UDP header + data */
+    for (uint16_t i = 0; i < udp_payload_len; i += 2) {
+        uint16_t idx = udp_start + i;
+        if (idx >= sizeof(reply)) break;
+        if (i + 1 < udp_payload_len && idx + 1 < sizeof(reply)) {
+            sum += (uint16_t)(reply[idx] << 8) | reply[idx + 1];
+        } else {
+            sum += (uint16_t)reply[idx] << 8;
+        }
+    }
+    while (sum >> 16) {
+        sum = (sum & 0xFFFF) + (sum >> 16);
+    }
+    chk = (~sum) & 0xFFFF;
+    if (chk == 0) chk = 0xFFFF;
+    put_be16(&reply[udp_start + 6], chk);
+
+    /* Fill IPv4 total length */
+    uint16_t ip_total = (uint16_t)(off - ip_start);
+    reply[ip_start + 2] = (ip_total >> 8) & 0xFF;
+    reply[ip_start + 3] = ip_total & 0xFF;
+
+    /* Calculate IPv4 checksum */
+    sum = 0;
+    for (int i = 0; i < 20; i += 2) {
+        sum += (uint16_t)(reply[ip_start + i] << 8) | reply[ip_start + i + 1];
+    }
+    while (sum >> 16) {
+        sum = (sum & 0xFFFF) + (sum >> 16);
+    }
+    chk = (~sum) & 0xFFFF;
+    reply[ip_start + 10] = (chk >> 8) & 0xFF;
+    reply[ip_start + 11] = chk & 0xFF;
+
+    USB_DEBUG("Target DHCP ACK queued, len=%d\r\n", off);
+    queue_clear(&g_host_to_target);
+    queue_push(&g_host_to_target, reply, off);
+    return 1;
+}
+#endif
+
 
 static uint8_t tcp_payload_from_ipv4_frame(const uint8_t *frame,
                                            uint16_t frame_len,
@@ -302,8 +1126,32 @@ static uint8_t handle_host_control_frame(const uint8_t *frame, uint16_t frame_le
     const uint8_t *payload;
     uint16_t payload_len;
 
-    /* Handle ARP requests first — the Mac needs to resolve our MAC address
-       before it can send packets back to us. */
+    /* Log every frame's src MAC and ethertype for debugging */
+    if (frame_len >= 14) {
+        USB_DEBUG("HCF: src=%02x:%02x:%02x:%02x:%02x:%02x etype=0x%04X len=%d\r\n",
+                  frame[6], frame[7], frame[8], frame[9], frame[10], frame[11],
+                  get_be16(&frame[12]), frame_len);
+    }
+
+    /* Diagnostic: only set mode 9 if we haven't reached a deeper diagnostic yet */
+    if (g_dhcp_led_mode == 0) {
+        g_dhcp_led_mode = 9;  /* Fast blink = host control frame entered */
+    }
+
+    /* Check EtherType first to route to correct handler */
+    if (frame_len < 14) {
+        return 0;
+    }
+    uint16_t eth_type = get_be16(&frame[12]);
+
+    /* Handle DHCP requests FIRST - before ARP, since DHCP is needed for IP config */
+    if (eth_type == 0x0800) {  /* IPv4 */
+        if (handle_dhcp_packet(frame, frame_len)) {
+            return 1;  /* DHCP response queued, done */
+        }
+    }
+
+    /* Handle ARP requests - the Mac needs to resolve our MAC address */
     if (handle_arp_frame(frame, frame_len)) {
         return 1;  /* ARP reply queued, done */
     }
@@ -415,7 +1263,12 @@ static uint8_t queue_push(ECM_FrameQueue_t *queue, const uint8_t *data, uint16_t
 
     memcpy(queue->frames[queue->wr].data, data, len);
     queue->frames[queue->wr].len = len;
-    USB_DEBUG("Q: wr=%d len=%d cnt=%d\r\n", queue->wr, len, queue->count + 1);
+    if (queue == &g_target_to_host && len >= 14) {
+        USB_DEBUG("Q(T2H): wr=%d len=%d cnt=%d etype=0x%04X\r\n",
+                  queue->wr, len, queue->count + 1, get_be16(&data[12]));
+    } else {
+        USB_DEBUG("Q: wr=%d len=%d cnt=%d\r\n", queue->wr, len, queue->count + 1);
+    }
     queue->wr++;
     if (queue->wr >= ECM_BRIDGE_QUEUE_DEPTH) {
         queue->wr = 0;
@@ -493,7 +1346,7 @@ static uint16_t eth_frame_length(const uint8_t *data, uint16_t accumulated)
 }
 
 static void rx_frame_append(ECM_RxFrame_t *frame,
-                            ECM_FrameQueue_t *queue,
+                            ECM_FrameQueue_t *queue,  /* NULL = drop if handler returns 0 */
                             const uint8_t *data,
                             uint16_t len,
                             uint16_t max_packet,
@@ -557,7 +1410,9 @@ static void rx_frame_append(ECM_RxFrame_t *frame,
     if (end_of_frame) {
         if (!frame->drop && frame->len > 0) {
             if (frame_handler == 0 || !frame_handler(frame->data, frame->len)) {
-                (void)queue_push(queue, frame->data, frame->len);
+                if (queue != NULL) {
+                    (void)queue_push(queue, frame->data, frame->len);
+                }
             }
         }
         frame->len = 0;
@@ -600,6 +1455,7 @@ static uint8_t make_notification(uint8_t state, uint8_t interface, uint8_t *pack
     return 16;
 }
 
+#if USB_WORK_MODE_COMPILES_TARGET_CDC_ECM
 static void poll_target_notification(void)
 {
     uint8_t packet[16];
@@ -628,6 +1484,7 @@ static void poll_target_notification(void)
         USB_DEBUG("ECM: notif FAILED to send\r\n");
     }
 }
+#endif
 
 static void poll_host_notification(void)
 {
@@ -647,10 +1504,32 @@ static void poll_host_notification(void)
     }
 }
 
+#if USB_WORK_MODE_COMPILES_TARGET_CDC_ECM
 static void poll_target_tx(void)
 {
     ECM_Frame_t *frame;
     uint16_t len;
+
+    /* When the CDC ECM data interface first becomes active on Target side
+       (Target PC sent SET_INTERFACE on USBFS side), queue a gratuitous ARP
+       so the Target PC's ARP cache gets populated immediately. */
+    if (g_target_ecm_data_if_active && !g_target_garp_sent) {
+        USB_DEBUG("Target ECM: IF active, queuing GARP\r\n");
+        uint8_t garp[42];
+        memset(garp, 0xFF, 6);
+        memcpy(&garp[6], ECM_TARGET_DEV_MAC, 6);
+        garp[12] = 0x08; garp[13] = 0x06;
+        garp[14] = 0x00; garp[15] = 0x01;
+        garp[16] = 0x08; garp[17] = 0x00;
+        garp[18] = 6;  garp[19] = 4;
+        garp[20] = 0x00; garp[21] = 0x02;
+        memcpy(&garp[22], ECM_TARGET_DEV_MAC, 6);
+        memcpy(&garp[28], ECM_TARGET_DEV_IP, 4);
+        memcpy(&garp[32], ECM_TARGET_DEV_MAC, 6);
+        memcpy(&garp[38], ECM_TARGET_DEV_IP, 4);
+        queue_push(&g_host_to_target, garp, sizeof(garp));
+        g_target_garp_sent = 1;
+    }
 
     /* Guard against EP7 being in use — poll_host_tx() also drives EP7.
      * Without this busy check, poll_target_tx() and poll_host_tx() can
@@ -693,6 +1572,7 @@ static void poll_target_tx(void)
         }
     }
 }
+#endif
 
 static void poll_host_tx(void)
 {
@@ -700,9 +1580,9 @@ static void poll_host_tx(void)
     uint16_t len;
 
     /* When the CDC ECM data interface first becomes active (Mac sent
-       SET_INTERFACE), queue a gratuitous ARP so the Mac's ARP cache
-       gets populated immediately. */
-    if (g_ecm_data_if_active && !g_garp_sent) {
+       SET_INTERFACE on USBD side), queue a gratuitous ARP so the Mac's
+       ARP cache gets populated immediately. */
+    if (g_host_ecm_data_if_active && !g_host_garp_sent) {
         USB_DEBUG("ECM: IF active, queuing GARP\r\n");
         uint8_t garp[42];
         memset(garp, 0xFF, 6);
@@ -717,7 +1597,7 @@ static void poll_host_tx(void)
         memcpy(&garp[32], ECM_DEV_MAC, 6);
         memcpy(&garp[38], ECM_DEV_IP, 4);
         queue_push(&g_target_to_host, garp, sizeof(garp));
-        g_garp_sent = 1;
+        g_host_garp_sent = 1;
         g_ecm_tx_state = 1;
     }
 
@@ -728,28 +1608,27 @@ static void poll_host_tx(void)
         return;
     }
 
-    /* USBFS EP7 path (target port, en20). Only attempt TX after the Mac
-       has activated the CDC ECM data interface via SET_INTERFACE(IF5, alt=1).
-       Without this, USBFS_Endp_DataUp returns READY but the endpoint never
-       responds to host IN tokens. */
-    if (!g_ecm_data_if_active) {
+    /* Only attempt TX after the Mac has activated the CDC ECM data interface
+       via SET_INTERFACE(IF1, alt=1). Without this, USBD_ENDPx_DataUp returns
+       SUCCESS but the endpoint never responds to host IN tokens. */
+    if (!g_host_ecm_data_if_active) {
         return;
     }
 
-    if (USBFS_Endp_Busy[DEF_UEP7] != 0) {
+    if (USBD_Endp3_Busy != 0) {
         g_ecm_tx_state = 3;
         return;
     }
 
     static uint8_t tx_count = 0;
     if ((++tx_count & 0x0F) == 0) {
-        USB_DEBUG("EP7 TX len=%d busy=%d if_active=%d\r\n", frame->len,
-                   USBFS_Endp_Busy[DEF_UEP7], g_ecm_data_if_active);
+        USB_DEBUG("EP3 TX len=%d busy=%d if_active=%d\r\n", frame->len,
+                   USBD_Endp3_Busy, g_host_ecm_data_if_active);
     }
 
     if (g_host_zlp_pending) {
         g_ecm_tx_state = 2;
-        if (USBFS_Endp_DataUp(DEF_UEP7, frame->data, 0, DEF_UEP_CPY_LOAD) == READY) {
+        if (USBD_ENDPx_DataUp(ENDP3, frame->data, 0) == USB_SUCCESS) {
             g_ecm_tx_count++;
             g_ecm_tx_state = 2;  /* success */
             g_host_zlp_pending = 0;
@@ -763,16 +1642,16 @@ static void poll_host_tx(void)
     }
 
     len = (uint16_t)(frame->len - g_host_tx_offset);
-    if (len > ECM_BRIDGE_USBFS_PACKET_SIZE) {
-        len = ECM_BRIDGE_USBFS_PACKET_SIZE;
+    if (len > ECM_BRIDGE_USBD_PACKET_SIZE) {
+        len = ECM_BRIDGE_USBD_PACKET_SIZE;
     }
 
-    if (USBFS_Endp_DataUp(DEF_UEP7, &frame->data[g_host_tx_offset], len, DEF_UEP_CPY_LOAD) == READY) {
+    if (USBD_ENDPx_DataUp(ENDP3, &frame->data[g_host_tx_offset], len) == USB_SUCCESS) {
         g_ecm_tx_count++;
         g_ecm_tx_state = 2;  /* success */
         g_host_tx_offset = (uint16_t)(g_host_tx_offset + len);
         if (g_host_tx_offset >= frame->len) {
-            if (len == ECM_BRIDGE_USBFS_PACKET_SIZE) {
+            if (len == ECM_BRIDGE_USBD_PACKET_SIZE) {
                 g_host_zlp_pending = 1;
             }
             else {
@@ -785,35 +1664,49 @@ static void poll_host_tx(void)
 
 void ECM_Bridge_Init(void)
 {
+#if USB_WORK_MODE_COMPILES_TARGET_CDC_ECM
     queue_clear(&g_host_to_target);
+#endif
     queue_clear(&g_target_to_host);
     rx_frame_clear(&g_host_rx_frame);
+#if USB_WORK_MODE_COMPILES_TARGET_CDC_ECM
     rx_frame_clear(&g_target_rx_frame);
     g_target_tx_offset = 0;
-    g_host_tx_offset = 0;
     g_target_zlp_pending = 0;
-    g_host_zlp_pending = 0;
     g_target_notify_state = 1;
+#endif
+    g_host_tx_offset = 0;
+    g_host_zlp_pending = 0;
     g_host_notify_state = 1;
-    g_garp_sent = 0;
+    g_host_garp_sent = 0;
+    g_host_ecm_data_if_active = 0;
+#if USB_WORK_MODE_COMPILES_TARGET_CDC_ECM
+    g_target_garp_sent = 0;
+    g_target_ecm_data_if_active = 0;
+#endif
 
-     g_ecm_data_if_active = 0;
+#if USB_WORK_MODE_COMPILES_TARGET_CDC_ECM
+    /* Only configure USBFS EP6/EP7 if the active mode actually uses
+       target-side CDC ECM. With runtime profiles, the compiled code
+       exists but the descriptor may not advertise these endpoints. */
+    if (USB_ModeConfig_ActiveModeHasTargetCdcEcm()) {
+        /* Force enable EP7 TX at the hardware level */
+        USBFSD_UEP_MOD(3) |= USBFS_UEP7_TX_EN;
 
-    /* Force enable EP7 TX at the hardware level */
-    USBFSD_UEP_MOD(3) |= USBFS_UEP7_TX_EN;
-
-    /* Also configure EP6 RX to ACK so we can receive data from the Mac
-       without SET_INTERFACE. Without this, EP6 stays in NAK state and
-       the Mac's bulk OUT (ARP requests etc.) is silently dropped. */
-    USBFSD->UEP6_RX_CTRL = USBFS_UEP_R_RES_ACK;
+        /* Also configure EP6 RX to ACK so we can receive data from the Mac
+           without SET_INTERFACE. Without this, EP6 stays in NAK state and
+           the Mac's bulk OUT (ARP requests etc.) is silently dropped. */
+        USBFSD->UEP6_RX_CTRL = USBFS_UEP_R_RES_ACK;
+    }
+#endif
 
     USB_DEBUG("ECM init done\r\n");
 }
 
 void ECM_Bridge_SendRawFrame(const uint8_t *data, uint16_t len)
 {
-    /* Queue raw Ethernet frame directly to target_to_host, bypassing
-       CH9329 protocol handler. Used by BLE-Eth TCP frame injection. */
+    /* Queue raw Ethernet frame directly to host_to_target (target PC),
+       bypassing CH9329 protocol handler. Used by BLE-Eth TCP frame injection. */
     USB_DEBUG("ECM send: len=%d\r\n", len);
     if (len > 0 && len <= 54) {
         USB_DEBUG("  First 16: ");
@@ -822,22 +1715,37 @@ void ECM_Bridge_SendRawFrame(const uint8_t *data, uint16_t len)
         }
         USB_DEBUG("\r\n");
     }
-    uint8_t ok = queue_push(&g_target_to_host, data, len);
+    uint8_t ok = queue_push(&g_host_to_target, data, len);
     USB_DEBUG("  q: %s\r\n", ok ? "OK" : "FAIL");
 }
 
 void ECM_Bridge_HostRxDone(const uint8_t *data, uint16_t len)
 {
+    /* Host is sending data - interface is active (bypasses missed SET_INTERFACE) */
+    if (!g_host_ecm_data_if_active) {
+        /* First activation after reconnect — flush stale frames from previous
+           cycle (e.g. queued DHCP replies that were never consumed). */
+        queue_clear(&g_target_to_host);
+        g_host_garp_sent = 0;
+    }
+    g_host_ecm_data_if_active = 1;
+
     /* LED: blink ON briefly when data arrives via EP6 */
     if (len > 0) g_ecm_led_override = 1;
+#if USB_WORK_MODE_COMPILES_TARGET_CDC_ECM
     rx_frame_append(&g_host_rx_frame, &g_host_to_target, data, len,
                     ECM_BRIDGE_USBD_PACKET_SIZE, handle_host_control_frame);
+#else
+    rx_frame_append(&g_host_rx_frame, NULL, data, len,
+                    ECM_BRIDGE_USBD_PACKET_SIZE, handle_host_control_frame);
+#endif
 }
 
+#if USB_WORK_MODE_COMPILES_TARGET_CDC_ECM
 void ECM_Bridge_TargetRxDone(const uint8_t *data, uint16_t len)
 {
-    /* Force active state if we are receiving data (bypasses missed SET_INTERFACE) */
-    g_ecm_data_if_active = 1;
+    /* Target is sending data - interface is active (bypasses missed SET_INTERFACE) */
+    g_target_ecm_data_if_active = 1;
 
     rx_frame_append(&g_target_rx_frame, &g_target_to_host, data, len,
                     ECM_BRIDGE_USBFS_PACKET_SIZE, handle_target_frame);
@@ -845,26 +1753,13 @@ void ECM_Bridge_TargetRxDone(const uint8_t *data, uint16_t len)
 
 static uint8_t handle_target_frame(const uint8_t *frame, uint16_t frame_len)
 {
-    /* Learn host MAC from any incoming frame (point-to-point CDC ECM link) */
-    if (frame_len >= 14) {
-        BLE_Eth_LearnHostMac(&frame[6]);  /* source MAC is the host's MAC */
+    /* Handle DHCP requests from Target PC first (DHCP before ARP) */
+    if (handle_target_dhcp_packet(frame, frame_len)) {
+        return 1;  /* DHCP reply queued, don't queue original */
     }
 
-    /* Handle ARP replies from target side (USBFS) for BLE-Eth connections */
-    if (frame_len >= 42 && frame[12] == 0x08 && frame[13] == 0x06) {
-        uint16_t arp_op = (uint16_t)(frame[20] << 8) | frame[21];
-        if (arp_op == 2) {  /* ARP reply */
-            uint8_t sender_ip[4], sender_mac[6];
-            memcpy(sender_mac, &frame[22], 6);
-            memcpy(sender_ip, &frame[28], 4);
-            if (BLE_Eth_HandleArpReply(sender_ip, sender_mac)) {
-                USB_DEBUG("ARP reply from target side\r\n");
-            }
-        }
-    }
-
-    /* Handle ARP requests from the Mac (connected via USBFS) */
-    if (handle_arp_frame(frame, frame_len)) {
+    /* Handle ARP requests from Target PC */
+    if (handle_target_arp_frame(frame, frame_len)) {
         return 1;  /* ARP reply queued, don't queue original */
     }
 
@@ -874,12 +1769,17 @@ static uint8_t handle_target_frame(const uint8_t *frame, uint16_t frame_len)
     }
     return 1;
 }
+#endif
 
 void ECM_Bridge_Poll(void)
 {
+#if USB_WORK_MODE_COMPILES_TARGET_CDC_ECM
     poll_target_notification();
+#endif
     poll_host_notification();
+#if USB_WORK_MODE_COMPILES_TARGET_CDC_ECM
     poll_target_tx();
+#endif
     poll_host_tx();
 }
 

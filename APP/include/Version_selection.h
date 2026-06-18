@@ -10,7 +10,7 @@
  * 3 = keymod v1.0
  */
 #ifndef version
-#define version  1
+#define version 3
 #endif
 // Use this definition to set endpoint 3 as a touchscreen device,or an absolute mouse device
 #define EP3_USE_STYLUS

@@ -25,6 +25,7 @@
 #include "include/acm_bridge.h"
 #include "include/ecm_bridge.h"
 #include "include/usb_mode_config.h"
+#include "include/default_target_config.h"
 #include "include/pwm_led.h"
 
 /*********************************************************************
@@ -63,21 +64,14 @@ void Main_Circulation(void)
     uint8_t led_state = 0;     /* 0=off, 1=on */
     uint32_t last_tx_time = 0; /* timestamp of last TX activity */
     uint32_t last_ep6_count = 0; /* track EP6 counter changes */
+    uint32_t last_dhcp_reset = 0; /* periodically reset DHCP LED mode */
     CH9329_Cmd_GetInfo_Reply(00);
 
 
     while(1)
     {
-        /* LED debug patterns (PC7, active-low):
-         *   OFF          — booting (< 3s)
-         *   Solid ON     — EP6 OUT interrupt fired, TOG_OK=1 (data processed)
-         *   Rapid flash  — EP6 OUT interrupt fired, TOG_OK=0 (TOG mismatch!)
-         *   Fast blink   — TX happening (data flowing via EP7)
-         *   Slow blink   — idle, no EP6 activity
-         *   Triple flash — DataUp called (state=2)
-         *   Double flash — EP7 busy blocked TX */
+        /* Simple LED for DHCP debug: ON = g_dhcp_led_mode active, OFF = idle */
         uint32_t now = systick_ms;
-        uint32_t elapsed = now - t0;
         uint16_t tx_now = g_ecm_tx_count;
         if (tx_now != last_tx_count) {
             last_tx_time = now;
@@ -92,70 +86,12 @@ void Main_Circulation(void)
             g_usbfs_ep6_int_flag = 0;  /* clear for next cycle */
         }
 
-        if (elapsed < 3000) {
-            /* Boot phase — LED off */
-            PWM_LED_SetBrightness(0);
+        /* Auto-reset DHCP diagnostic every 3 seconds */
+        if (now - last_dhcp_reset >= 3000) {
+            g_dhcp_led_mode = 0;
+            last_dhcp_reset = now;
         }
-        else if (g_ecm_led_override >= 1 && g_ecm_led_override <= 5) {
-            /* RX path override: show ARP handler state */
-            if (g_ecm_led_override == 3) {
-                PWM_LED_SetBrightness(100);  /* IP matched — solid ON */
-            }
-            else {
-                /* Other codes: blink pattern */
-                if (now - led_last >= 400) { led_last = now; }
-                uint32_t t = now - led_last;
-                uint8_t flashes = g_ecm_led_override;  /* 1-5 blinks */
-                uint8_t want = 0;
-                for (int i = 0; i < flashes; i++) {
-                    uint32_t start = (uint32_t)i * 80;
-                    if (t >= start && t < start + 40) want = 1;
-                }
-                PWM_LED_SetBrightness(want ? 100 : 0);
-            }
-        }
-        else if (ep6_fired && ep6_tog) {
-            /* EP6 OUT: interrupt fired, TOG OK — data processed */
-            PWM_LED_SetBrightness(100);  /* solid ON */
-        }
-        else if (ep6_fired && !ep6_tog) {
-            /* EP6 OUT: interrupt fired, TOG mismatch! */
-            if (now - led_last >= 100) {
-                led_state ^= 1;
-                led_last = now;
-                PWM_LED_SetBrightness(led_state ? 100 : 0);
-            }
-        }
-        else if ((now - last_tx_time) < 5000 && last_tx_time > 0) {
-            /* TX recently — fast blink (500ms on, 500ms off) */
-            if (now - led_last >= 500) {
-                led_state ^= 1;
-                led_last = now;
-                PWM_LED_SetBrightness(led_state ? 100 : 0);
-            }
-        }
-        else if (g_usbfs_ep6_rx_count > last_ep6_count) {
-            /* EP6 interrupts arriving but TX not active — distinct pattern.
-             * 4 quick flashes every 1.5s = interrupts received, but TOG may be wrong. */
-            last_ep6_count = g_usbfs_ep6_rx_count;
-            if (now - led_last >= 1500) { led_last = now; }
-            uint32_t t = now - led_last;
-            uint8_t want = 0;
-            for (int i = 0; i < 4; i++) {
-                uint32_t start = (uint32_t)i * 100;
-                if (t >= start && t < start + 50) want = 1;
-            }
-            PWM_LED_SetBrightness(want ? 100 : 0);
-        }
-        else {
-            /* Idle — no TX, no EP6 interrupts. Slow blink (2s on/off).
-             * Mac is NOT sending OUT tokens to EP6. */
-            if (now - led_last >= 2000) {
-                led_state ^= 1;
-                led_last = now;
-                PWM_LED_SetBrightness(led_state ? 100 : 0);
-            }
-        }
+
         //rgb_state
         RGB_Update();
         USB_ModeConfig_Poll();
@@ -163,23 +99,50 @@ void Main_Circulation(void)
         Update_SDcard();
         //Enable Bluetooth broadcasting
 #ifdef ENABLE_BLE
-        if (version == 1) {
-        TMOS_SystemProcess();
+        if (version == 1 || version == 3) {
+            TMOS_SystemProcess();
         }
 #endif
         //Instruction code receiving protocol
         USB_DataRx_To_KMHandle();
         //Keyboard and mouse control code sending loop
         USB_SendFromQueues();
+        /* LED debug for DHCP:
+         * 55 = handler entered
+         * 60 = Ethernet src MAC matches expected (02:00:00:00:00:30)
+         * 61 = Ethernet src MAC unknown
+         * 62 = bad DHCP cookie
+         * 63 = chaddr (client MAC in DHCP payload) mismatch
+         * 11 = msg type parsed
+         * 12 = reply queued
+         * otherwise: ON if ecm_polled, OFF if idle */
+        uint8_t ecm_polled = 0;
         if (USB_ModeConfig_ActiveModeBridgeAcm()) {
             ACM_Bridge_Poll();
         }
         else if (USB_ModeConfig_ActiveModeBridgeEcm()) {
             ECM_Bridge_Poll();
+            ecm_polled = 1;
         }
         /* Also poll ECM bridge when BLE-Eth has active tunnels or ARP-pending connections */
         else if (BLE_Eth_HasActiveOrPendingConnection()) {
             ECM_Bridge_Poll();
+            ecm_polled = 1;
+        }
+
+        if (g_dhcp_led_mode == 60 || g_dhcp_led_mode == 55 || g_dhcp_led_mode == 11 ||
+            g_dhcp_led_mode == 12) {
+            PWM_LED_SetBrightness(100);  /* solid ON = good path */
+        } else if (g_dhcp_led_mode == 61 || g_dhcp_led_mode == 62 || g_dhcp_led_mode == 63) {
+            PWM_LED_SetBrightness(0);    /* OFF = error */
+        } else if (g_ecm_tx_state == 2) {
+            PWM_LED_SetBrightness(100);  /* TX success */
+        } else if (g_ecm_tx_state == 4) {
+            PWM_LED_SetBrightness(0);    /* TX failed */
+        } else if (ecm_polled || g_dhcp_led_mode != 0) {
+            PWM_LED_SetBrightness(100);
+        } else {
+            PWM_LED_SetBrightness(0);
         }
 
 
@@ -208,17 +171,18 @@ int main(void) {
     SystemCoreClockUpdate();
     Delay_Init();
     USB_ModeConfig_Init();
+    DefaultTargetConfig_Init();
     //usbd_init
     USART_Printf_Init(115200);
     Set_USBConfig();
     USB_Init();
     USB_Interrupts_Config();
-    if (version == 1)
-    {
 #ifdef ENABLE_BLE
     WCHBLE_Init();
 #endif
-    DS18B20_Init();
+    if (version == 1)
+    {
+        DS18B20_Init();
     }
     //usbfs_init
     USBFS_RCC_Init();

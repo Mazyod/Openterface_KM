@@ -45,6 +45,8 @@ CMD_DATA = 0x11
 CMD_DISCONNECT = 0x12
 CMD_INFO = 0x1F
 CMD_PING = 0x1E
+CMD_SET_DEFAULT = 0x20
+CMD_GET_DEFAULT = 0x21
 
 CMD_CONNECT_RESP = 0x90
 CMD_DATA_RESP = 0x91
@@ -54,6 +56,8 @@ CMD_CONN_CLOSED = 0xD2
 CMD_INFO_RESP = 0x9F
 CMD_PONG = 0x9E
 CMD_ERROR = 0xD0
+CMD_SET_DEFAULT_RESP = 0xA0
+CMD_GET_DEFAULT_RESP = 0xA1
 
 CMD_NAMES = {
     CMD_CONNECT: "CONNECT",
@@ -61,12 +65,16 @@ CMD_NAMES = {
     CMD_DISCONNECT: "DISCONNECT",
     CMD_INFO: "INFO",
     CMD_PING: "PING",
+    CMD_SET_DEFAULT: "SET_DEFAULT",
+    CMD_GET_DEFAULT: "GET_DEFAULT",
     CMD_CONNECT_RESP: "CONNECT_RESP",
     CMD_DATA_PUSH: "DATA_PUSH",
     CMD_DISCONN_RESP: "DISCONNECT_RESP",
     CMD_CONN_CLOSED: "CONN_CLOSED",
     CMD_INFO_RESP: "INFO_RESP",
     CMD_PONG: "PONG",
+    CMD_SET_DEFAULT_RESP: "SET_DEFAULT_RESP",
+    CMD_GET_DEFAULT_RESP: "GET_DEFAULT_RESP",
     CMD_ERROR: "ERROR",
 }
 
@@ -219,6 +227,18 @@ def build_info_request() -> bytes:
 def build_ping(data: bytes = b"") -> bytes:
     """Build PING request frame (echo test, no network needed)."""
     return build_frame(0x00, CMD_PING, data)
+
+
+def build_set_default(remote_ip: str, remote_port: int) -> bytes:
+    """Build SET_DEFAULT frame to store default target IP/port."""
+    ip_bytes = bytes(int(x) for x in remote_ip.split("."))
+    payload = ip_bytes + struct.pack("!H", remote_port)
+    return build_frame(0x00, CMD_SET_DEFAULT, payload)
+
+
+def build_get_default() -> bytes:
+    """Build GET_DEFAULT frame to retrieve default target IP/port."""
+    return build_frame(0x00, CMD_GET_DEFAULT, b"")
 
 
 # ---------------------------------------------------------------------------
@@ -534,6 +554,10 @@ class BleEthClient:
         # Ping response holder
         self._pong_response: Optional[bytes] = None
         self._pong_event: Optional[asyncio.Event] = None
+
+        # Default target configuration futures
+        self._default_futures: dict[str, asyncio.Future] = {}
+
         self._loop: Optional[asyncio.AbstractEventLoop] = None
         self._disconnecting = False
         # Reliability-hook counters for DATA response telemetry.
@@ -734,6 +758,58 @@ class BleEthClient:
         self._pong_response = None
         self._pong_event = None
         return pong
+
+    async def set_default_target(self, remote_ip: str, remote_port: int, timeout: float = 5.0) -> bool:
+        """Set the default target IP/port for auto-connect on BLE link-up.
+
+        Args:
+            remote_ip: Target IP address (e.g., "192.168.1.100")
+            remote_port: Target port (e.g., 22)
+            timeout: Response timeout in seconds
+
+        Returns:
+            True if successfully set, False otherwise
+        """
+        if not self.is_connected:
+            raise ConnectionError("Not connected to BLE device")
+
+        future = asyncio.get_event_loop().create_future()
+        self._default_futures["set"] = future
+
+        await self._send_frame(build_set_default(remote_ip, remote_port))
+
+        try:
+            success = await asyncio.wait_for(future, timeout=timeout)
+        except asyncio.TimeoutError:
+            self._default_futures.pop("set", None)
+            raise TimeoutError("SET_DEFAULT timed out")
+
+        return success
+
+    async def get_default_target(self, timeout: float = 5.0) -> dict:
+        """Get the currently configured default target IP/port.
+
+        Args:
+            timeout: Response timeout in seconds
+
+        Returns:
+            Dict with 'ip', 'port', and 'enabled' keys
+        """
+        if not self.is_connected:
+            raise ConnectionError("Not connected to BLE device")
+
+        future = asyncio.get_event_loop().create_future()
+        self._default_futures["get"] = future
+
+        await self._send_frame(build_get_default())
+
+        try:
+            result = await asyncio.wait_for(future, timeout=timeout)
+        except asyncio.TimeoutError:
+            self._default_futures.pop("get", None)
+            raise TimeoutError("GET_DEFAULT timed out")
+
+        return result
 
     async def open_tunnel(
         self, remote_ip: str, remote_port: int, timeout: float = 10.0
@@ -1335,6 +1411,26 @@ class BleEthClient:
             self._pong_response = payload
             if self._pong_event:
                 self._pong_event.set()
+
+        elif cmd == CMD_SET_DEFAULT_RESP:
+            if len(payload) >= 1:
+                status = payload[0]
+                future = self._default_futures.get("set")
+                if future and not future.done():
+                    future.set_result(status == STATUS_SUCCESS)
+                self._default_futures.pop("set", None)
+                logger.info(f"SET_DEFAULT response: status=0x{status:02X}")
+
+        elif cmd == CMD_GET_DEFAULT_RESP:
+            if len(payload) >= 7:
+                ip = f"{payload[0]}.{payload[1]}.{payload[2]}.{payload[3]}"
+                port = (payload[4] << 8) | payload[5]
+                enabled = bool(payload[6])
+                future = self._default_futures.get("get")
+                if future and not future.done():
+                    future.set_result({"ip": ip, "port": port, "enabled": enabled})
+                self._default_futures.pop("get", None)
+                logger.info(f"GET_DEFAULT response: ip={ip} port={port} enabled={enabled}")
 
         elif cmd == CMD_ERROR:
             self._emit_event(TunnelEvent(

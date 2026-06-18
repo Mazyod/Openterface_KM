@@ -87,8 +87,10 @@ static void USBFS_ModeHid_FillReport(uint8_t *report)
     report[10] = (uint8_t)(capability_mask >> 16);
     report[11] = (uint8_t)(capability_mask >> 24);
 #if USB_WORK_MODE_COMPILES_BRIDGE_ECM
-    report[12] = g_ecm_data_if_active;
-    report[13] = g_garp_sent;
+    report[12] = g_host_ecm_data_if_active;
+    report[13] = g_host_garp_sent;
+    report[14] = g_target_ecm_data_if_active;
+    report[15] = g_target_garp_sent;
     report[14] = g_ecm_tx_state;
     report[15] = g_ecm_led_override;
     report[16] = (uint8_t)g_ecm_tx_count;
@@ -1480,10 +1482,10 @@ void USBFS_IRQHandler( void )
                                     USBFSD->UEP7_TX_LEN  = 0;
                                     USBFS_Endp_Busy[DEF_UEP7] = 0;
                                     /* Reset GARP flag so it gets re-queued on every activation. */
-                                    g_garp_sent = 0;
+                                    g_target_garp_sent = 0;
                                     /* Externally visible flag — ecm_bridge.c checks this
                                      * before sending through USBFS EP7. */
-                                    g_ecm_data_if_active = 1;
+                                    g_target_ecm_data_if_active = 1;
                                 }
                                 else {
                                     /* Keep EP6 RX active even on alt=0 — macOS CDC ECM
@@ -1494,7 +1496,7 @@ void USBFS_IRQHandler( void )
                                     USBFSD->UEP7_TX_LEN  = 0;
                                     USBFS_Endp_Busy[DEF_UEP7] = 0;
                                     /* Keep active so GARP/ARP-reply TX path stays open */
-                                    g_ecm_data_if_active = 1;
+                                    g_target_ecm_data_if_active = 1;
                                 }
                             }
                             break;
