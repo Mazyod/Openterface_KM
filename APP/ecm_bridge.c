@@ -644,16 +644,11 @@ static uint8_t handle_dhcp_packet(const uint8_t *frame, uint16_t frame_len)
     memcpy(&reply[off], ECM_SUBNET_MASK, 4);  /* Same subnet mask for both */
     off += 4;
 
-    /* Router */
-    reply[off++] = ECM_DHCP_OPT_ROUTER;
-    reply[off++] = 0x04;
-    memcpy(&reply[off], ECM_DEV_IP, 4);
-    off += 4;
-
-    /* DNS server */
+    /* DNS server - use public DNS to avoid OS trying to use firmware as DNS */
     reply[off++] = ECM_DHCP_OPT_DNS;
     reply[off++] = 0x04;
-    memcpy(&reply[off], ECM_DEV_IP, 4);
+    uint8_t public_dns[4] = { 8, 8, 8, 8 };  /* Google DNS */
+    memcpy(&reply[off], public_dns, 4);
     off += 4;
 
     /* End option */
@@ -978,16 +973,11 @@ static uint8_t handle_target_dhcp_packet(const uint8_t *frame, uint16_t frame_le
     memcpy(&reply[off], ECM_SUBNET_MASK, 4);
     off += 4;
 
-    /* Router */
-    reply[off++] = ECM_DHCP_OPT_ROUTER;
-    reply[off++] = 0x04;
-    memcpy(&reply[off], ECM_TARGET_DEV_IP, 4);
-    off += 4;
-
-    /* DNS server */
+    /* DNS server - use public DNS to avoid OS trying to use firmware as DNS */
     reply[off++] = ECM_DHCP_OPT_DNS;
     reply[off++] = 0x04;
-    memcpy(&reply[off], ECM_TARGET_DEV_IP, 4);
+    uint8_t public_dns[4] = { 8, 8, 8, 8 };  /* Google DNS */
+    memcpy(&reply[off], public_dns, 4);
     off += 4;
 
     /* End option */
