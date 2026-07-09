@@ -35,11 +35,14 @@ from __future__ import annotations
 import argparse
 import asyncio
 import logging
+import os
 import sys
 import time
+import pytest
 
-# Add parent directory to path for imports
-sys.path.insert(0, ".")
+# Add repo root to path for imports
+_repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, _repo_root)
 
 from tools.ble_eth_tunnel import (
     BleEthClient,
@@ -411,6 +414,7 @@ def run_unit_tests():
 # BLE connection test
 # ---------------------------------------------------------------------------
 
+@pytest.mark.asyncio
 async def test_ble_connection(args):
     """Test BLE connection and device discovery."""
     print("=" * 60)
@@ -450,6 +454,7 @@ async def test_ble_connection(args):
 # BLE-Eth data path test (PING/PONG, no network needed)
 # ---------------------------------------------------------------------------
 
+@pytest.mark.asyncio
 async def test_ble_eth_data_path(args):
     """Test BLE-Eth round-trip data path using PING/PONG."""
     print("=" * 60)
@@ -515,6 +520,7 @@ async def test_ble_eth_data_path(args):
 # Full SSH tunnel test
 # ---------------------------------------------------------------------------
 
+@pytest.mark.asyncio
 async def test_ssh_tunnel(args):
     """Run the full BLE SSH tunnel test."""
     print("=" * 60)

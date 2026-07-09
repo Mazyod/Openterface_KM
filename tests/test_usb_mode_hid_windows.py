@@ -1,4 +1,9 @@
 #!/usr/bin/env python3
+import sys
+if sys.platform != "win32":
+    import pytest
+    pytest.skip("Windows-only test", allow_module_level=True)
+
 import argparse
 import ctypes
 from ctypes import wintypes

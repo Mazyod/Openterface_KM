@@ -8,6 +8,11 @@ enumeration after each reboot.
 
 from __future__ import annotations
 
+import sys
+if sys.platform != "win32":
+    import pytest
+    pytest.skip("Windows-only test", allow_module_level=True)
+
 import argparse
 import ctypes
 import json

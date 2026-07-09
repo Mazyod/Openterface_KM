@@ -35,12 +35,14 @@ from __future__ import annotations
 import argparse
 import asyncio
 import logging
+import os
 import sys
 import time
 from typing import Optional
 
 # Add repo root to path
-sys.path.insert(0, ".")
+_repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, _repo_root)
 
 from tools.ble_eth_tunnel import (
     BleEthClient,

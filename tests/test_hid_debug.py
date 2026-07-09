@@ -1,6 +1,10 @@
 #!/usr/bin/env python3
 """Debug HID feature report communication."""
 import sys
+if sys.platform != "win32":
+    import pytest
+    pytest.skip("Windows-only test", allow_module_level=True)
+
 import time
 from test_usb_mode_hid_windows import (
     iter_hid_paths, open_hid, get_attrs, get_feature,

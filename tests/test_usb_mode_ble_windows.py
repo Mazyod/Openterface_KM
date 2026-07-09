@@ -6,6 +6,11 @@ BLE rawpass RX as it does over CDC ACM. This helper writes those frames and can
 verify the result with the HID Feature report after reboot.
 """
 
+import sys
+if sys.platform != "win32":
+    import pytest
+    pytest.skip("Windows-only test", allow_module_level=True)
+
 import argparse
 import asyncio
 import sys
