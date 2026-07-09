@@ -50,7 +50,6 @@ C_SOURCES=(
   "$REPO_ROOT/SRC/Peripheral/src/ch32v20x_i2c.c"
   "$REPO_ROOT/SRC/Peripheral/src/ch32v20x_iwdg.c"
   "$REPO_ROOT/SRC/Peripheral/src/ch32v20x_misc.c"
-  "$REPO_ROOT/SRC/Peripheral/src/ch32v20x_opa.c"
   "$REPO_ROOT/SRC/Peripheral/src/ch32v20x_pwr.c"
   "$REPO_ROOT/SRC/Peripheral/src/ch32v20x_rcc.c"
   "$REPO_ROOT/SRC/Peripheral/src/ch32v20x_rtc.c"

@@ -17,7 +17,6 @@ C_SRCS += \
 ../SRC/Peripheral/src/ch32v20x_i2c.c \
 ../SRC/Peripheral/src/ch32v20x_iwdg.c \
 ../SRC/Peripheral/src/ch32v20x_misc.c \
-../SRC/Peripheral/src/ch32v20x_opa.c \
 ../SRC/Peripheral/src/ch32v20x_pwr.c \
 ../SRC/Peripheral/src/ch32v20x_rcc.c \
 ../SRC/Peripheral/src/ch32v20x_rtc.c \
@@ -39,7 +38,6 @@ C_DEPS += \
 ./SRC/Peripheral/src/ch32v20x_i2c.d \
 ./SRC/Peripheral/src/ch32v20x_iwdg.d \
 ./SRC/Peripheral/src/ch32v20x_misc.d \
-./SRC/Peripheral/src/ch32v20x_opa.d \
 ./SRC/Peripheral/src/ch32v20x_pwr.d \
 ./SRC/Peripheral/src/ch32v20x_rcc.d \
 ./SRC/Peripheral/src/ch32v20x_rtc.d \
@@ -61,7 +59,6 @@ OBJS += \
 ./SRC/Peripheral/src/ch32v20x_i2c.o \
 ./SRC/Peripheral/src/ch32v20x_iwdg.o \
 ./SRC/Peripheral/src/ch32v20x_misc.o \
-./SRC/Peripheral/src/ch32v20x_opa.o \
 ./SRC/Peripheral/src/ch32v20x_pwr.o \
 ./SRC/Peripheral/src/ch32v20x_rcc.o \
 ./SRC/Peripheral/src/ch32v20x_rtc.o \
