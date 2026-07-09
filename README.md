@@ -198,7 +198,7 @@ When `ENABLE_BLE=1` the following BLE parameters can also be tuned:
 
 | Variable | Default | Minimum | Description |
 |---|---|---|---|
-| `BLE_MEMHEAP_SIZE` | `7168` | `6144` | Bytes of static RAM given to the BLE stack heap |
+| `BLE_MEMHEAP_SIZE` | `6144` | `6144` | Bytes of static RAM given to the BLE stack heap |
 | `BLE_BUFF_MAX_LEN` | `64` | `27` | Max HCI packet payload (ATT_MTU = value − 4) |
 | `BLE_TX_NUM_EVENT` | `1` | `1` | Max TX packets per connection event |
 
@@ -209,7 +209,7 @@ Examples:
 make all BLE_MEMHEAP_SIZE=8192 BLE_BUFF_MAX_LEN=128
 
 # Minimal BLE — keyboard/mouse only, minimum RAM
-make all BLE_MEMHEAP_SIZE=7168 BLE_BUFF_MAX_LEN=64 BLE_TX_NUM_EVENT=1
+make all BLE_MEMHEAP_SIZE=6144 BLE_BUFF_MAX_LEN=64 BLE_TX_NUM_EVENT=1
 ```
 
 #### Combining flags
@@ -218,6 +218,18 @@ make all BLE_MEMHEAP_SIZE=7168 BLE_BUFF_MAX_LEN=64 BLE_TX_NUM_EVENT=1
 # USB-only build (no BLE, no UAC) — smallest image, maximum free RAM
 make all ENABLE_BLE=0 ENABLE_UAC=0
 ```
+
+#### `ENABLE_OSCILLATOR` — External 32KHz Crystal
+
+```bash
+make all ENABLE_OSCILLATOR=1   # use external 32.768 kHz crystal (CLK_OSC32K=0)
+make all ENABLE_OSCILLATOR=0   # use internal 32K RC oscillator (CLK_OSC32K=1, default)
+```
+
+| Value | Effect |
+|---|---|
+| `0` (default) | Internal RC oscillator — works on all boards |
+| `1` | External crystal — required on KeyMod Plus; do not enable on boards without a 32KHz crystal |
 
 ### Memory Usage Summary
 
@@ -378,8 +390,11 @@ For bug reports and feature requests, please contact the maintainers or refer to
 
 ## License
 
-This project contains code from WCH (Nanjing Qinheng Microelectronics) for the CH32V20x peripheral libraries.
-Please refer to the individual file headers for specific licensing information.
+This project is licensed under the **GNU Affero General Public License v3.0 (AGPL-3.0)** — see the [LICENSE](LICENSE) file for details.
+
+### Third-Party Code
+
+This project includes code from **WCH (Nanjing Qinheng Microelectronics)** for the CH32V20x peripheral libraries and BLE stack (files in `SRC/`, `HAL/`, `Profile/`, `LIB/`). These files remain under WCH's copyright and are provided for use on WCH-manufactured microcontrollers. See individual file headers for details.
 
 ## Support
 

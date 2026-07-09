@@ -119,7 +119,7 @@ ssh -p 18048 \
 Example with `sshpass` for scripted password login:
 
 ```bash
-sshpass -p 'sunny808' ssh -p 18048 \
+sshpass -p '<YOUR_PASSWORD>' ssh -p 18048 \
   -o ConnectTimeout=20 \
   -o NumberOfPasswordPrompts=1 \
   -o StrictHostKeyChecking=no \
