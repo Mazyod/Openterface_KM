@@ -91,6 +91,7 @@ jobs:
         $env:RISC_COMPILER_PATH = "C:\tools\risc-none-embed-gcc"
         make clean
         make -j4 ENABLE_UAC=${{ env.ENABLE_UAC }} ENABLE_BLE=${{ env.ENABLE_BLE }} BOARD_VERSION=1 all
+        riscv-none-embed-objcopy -O binary "openterface-km-firmware.elf" "openterface-km-firmware.bin"
         riscv-none-embed-size --format=berkeley openterface-km-firmware.elf | Out-File -Encoding ascii openterface-km-firmware.siz
         if ($LASTEXITCODE -eq 0) {
           Write-Host "✓ KVMGo build succeeded" -ForegroundColor Green
@@ -98,9 +99,10 @@ jobs:
           Write-Host "✗ KVMGo build failed with exit code $LASTEXITCODE" -ForegroundColor Red
           exit 1
         }
-        
+
         # Copy artifact with version suffix
         Copy-Item "${{ env.BUILD_DIR }}\openterface-km-firmware.hex" "${{ env.BUILD_DIR }}\openterface-km-firmware-kvmgo.hex"
+        Copy-Item "${{ env.BUILD_DIR }}\openterface-km-firmware.bin" "${{ env.BUILD_DIR }}\openterface-km-firmware-kvmgo.bin"
         Copy-Item "${{ env.BUILD_DIR }}\openterface-km-firmware.elf" "${{ env.BUILD_DIR }}\openterface-km-firmware-kvmgo.elf"
         Copy-Item "${{ env.BUILD_DIR }}\openterface-km-firmware.map" "${{ env.BUILD_DIR }}\openterface-km-firmware-kvmgo.map"
         Copy-Item "${{ env.BUILD_DIR }}\openterface-km-firmware.siz" "${{ env.BUILD_DIR }}\openterface-km-firmware-kvmgo.siz"
@@ -116,6 +118,7 @@ jobs:
         $env:RISC_COMPILER_PATH = "C:\tools\risc-none-embed-gcc"
         make clean
         make -j4 ENABLE_UAC=${{ env.ENABLE_UAC }} ENABLE_BLE=${{ env.ENABLE_BLE }} BOARD_VERSION=2 all
+        riscv-none-embed-objcopy -O binary "openterface-km-firmware.elf" "openterface-km-firmware.bin"
         riscv-none-embed-size --format=berkeley openterface-km-firmware.elf | Out-File -Encoding ascii openterface-km-firmware.siz
         if ($LASTEXITCODE -eq 0) {
           Write-Host "✓ Mini-KVM v1.2 build succeeded" -ForegroundColor Green
@@ -123,56 +126,101 @@ jobs:
           Write-Host "✗ Mini-KVM v1.2 build failed with exit code $LASTEXITCODE" -ForegroundColor Red
           exit 1
         }
-        
+
         # Copy artifact with version suffix
         Copy-Item "${{ env.BUILD_DIR }}\openterface-km-firmware.hex" "${{ env.BUILD_DIR }}\openterface-km-firmware-mini-kvm.hex"
+        Copy-Item "${{ env.BUILD_DIR }}\openterface-km-firmware.bin" "${{ env.BUILD_DIR }}\openterface-km-firmware-mini-kvm.bin"
         Copy-Item "${{ env.BUILD_DIR }}\openterface-km-firmware.elf" "${{ env.BUILD_DIR }}\openterface-km-firmware-mini-kvm.elf"
         Copy-Item "${{ env.BUILD_DIR }}\openterface-km-firmware.map" "${{ env.BUILD_DIR }}\openterface-km-firmware-mini-kvm.map"
         Copy-Item "${{ env.BUILD_DIR }}\openterface-km-firmware.siz" "${{ env.BUILD_DIR }}\openterface-km-firmware-mini-kvm.siz"
 
-    - name: Build KeyMod v1.0 BLE + UAC (version 3)
+    - name: Build KeyMod Plus (version 3, external oscillator)
       run: |
-        echo "Building KeyMod v1.0..."
-        echo "Feature flags: ENABLE_UAC=1, ENABLE_BLE=1"
+        echo "Building KeyMod Plus..."
+        echo "Feature flags: ENABLE_UAC=${{ env.ENABLE_UAC }}, ENABLE_BLE=1, ENABLE_OSCILLATOR=1"
 
         # Build
         cd build
         $env:PATH = "C:\tools\risc-none-embed-gcc\bin;" + $env:PATH
         $env:RISC_COMPILER_PATH = "C:\tools\risc-none-embed-gcc"
         make clean
-        make -j4 ENABLE_UAC=1 ENABLE_BLE=1 BOARD_VERSION=3 all
+        make -j4 ENABLE_UAC=${{ env.ENABLE_UAC }} ENABLE_BLE=1 ENABLE_OSCILLATOR=1 BOARD_VERSION=3 BLE_NAME=KeyMod all
+        riscv-none-embed-objcopy -O binary "openterface-km-firmware.elf" "openterface-km-firmware.bin"
         riscv-none-embed-size --format=berkeley openterface-km-firmware.elf | Out-File -Encoding ascii openterface-km-firmware.siz
         if ($LASTEXITCODE -eq 0) {
-          Write-Host "✓ KeyMod v1.0 BLE + UAC build succeeded" -ForegroundColor Green
+          Write-Host "✓ KeyMod Plus build succeeded" -ForegroundColor Green
         } else {
-          Write-Host "✗ KeyMod v1.0 BLE + UAC build failed with exit code $LASTEXITCODE" -ForegroundColor Red
+          Write-Host "✗ KeyMod Plus build failed with exit code $LASTEXITCODE" -ForegroundColor Red
           exit 1
         }
 
         # Copy artifact with version suffix
-        Copy-Item "${{ env.BUILD_DIR }}\openterface-km-firmware.hex" "${{ env.BUILD_DIR }}\openterface-km-firmware-keymod-ble-uac.hex"
-        Copy-Item "${{ env.BUILD_DIR }}\openterface-km-firmware.elf" "${{ env.BUILD_DIR }}\openterface-km-firmware-keymod-ble-uac.elf"
-        Copy-Item "${{ env.BUILD_DIR }}\openterface-km-firmware.map" "${{ env.BUILD_DIR }}\openterface-km-firmware-keymod-ble-uac.map"
-        Copy-Item "${{ env.BUILD_DIR }}\openterface-km-firmware.siz" "${{ env.BUILD_DIR }}\openterface-km-firmware-keymod-ble-uac.siz"
+        Copy-Item "${{ env.BUILD_DIR }}\openterface-km-firmware.hex" "${{ env.BUILD_DIR }}\openterface-km-firmware-keymod-plus.hex"
+        Copy-Item "${{ env.BUILD_DIR }}\openterface-km-firmware.bin" "${{ env.BUILD_DIR }}\openterface-km-firmware-keymod-plus.bin"
+        Copy-Item "${{ env.BUILD_DIR }}\openterface-km-firmware.elf" "${{ env.BUILD_DIR }}\openterface-km-firmware-keymod-plus.elf"
+        Copy-Item "${{ env.BUILD_DIR }}\openterface-km-firmware.map" "${{ env.BUILD_DIR }}\openterface-km-firmware-keymod-plus.map"
+        Copy-Item "${{ env.BUILD_DIR }}\openterface-km-firmware.siz" "${{ env.BUILD_DIR }}\openterface-km-firmware-keymod-plus.siz"
+
+    - name: Build KeyMod Mini (version 3, internal RC oscillator)
+      run: |
+        echo "Building KeyMod Mini..."
+        echo "Feature flags: ENABLE_UAC=${{ env.ENABLE_UAC }}, ENABLE_BLE=1, ENABLE_OSCILLATOR=0"
+
+        # Build
+        cd build
+        $env:PATH = "C:\tools\risc-none-embed-gcc\bin;" + $env:PATH
+        $env:RISC_COMPILER_PATH = "C:\tools\risc-none-embed-gcc"
+        make clean
+        make -j4 ENABLE_UAC=${{ env.ENABLE_UAC }} ENABLE_BLE=1 ENABLE_OSCILLATOR=0 BOARD_VERSION=3 BLE_NAME=KeyMod all
+        riscv-none-embed-objcopy -O binary "openterface-km-firmware.elf" "openterface-km-firmware.bin"
+        riscv-none-embed-size --format=berkeley openterface-km-firmware.elf | Out-File -Encoding ascii openterface-km-firmware.siz
+        if ($LASTEXITCODE -eq 0) {
+          Write-Host "✓ KeyMod Mini build succeeded" -ForegroundColor Green
+        } else {
+          Write-Host "✗ KeyMod Mini build failed with exit code $LASTEXITCODE" -ForegroundColor Red
+          exit 1
+        }
+
+        # Copy artifact with version suffix
+        Copy-Item "${{ env.BUILD_DIR }}\openterface-km-firmware.hex" "${{ env.BUILD_DIR }}\openterface-km-firmware-keymod-mini.hex"
+        Copy-Item "${{ env.BUILD_DIR }}\openterface-km-firmware.bin" "${{ env.BUILD_DIR }}\openterface-km-firmware-keymod-mini.bin"
+        Copy-Item "${{ env.BUILD_DIR }}\openterface-km-firmware.elf" "${{ env.BUILD_DIR }}\openterface-km-firmware-keymod-mini.elf"
+        Copy-Item "${{ env.BUILD_DIR }}\openterface-km-firmware.map" "${{ env.BUILD_DIR }}\openterface-km-firmware-keymod-mini.map"
+        Copy-Item "${{ env.BUILD_DIR }}\openterface-km-firmware.siz" "${{ env.BUILD_DIR }}\openterface-km-firmware-keymod-mini.siz"
 
     - name: Upload KVMGo firmware
       uses: actions/upload-artifact@v4
       with:
         name: openterface-km-firmware-kvmgo
         if-no-files-found: error
-        path: ${{ env.BUILD_DIR }}\openterface-km-firmware-kvmgo.hex
+        path: |
+          ${{ env.BUILD_DIR }}\openterface-km-firmware-kvmgo.hex
+          ${{ env.BUILD_DIR }}\openterface-km-firmware-kvmgo.bin
 
     - name: Upload Mini-KVM v1.2 firmware
       uses: actions/upload-artifact@v4
       with:
         name: openterface-km-firmware-mini-kvm-v1.2
         if-no-files-found: error
-        path: ${{ env.BUILD_DIR }}\openterface-km-firmware-mini-kvm.hex
+        path: |
+          ${{ env.BUILD_DIR }}\openterface-km-firmware-mini-kvm.hex
+          ${{ env.BUILD_DIR }}\openterface-km-firmware-mini-kvm.bin
 
-    - name: Upload KeyMod v1.0 BLE + UAC firmware
+    - name: Upload KeyMod Plus firmware (external oscillator)
       uses: actions/upload-artifact@v4
       with:
-        name: openterface-km-firmware-keymod-v1.0-ble-uac
+        name: openterface-km-firmware-keymod-plus
         if-no-files-found: error
-        path: ${{ env.BUILD_DIR }}\openterface-km-firmware-keymod-ble-uac.hex
+        path: |
+          ${{ env.BUILD_DIR }}\openterface-km-firmware-keymod-plus.hex
+          ${{ env.BUILD_DIR }}\openterface-km-firmware-keymod-plus.bin
+
+    - name: Upload KeyMod Mini firmware (internal RC oscillator)
+      uses: actions/upload-artifact@v4
+      with:
+        name: openterface-km-firmware-keymod-mini
+        if-no-files-found: error
+        path: |
+          ${{ env.BUILD_DIR }}\openterface-km-firmware-keymod-mini.hex
+          ${{ env.BUILD_DIR }}\openterface-km-firmware-keymod-mini.bin
 
