@@ -23,13 +23,23 @@ WCHISP_BIN="${HOME}/.cargo/bin/wchisp"
 
 # Firmware build variables (exported and forwarded through SSH)
 BOARD_VERSION="${BOARD_VERSION:-1}"
-BLE_NAME="${BLE_NAME:-KVM-GO}"
 ENABLE_BLE="${ENABLE_BLE:-1}"
 ENABLE_UAC="${ENABLE_UAC:-0}"
+ENABLE_OSCILLATOR="${ENABLE_OSCILLATOR:-0}"
+
+if [[ -z "${BLE_NAME:-}" ]]; then
+  case "$BOARD_VERSION" in
+    1) BLE_NAME="KVM-GO" ;;
+    3) BLE_NAME="KeyMod" ;;
+    2) BLE_NAME="Mini-KVM" ;;
+    *) BLE_NAME="KeyMod" ;;
+  esac
+fi
 
 DO_BUILD=1
 DO_FLASH=1
 DO_VERIFY=1
+DO_SKIP_ISP=0
 DRY_RUN=0
 
 usage() {
@@ -46,12 +56,14 @@ Options:
   --local-bin <path>           Default: /tmp/openterface-km-firmware.bin
   --wchisp <path>              Default: ~/.cargo/bin/wchisp
   --board-version <1-3>        Default: 1 (1=kvm go, 2=mini kvm, 3=keymod)
-  --ble-name <name>            Default: KVM-GO
+  --ble-name <name>            Default: auto from board-version (KVM-GO/Mini-KVM/KeyMod)
   --enable-ble <0|1>           Default: 1
   --enable-uac <0|1>           Default: 0
+  --enable-oscillator <0|1>    Default: 0 (0=internal RC, 1=external 32K crystal)
   --no-build                   Skip zip/upload/remote build/download
   --no-flash                   Skip flash/power-cycle steps
   --no-verify                  Skip post-flash ioreg verification
+  --skip-isp                   Skip ISP mode entry (device already in ISP mode)
   --dry-run                    Print commands without executing
   -h, --help                   Show this help
 
@@ -144,6 +156,10 @@ parse_args() {
                 ENABLE_UAC="$2"
                 shift 2
                 ;;
+            --enable-oscillator)
+                ENABLE_OSCILLATOR="$2"
+                shift 2
+                ;;
             --no-build)
                 DO_BUILD=0
                 shift
@@ -154,6 +170,10 @@ parse_args() {
                 ;;
             --no-verify)
                 DO_VERIFY=0
+                shift
+                ;;
+            --skip-isp)
+                DO_SKIP_ISP=1
                 shift
                 ;;
             --dry-run)
@@ -194,7 +214,7 @@ build_remote() {
     run ssh "$REMOTE_SSH" "powershell -NoProfile -Command \"Remove-Item -Recurse -Force ${WINDOWS_BUILD_DIR} -ErrorAction SilentlyContinue; Expand-Archive -Path ${WINDOWS_ZIP} -DestinationPath ${WINDOWS_BUILD_DIR} -Force\""
 
     log "Building firmware on remote MSYS2"
-    run ssh "$REMOTE_SSH" "${MSYS_BASH} -l -c \"cd ${REMOTE_PROJECT_UNIX} && rm -rf obj && BOARD_VERSION=${BOARD_VERSION} BLE_NAME=${BLE_NAME} ENABLE_BLE=${ENABLE_BLE} ENABLE_UAC=${ENABLE_UAC} bash tools/build_firmware.sh\""
+    run ssh "$REMOTE_SSH" "${MSYS_BASH} -l -c \"cd ${REMOTE_PROJECT_UNIX} && rm -rf obj && BOARD_VERSION=${BOARD_VERSION} BLE_NAME=${BLE_NAME} ENABLE_BLE=${ENABLE_BLE} ENABLE_UAC=${ENABLE_UAC} ENABLE_OSCILLATOR=${ENABLE_OSCILLATOR} bash tools/build_firmware.sh\""
 
     log "Downloading built firmware binary"
     run scp "${REMOTE_SSH}:${REMOTE_BIN}" "$LOCAL_BIN"
@@ -206,24 +226,32 @@ flash_local() {
         exit 1
     fi
 
-    log "Entering ISP mode via control port ${CONTROL_PORT}"
-    send_control_frame "57AB001A01001D" # power off
-    run sleep 0.5
-    send_control_frame "57AB001901011D" # BOOT high
-    run sleep 0.5
-    send_control_frame "57AB001A01011E" # power on
-    run sleep 3
+    if [[ "$DO_SKIP_ISP" -eq 0 ]]; then
+        log "Entering ISP mode via control port ${CONTROL_PORT}"
+        send_control_frame "57AB001A01001D" # power off
+        run sleep 0.5
+        send_control_frame "57AB001901011D" # BOOT high
+        run sleep 0.5
+        send_control_frame "57AB001A01011E" # power on
+        run sleep 3
+    else
+        log "Skipping ISP mode entry (device already in ISP mode)"
+    fi
 
     log "Flashing binary with wchisp"
     run "$WCHISP_BIN" flash "$LOCAL_BIN"
 
-    log "Releasing BOOT and power-cycling target"
-    send_control_frame "57AB001901001C" # BOOT low
-    run sleep 0.5
-    send_control_frame "57AB001A01001D" # power off
-    run sleep 1
-    send_control_frame "57AB001A01011E" # power on
-    run sleep 5
+    if [[ "$DO_SKIP_ISP" -eq 0 ]]; then
+        log "Releasing BOOT and power-cycling target"
+        send_control_frame "57AB001901001C" # BOOT low
+        run sleep 0.5
+        send_control_frame "57AB001A01001D" # power off
+        run sleep 1
+        send_control_frame "57AB001A01011E" # power on
+        run sleep 5
+    else
+        log "Skipping power-cycle (device already running)"
+    fi
 }
 
 verify_local() {

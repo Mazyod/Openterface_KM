@@ -53,6 +53,7 @@ extern uint8_t RingMemUSBBuf[512];
 extern RingMemParm_t RingMemBLE;
 extern uint8_t RingMemBLEBuf[512];
 extern uint8_t Peripheral_TaskID;
+extern uint8_t g_ble_led_state;  // BLE connection LED status
 /*********************************************************************
  * FUNCTIONS
  */

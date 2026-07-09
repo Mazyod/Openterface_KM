@@ -28,6 +28,7 @@
 #include "include/default_target_config.h"
 #include "usbd_composite_km.h"
 #include "include/ecm_bridge.h"
+#include "RGB.h"
 
 /*********************************************************************
  * MACROS
@@ -105,7 +106,7 @@ static uint8_t scanRspDataLen = 0;
 
 // GAP - Advertisement data (max size = 31 bytes, though this is
 // best kept short to conserve power while advertising)
-static uint8_t advertData[] = {
+static uint8_t advertData[31] = {
     // Flags; this sets the device to use limited discoverable
     // mode (advertises for 30 seconds at a time) instead of general
     // discoverable mode (advertises indefinitely)
@@ -118,7 +119,9 @@ static uint8_t advertData[] = {
     0x03,                  // length of this data
     GAP_ADTYPE_16BIT_MORE, // some of the UUID's, but not all
     LO_UINT16(SIMPLEPROFILE_SERV_UUID),
-    HI_UINT16(SIMPLEPROFILE_SERV_UUID)};
+    HI_UINT16(SIMPLEPROFILE_SERV_UUID)
+};
+static uint8_t advertDataLen = 8; // Initial length without device name
 
 // GAP GATT Attributes
 static uint8_t attDeviceName[GAP_DEVICE_NAME_LEN] = {0};
@@ -132,6 +135,9 @@ RingMemParm_t RingMemUSB;
 uint8_t       RingMemUSBBuf[512];
 RingMemParm_t RingMemBLE;
 uint8_t       RingMemBLEBuf[512];
+
+// BLE LED status — 0=default(SD card), 1=advertising, 2=connected, 3=disconnected, 4=error
+uint8_t g_ble_led_state = 0;
 /*********************************************************************
  * LOCAL FUNCTIONS
  */
@@ -236,7 +242,13 @@ void Peripheral_Init()
 
         tmos_memset(attDeviceName, 0, sizeof(attDeviceName));
         tmos_memcpy(attDeviceName, BLE_DEVICE_NAME, deviceNameLen);
-        
+
+        // Add device name to advertisement data (not just scan response)
+        advertData[advertDataLen++] = nameLen + 1;
+        advertData[advertDataLen++] = GAP_ADTYPE_LOCAL_NAME_COMPLETE;
+        tmos_memcpy(&advertData[advertDataLen], BLE_DEVICE_NAME, nameLen);
+        advertDataLen += nameLen;
+
         scanRspDataLen = 0;
         scanRspData[scanRspDataLen++] = nameLen + 1;
         scanRspData[scanRspDataLen++] = GAP_ADTYPE_LOCAL_NAME_COMPLETE;
@@ -257,7 +269,7 @@ void Peripheral_Init()
         // Set the GAP Role Parameters
         GAPRole_SetParameter(GAPROLE_ADVERT_ENABLED, sizeof(uint8_t), &initial_advertising_enable);
         GAPRole_SetParameter(GAPROLE_SCAN_RSP_DATA, scanRspDataLen, scanRspData);
-        GAPRole_SetParameter(GAPROLE_ADVERT_DATA, sizeof(advertData), advertData);
+        GAPRole_SetParameter(GAPROLE_ADVERT_DATA, advertDataLen, advertData);
         GAPRole_SetParameter(GAPROLE_MIN_CONN_INTERVAL, sizeof(uint16_t), &desired_min_interval);
         GAPRole_SetParameter(GAPROLE_MAX_CONN_INTERVAL, sizeof(uint16_t), &desired_max_interval);
     }
@@ -718,6 +730,7 @@ static void peripheralStateNotificationCB(gapRole_States_t newState, gapRoleEven
     {
         case GAPROLE_STARTED:
             PRINT("Initialized..\n");
+            g_ble_led_state = 0;
             break;
 
         case GAPROLE_ADVERTISING:
@@ -725,10 +738,12 @@ static void peripheralStateNotificationCB(gapRole_States_t newState, gapRoleEven
             {
                 Peripheral_LinkTerminated(pEvent);
                 PRINT("Disconnected.. Reason:%x\n", pEvent->linkTerminate.reason);
+                g_ble_led_state = 3;  // disconnected → red
                 PRINT("Advertising..\n");
             }
             else if(pEvent->gap.opcode == GAP_MAKE_DISCOVERABLE_DONE_EVENT)
             {
+                g_ble_led_state = 1;  // advertising → blue
                 PRINT("Advertising..\n");
             }
             break;
@@ -737,6 +752,7 @@ static void peripheralStateNotificationCB(gapRole_States_t newState, gapRoleEven
             if(pEvent->gap.opcode == GAP_LINK_ESTABLISHED_EVENT)
             {
                 Peripheral_LinkEstablished(pEvent);
+                g_ble_led_state = 2;  // connected → green
                 PRINT("Connected..\n");
             }
             break;
@@ -756,6 +772,7 @@ static void peripheralStateNotificationCB(gapRole_States_t newState, gapRoleEven
             else if(pEvent->gap.opcode == GAP_LINK_TERMINATED_EVENT)
             {
                 Peripheral_LinkTerminated(pEvent);
+                g_ble_led_state = 3;  // disconnected → red
                 PRINT("Disconnected.. Reason:%x\n", pEvent->linkTerminate.reason);
             }
             else if(pEvent->gap.opcode == GAP_LINK_ESTABLISHED_EVENT)
@@ -776,6 +793,7 @@ static void peripheralStateNotificationCB(gapRole_States_t newState, gapRoleEven
             break;
 
         case GAPROLE_ERROR:
+            g_ble_led_state = 4;  // error → solid red
             PRINT("Error..\n");
             break;
 

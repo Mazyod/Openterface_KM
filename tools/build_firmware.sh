@@ -151,18 +151,35 @@ CFLAGS="$CFLAGS -DBLE_TX_NUM_EVENT=5"
 # 0 = external 32K (32768Hz) — needs physical crystal
 # 1 = internal 32000Hz RC
 # 2 = internal 32768Hz RC
-CFLAGS="$CFLAGS -DCLK_OSC32K=1"
+# ENABLE_OSCILLATOR=1 selects external crystal (CLK_OSC32K=0).
+# ENABLE_OSCILLATOR=0 (default) uses internal RC (CLK_OSC32K=1).
+ENABLE_OSCILLATOR="${ENABLE_OSCILLATOR:-0}"
+if [[ "$ENABLE_OSCILLATOR" == "1" ]]; then
+  CFLAGS="$CFLAGS -DCLK_OSC32K=0"
+else
+  CFLAGS="$CFLAGS -DCLK_OSC32K=1"
+fi
 
 # Enable BLE, board version and BLE name from env (override at call time).
-# Defaults: BOARD_VERSION=1 (KVMGo), BLE_NAME=KVM-GO, ENABLE_BLE=1, ENABLE_UAC=0.
+# Defaults: BOARD_VERSION=1 (KVMGo), ENABLE_BLE=1, ENABLE_UAC=0.
+# BLE_NAME auto-detected from BOARD_VERSION unless explicitly set.
 BOARD_VERSION="${BOARD_VERSION:-1}"
-BLE_NAME="${BLE_NAME:-KVM-GO}"
 ENABLE_BLE="${ENABLE_BLE:-1}"
 ENABLE_UAC="${ENABLE_UAC:-0}"
+
+if [[ -z "${BLE_NAME:-}" ]]; then
+  case "$BOARD_VERSION" in
+    1) BLE_NAME="KVM-GO" ;;
+    2) BLE_NAME="Mini-KVM" ;;
+    3) BLE_NAME="KeyMod" ;;
+    *) BLE_NAME="KeyMod" ;;
+  esac
+fi
 
 if [[ "$ENABLE_BLE" == "1" ]]; then
   CFLAGS="$CFLAGS -DENABLE_BLE"
   CFLAGS="$CFLAGS -DBLE_DEVICE_NAME=\"$BLE_NAME\""
+  echo "BLE_DEVICE_NAME=$BLE_NAME"
 fi
 if [[ "$ENABLE_UAC" == "1" ]]; then
   CFLAGS="$CFLAGS -DENABLE_UAC"

@@ -16,6 +16,11 @@ ENABLE_BLE ?= 1
 ENABLE_UAC_ORIGIN := $(origin ENABLE_UAC)
 ENABLE_UAC ?= 1
 
+# External 32KHz crystal oscillator for RTC/BLE timing.
+#   1 = board has external 32KHz crystal (CLK_OSC32K=0) — "Plus" variant
+#   0 = use internal 32K RC oscillator (CLK_OSC32K=1) — "Mini" variant
+ENABLE_OSCILLATOR ?= 0
+
 # USB work modes:
 #   hid_acm        = target HID only, host CDC ACM
 #   hid_uac_acm    = target HID+UAC, host CDC ACM+UAC bridge (default)
@@ -51,7 +56,14 @@ WCHISP ?= ../tools/wchisp_c
 BUILD_CONFIG_STAMP := .build-config.stamp
 
 BOARD_VERSION ?= 1
+# BLE name per board version: 1=KVMGo, 2=Mini-KVM, 3=KeyMod
+ifeq ($(BOARD_VERSION),1)
 BLE_NAME ?= KVM-GO
+else ifeq ($(BOARD_VERSION),2)
+BLE_NAME ?= Mini-KVM
+else
+BLE_NAME ?= KeyMod
+endif
 
 LIBUSB_CFLAGS ?= $(shell $(PKG_CONFIG) --cflags libusb-1.0 2>/dev/null)
 LIBUSB_LIBS ?= $(shell $(PKG_CONFIG) --libs libusb-1.0 2>/dev/null)
@@ -114,8 +126,23 @@ openterface-km-firmware.siz \
 
 
 # All Target
-all: 
-	$(MAKE) --no-print-directory main-build 
+all:
+	$(MAKE) --no-print-directory main-build
+
+# KeyMod build configurations
+keymod-plus:
+	$(MAKE) --no-print-directory BOARD_VERSION=3 ENABLE_OSCILLATOR=1 ENABLE_BLE=1 BLE_NAME=KeyMod
+	@cp openterface-km-firmware.elf openterface-km-firmware-keymod-plus.elf
+	@cp openterface-km-firmware.bin openterface-km-firmware-keymod-plus.bin
+	@cp openterface-km-firmware.hex openterface-km-firmware-keymod-plus.hex
+	@echo "Built: openterface-km-firmware-keymod-plus (oscillator=on, CLK_OSC32K=0)"
+
+keymod-mini:
+	$(MAKE) --no-print-directory BOARD_VERSION=3 ENABLE_OSCILLATOR=0 ENABLE_BLE=1 BLE_NAME=KeyMod
+	@cp openterface-km-firmware.elf openterface-km-firmware-keymod-mini.elf
+	@cp openterface-km-firmware.bin openterface-km-firmware-keymod-mini.bin
+	@cp openterface-km-firmware.hex openterface-km-firmware-keymod-mini.hex
+	@echo "Built: openterface-km-firmware-keymod-mini (oscillator=off, CLK_OSC32K=1)"
 
 main-build: openterface-km-firmware.elf secondary-outputs
 
@@ -145,6 +172,12 @@ endif
 CFLAGS += -include stdint.h -include stddef.h
 CFLAGS += -Dversion=$(BOARD_VERSION)
 CFLAGS += -DUSB_WORK_MODE=$(USB_WORK_MODE_ID)
+
+ifeq ($(ENABLE_OSCILLATOR),1)
+CFLAGS += -DCLK_OSC32K=0
+else
+CFLAGS += -DCLK_OSC32K=1
+endif
 
 # UAC support is derived from USB_WORK_MODE. Legacy ENABLE_UAC=0 maps to hid_acm
 # when USB_WORK_MODE is not specified.
@@ -181,6 +214,7 @@ $(BUILD_CONFIG_STAMP): FORCE
 		printf 'ENABLE_UAC=%s\n' "$(ENABLE_UAC)"; \
 		printf 'ENABLE_BLE=%s\n' "$(ENABLE_BLE)"; \
 		printf 'BLE_NAME=%s\n' "$(BLE_NAME)"; \
+		printf 'ENABLE_OSCILLATOR=%s\n' "$(ENABLE_OSCILLATOR)"; \
 		printf 'BLE_MEMHEAP_SIZE=%s\n' "$(BLE_MEMHEAP_SIZE)"; \
 		printf 'BLE_BUFF_MAX_LEN=%s\n' "$(BLE_BUFF_MAX_LEN)"; \
 		printf 'BLE_TX_NUM_EVENT=%s\n' "$(BLE_TX_NUM_EVENT)"; \
@@ -218,11 +252,11 @@ openterface-km-firmware.siz: openterface-km-firmware.elf
 
 # Other Targets
 clean:
-	-$(RM) $(OBJS)$(SECONDARY_FLASH)$(SECONDARY_LIST)$(SECONDARY_SIZE)$(S_DEPS)$(S_UPPER_DEPS)$(ASM_DEPS)$(ASM_UPPER_DEPS)$(C_DEPS) openterface-km-firmware.elf openterface-km-firmware.hex openterface-km-firmware.bin $(BUILD_CONFIG_STAMP)
+	-$(RM) $(OBJS)$(SECONDARY_FLASH)$(SECONDARY_LIST)$(SECONDARY_SIZE)$(S_DEPS)$(S_UPPER_DEPS)$(ASM_DEPS)$(ASM_UPPER_DEPS)$(C_DEPS) openterface-km-firmware.elf openterface-km-firmware.hex openterface-km-firmware.bin openterface-km-firmware-plus.elf openterface-km-firmware-plus.hex openterface-km-firmware-plus.bin openterface-km-firmware-mini.elf openterface-km-firmware-mini.hex openterface-km-firmware-mini.bin $(BUILD_CONFIG_STAMP)
 
 secondary-outputs: $(SECONDARY_FLASH) $(SECONDARY_LIST) $(SECONDARY_SIZE)
 
-.PHONY: all clean dependents bin flash probe FORCE
+.PHONY: all clean dependents bin flash probe FORCE keymod-plus keymod-mini
 
 FORCE:
 

@@ -95,8 +95,25 @@ void Main_Circulation(void)
         //rgb_state
         RGB_Update();
         USB_ModeConfig_Poll();
-        //SDcard_state
+        //SDcard_state — BLE connection LED overrides when active
+#if defined(ENABLE_BLE) && version == 1
+        if (g_ble_led_state) {
+            static uint8_t last_ble_led = 0;
+            if (g_ble_led_state != last_ble_led) {
+                last_ble_led = g_ble_led_state;
+                switch (g_ble_led_state) {
+                    case 1: RGB_SetBreathMode(0.03f); break;            // advertising → blue pulse
+                    case 2: RGB_SetColorSolid(RGB_GREEN, 1.0f); break;  // connected → solid green
+                    case 3: RGB_SetFlashMode(300, RGB_RED); break;      // disconnected → red flash
+                    case 4: RGB_SetColorSolid(RGB_RED, 1.0f); break;    // error → solid red
+                }
+            }
+        } else {
+            Update_SDcard();
+        }
+#else
         Update_SDcard();
+#endif
         //Enable Bluetooth broadcasting
 #ifdef ENABLE_BLE
         if (version == 1 || version == 3) {
@@ -107,15 +124,11 @@ void Main_Circulation(void)
         USB_DataRx_To_KMHandle();
         //Keyboard and mouse control code sending loop
         USB_SendFromQueues();
-        /* LED debug for DHCP:
-         * 55 = handler entered
-         * 60 = Ethernet src MAC matches expected (02:00:00:00:00:30)
-         * 61 = Ethernet src MAC unknown
-         * 62 = bad DHCP cookie
-         * 63 = chaddr (client MAC in DHCP payload) mismatch
-         * 11 = msg type parsed
-         * 12 = reply queued
-         * otherwise: ON if ecm_polled, OFF if idle */
+        /* PC7 LED debug for DHCP:
+         * 55 = handler entered, 60 = MAC match, 61 = MAC unknown,
+         * 62 = bad cookie, 63 = chaddr mismatch, 11/12 = msg parsed/queued
+         * otherwise: ON if ecm_polled, OFF if idle
+         * On KeyMod (version==3), BLE status overrides when active. */
         uint8_t ecm_polled = 0;
         if (USB_ModeConfig_ActiveModeBridgeAcm()) {
             ACM_Bridge_Poll();
@@ -130,19 +143,33 @@ void Main_Circulation(void)
             ecm_polled = 1;
         }
 
-        if (g_dhcp_led_mode == 60 || g_dhcp_led_mode == 55 || g_dhcp_led_mode == 11 ||
-            g_dhcp_led_mode == 12) {
-            PWM_LED_SetBrightness(100);  /* solid ON = good path */
-        } else if (g_dhcp_led_mode == 61 || g_dhcp_led_mode == 62 || g_dhcp_led_mode == 63) {
-            PWM_LED_SetBrightness(0);    /* OFF = error */
-        } else if (g_ecm_tx_state == 2) {
-            PWM_LED_SetBrightness(100);  /* TX success */
-        } else if (g_ecm_tx_state == 4) {
-            PWM_LED_SetBrightness(0);    /* TX failed */
-        } else if (ecm_polled || g_dhcp_led_mode != 0) {
-            PWM_LED_SetBrightness(100);
-        } else {
-            PWM_LED_SetBrightness(0);
+        uint8_t ble_overrides_pc7 = 0;
+#if defined(ENABLE_BLE) && version == 3
+        if (g_ble_led_state) {
+            ble_overrides_pc7 = 1;
+            switch (g_ble_led_state) {
+                case 1: PWM_LED_SetBrightness((systick_ms / 1000) % 2 ? 100 : 0); break;  // advertising slow blink
+                case 2: PWM_LED_SetBrightness(100); break;                               // connected solid
+                case 3: PWM_LED_SetBrightness((systick_ms / 500) % 2 ? 100 : 0); break;  // disconnected fast blink
+                case 4: PWM_LED_SetBrightness((systick_ms / 80) % 2 ? 100 : 0); break;   // error rapid blink
+            }
+        }
+#endif
+        if (!ble_overrides_pc7) {
+            if (g_dhcp_led_mode == 60 || g_dhcp_led_mode == 55 || g_dhcp_led_mode == 11 ||
+                g_dhcp_led_mode == 12) {
+                PWM_LED_SetBrightness(100);  /* solid ON = good path */
+            } else if (g_dhcp_led_mode == 61 || g_dhcp_led_mode == 62 || g_dhcp_led_mode == 63) {
+                PWM_LED_SetBrightness(0);    /* OFF = error */
+            } else if (g_ecm_tx_state == 2) {
+                PWM_LED_SetBrightness(100);  /* TX success */
+            } else if (g_ecm_tx_state == 4) {
+                PWM_LED_SetBrightness(0);    /* TX failed */
+            } else if (ecm_polled || g_dhcp_led_mode != 0) {
+                PWM_LED_SetBrightness(100);
+            } else {
+                PWM_LED_SetBrightness(0);
+            }
         }
 
 
@@ -217,6 +244,28 @@ int main(void) {
 
     /* Initialize PC7 LED - must be after RGB_Init since RGB configures GPIOC/AFIO */
     PWM_LED_Init();
+
+    /* Distinctive startup blink to verify firmware version is running */
+#if version == 3
+    /* KeyMod: 5 blinks in pattern: 2 fast, pause, 3 fast */
+    for (int i = 0; i < 2; i++) {  /* 2 fast blinks */
+        PWM_LED_SetBrightness(i % 2 ? 100 : 0);
+        Delay_Ms(100);
+    }
+    PWM_LED_SetBrightness(0);
+    Delay_Ms(400);  /* pause */
+    for (int i = 0; i < 6; i++) {  /* 3 fast blinks */
+        PWM_LED_SetBrightness(i % 2 ? 100 : 0);
+        Delay_Ms(100);
+    }
+#elif version == 1
+    /* KVM-Go: magenta flash then white flash */
+    RGB_SetColor(1, 0, 1); Delay_Ms(300);
+    RGB_SetColor(1, 1, 1); Delay_Ms(300);
+    RGB_SetColor(0, 0, 0); Delay_Ms(200);
+#else
+    (void)0;
+#endif
 
     Delay_Ms(1000);
     IWDG_Auto_Init(IWDG_Prescaler_32, 4000);
