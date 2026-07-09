@@ -143,8 +143,8 @@ Expected HID Feature report capability mask for this image is `0x0000001E`, whic
 Mode changes are persistent but take effect after reset or replug because USB descriptors are selected during enumeration:
 
 ```powershell
-python tools/test_usb_mode_hid_windows.py --write-mode 3
-python tools/test_usb_mode_hid_windows.py --reboot
+python tests/test_usb_mode_hid_windows.py --write-mode 3
+python tests/test_usb_mode_hid_windows.py --reboot
 ```
 
 ## Implementation Phases
@@ -186,7 +186,7 @@ python tools/test_usb_mode_hid_windows.py --reboot
 3. Add target CDC ACM RX/TX queues. Done in `APP/acm_bridge.c`.
 4. Add an ACM bridge module that moves bytes between target CDC ACM and host CDC ACM. Done and validated with bidirectional Windows serial transfer tests.
 5. Keep CH9329 command/response traffic separate from bridge traffic unless explicitly routed.
-6. Verify with `tools/test_acm_bridge_windows.ps1` using small packets first, then sustained serial streams.
+6. Verify with `tests/test_acm_bridge_windows.ps1` using small packets first, then sustained serial streams.
 
 ### Phase 5: Mode 4 ECM Bridge
 
@@ -266,7 +266,7 @@ Add persistent mode selection only after static profile builds work.
    - report byte 2: mode for write commands
    - report bytes 3-4: flags for write commands
    - readback bytes mirror the CH9329 status payload: last status, compiled mode, active mode, stored mode, config status, flags, and capability mask
-   - Windows test tool: `python tools/test_usb_mode_hid_windows.py`
+   - Windows test tool: `python tests/test_usb_mode_hid_windows.py`
 6. Add a hardware safe-mode override that forces Mode 1 so a broken USB mode cannot trap the device. Still pending.
 
 Phase 6 provides persistent storage, boot-time validation, CH9329 command plumbing, a Windows-accessible HID Feature report, and delayed reset support.
@@ -286,12 +286,12 @@ The first runtime profile split is implemented in the Mode 4 build. It now inclu
 Runtime mode-switch matrix test:
 
 ```powershell
-python tools/test_usb_mode_switch_matrix_windows.py --plan cycle
-python tools/test_usb_mode_switch_matrix_windows.py --plan matrix
-python tools/test_usb_mode_switch_matrix_windows.py --plan cycle --functional-tests smoke
-python tools/test_usb_mode_switch_matrix_windows.py --plan cycle --modes 3 --functional-tests full --acm-baud-rates 115200 --acm-payload-sizes 16 --acm-iterations 1
-python tools/test_usb_mode_switch_matrix_windows.py --plan cycle --modes 2,3 --control-path ch9329
-python tools/test_usb_mode_switch_matrix_windows.py --plan matrix --modes 1,2,3,4 --no-restore
+python tests/test_usb_mode_switch_matrix_windows.py --plan cycle
+python tests/test_usb_mode_switch_matrix_windows.py --plan matrix
+python tests/test_usb_mode_switch_matrix_windows.py --plan cycle --functional-tests smoke
+python tests/test_usb_mode_switch_matrix_windows.py --plan cycle --modes 3 --functional-tests full --acm-baud-rates 115200 --acm-payload-sizes 16 --acm-iterations 1
+python tests/test_usb_mode_switch_matrix_windows.py --plan cycle --modes 2,3 --control-path ch9329
+python tests/test_usb_mode_switch_matrix_windows.py --plan matrix --modes 1,2,3,4 --no-restore
 ```
 
 The script writes each requested stored mode through HID Feature report `0x30`, requests a reboot, waits for the target HID report to return with the expected active/stored mode, and checks Windows enumeration for the expected CDC ACM and UAC devices. The default `matrix` plan tests every ordered source-to-target transition across modes 1, 2, 3, and 4, then restores the initial mode unless `--no-restore` is passed.
@@ -301,9 +301,9 @@ The same matrix script can test CH9329 command `0x30` over the host CDC ACM path
 Direct CH9329 helper:
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File ./tools/test_usb_mode_ch9329_windows.ps1 -Operation Read
-powershell -NoProfile -ExecutionPolicy Bypass -File ./tools/test_usb_mode_ch9329_windows.ps1 -Operation Write -Mode 3 -NoResponse
-powershell -NoProfile -ExecutionPolicy Bypass -File ./tools/test_usb_mode_ch9329_windows.ps1 -Operation Reboot -NoResponse
+powershell -NoProfile -ExecutionPolicy Bypass -File ./tests/test_usb_mode_ch9329_windows.ps1 -Operation Read
+powershell -NoProfile -ExecutionPolicy Bypass -File ./tests/test_usb_mode_ch9329_windows.ps1 -Operation Write -Mode 3 -NoResponse
+powershell -NoProfile -ExecutionPolicy Bypass -File ./tests/test_usb_mode_ch9329_windows.ps1 -Operation Reboot -NoResponse
 ```
 
 The direct helper can wait for a CDC response frame, but the validated mode-switch test uses `-NoResponse` for write/reboot and verifies the result through the HID status report after re-enumeration. This avoids depending on CDC response delivery while still proving that command `0x30` reached the firmware and changed the persistent stored mode.
@@ -313,14 +313,14 @@ The BLE rawpass path can also carry full CH9329 command `0x30` frames on service
 Direct BLE helper:
 
 ```powershell
-python tools/test_usb_mode_ble_windows.py --write-mode 3 --reboot --verify
-python tools/test_usb_mode_ble_windows.py --write-mode 2 --reboot --verify
+python tests/test_usb_mode_ble_windows.py --write-mode 3 --reboot --verify
+python tests/test_usb_mode_ble_windows.py --write-mode 2 --reboot --verify
 ```
 
 Functional test levels:
 
 - `--functional-tests smoke` adds noninvasive checks after each mode switch. Mode 1 confirms HID control readback and the host CDC ACM management port; Mode 2 confirms PortAudio can list devices and both UAC media functions are present; Mode 3 confirms the bridge COM ports are discoverable; Mode 4 confirms HID readback and notes that stock Windows does not run a CDC ECM data-path test.
-- `--functional-tests full` runs available data-path tests. Mode 3 calls `tools/test_acm_bridge_windows.ps1` with configurable baud rates, payload sizes, iterations, and timeouts. Mode 2 runs `tools/audio_jitter_test.py` with explicit or auto-picked audio input/output indices; use `--audio-output`, `--audio-input`, `--audio-output-name`, `--audio-input-name`, `--audio-duration`, and `--audio-report` to control it.
+- `--functional-tests full` runs available data-path tests. Mode 3 calls `tests/test_acm_bridge_windows.ps1` with configurable baud rates, payload sizes, iterations, and timeouts. Mode 2 runs `tools/audio_jitter_test.py` with explicit or auto-picked audio input/output indices; use `--audio-output`, `--audio-input`, `--audio-output-name`, `--audio-input-name`, `--audio-duration`, and `--audio-report` to control it.
 - Stock Windows usually cannot bind Mode 4 CDC ECM as a network adapter. `--require-ecm-net` can be used on hosts where an ECM-capable driver is installed.
 
 ## Verification Matrix
@@ -329,9 +329,9 @@ Functional test levels:
 | --- | --- | --- | --- |
 | Mode 1 | build `USB_WORK_MODE=hid_acm` | target HID only, host COM port | HID reports, host CDC command path |
 | Mode 2 | build `USB_WORK_MODE=hid_uac_acm` | target HID + audio, host COM + audio | existing UAC bridge test |
-| Mode 3 | build `USB_WORK_MODE=hid_acm_bridge` | target COM, host COM | `tools/test_acm_bridge_windows.ps1` |
+| Mode 3 | build `USB_WORK_MODE=hid_acm_bridge` | target COM, host COM | `tests/test_acm_bridge_windows.ps1` |
 | Mode 4 | build `USB_WORK_MODE=hid_ecm_bridge` | target ECM, host ECM | Ethernet frame bridge |
-| Runtime Mode 4 image | build `USB_WORK_MODE=hid_ecm_bridge` | stored modes 1/2/3/4 select different descriptors after reset | `tools/test_usb_mode_switch_matrix_windows.py --functional-tests smoke`, `--control-path ch9329` from CDC ACM source modes, Mode 3 serial bridge, Mode 2 audio diagnostic, ECM-capable host for Mode 4 |
+| Runtime Mode 4 image | build `USB_WORK_MODE=hid_ecm_bridge` | stored modes 1/2/3/4 select different descriptors after reset | `tests/test_usb_mode_switch_matrix_windows.py --functional-tests smoke`, `--control-path ch9329` from CDC ACM source modes, Mode 3 serial bridge, Mode 2 audio diagnostic, ECM-capable host for Mode 4 |
 
 ## Risks
 
@@ -349,14 +349,14 @@ Current implementation status:
 - Mode 1 and Mode 2 build successfully.
 - Mode 2 remains the default.
 - Mode 3 builds with target CDC ACM descriptors, class requests, endpoint re-arm, and byte bridge forwarding.
-- Mode 3 has a Windows serial bridge test script at `tools/test_acm_bridge_windows.ps1`.
-- Mode 3 passed Windows transfer validation with `tools/test_acm_bridge_windows.ps1` across 5 baud rates, 4 payload sizes, 2 iterations, and both directions.
+- Mode 3 has a Windows serial bridge test script at `tests/test_acm_bridge_windows.ps1`.
+- Mode 3 passed Windows transfer validation with `tests/test_acm_bridge_windows.ps1` across 5 baud rates, 4 payload sizes, 2 iterations, and both directions.
 - Mode 4 now builds with target/host CDC ECM descriptors, MAC address strings, basic ECM EP0 request handling, bulk endpoint setup, network-connection/speed-change notifications, and a frame-preserving bridge queue between target EP6/EP7 and host EP5/EP3.
 - Mode 4 flashed on Windows enumerates target HID interfaces successfully and exposes target/upstream CDC ECM control interfaces as `USB\Class_02&SubClass_06&Prot_00`; Windows reports failed driver install and no network adapter, as expected for stock CDC ECM.
 - Mode 4 frame forwarding still needs validation on an ECM-capable host because stock Windows does not bind a CDC ECM network adapter.
 - Persistent mode storage and HID Feature report control are implemented and hardware-tested for read/write/reset control.
 - The runtime-capable Mode 4 image now builds with Mode 2 included and advertises capability mask `0x0000001E` for modes 1, 2, 3, and 4.
 - Runtime descriptor/endpoint switching is hardware-validated for Mode 4 -> Mode 3 -> Mode 4 and for Mode 4 -> Mode 2. Mode 3 exposed host `COM6` and target `COM7`, and the ACM bridge passed 18 bidirectional transfers across 9600, 115200, and 921600 baud with 16, 64, and 255 byte payloads. Mode 2 exposes host CDC ACM `COM8`, `Host Audio`, and `Target Audio` with OK status on Windows.
-- Runtime mode-switch matrix test script added at `tools/test_usb_mode_switch_matrix_windows.py`. Smoke-tested Mode 2 -> Mode 2 and Mode 2 -> Mode 3 cycles successfully on Windows. Functional testing support is added: Mode 2 smoke confirms PortAudio-visible UAC devices, and Mode 3 full test passed host-to-target and target-to-host ACM transfer at 115200 baud with 16-byte payloads.
-- CH9329 command `0x30` Windows test helper added at `tools/test_usb_mode_ch9329_windows.ps1`, and the matrix script supports `--control-path ch9329`. Firmware now routes host CDC ACM command frames to the CH9329 parser in non-bridge CDC modes and recognizes valid command `0x30` frames before normal Mode 3 bridge forwarding. Hardware retest passed Mode 2 -> Mode 3 and Mode 3 -> Mode 2 using CH9329 write/reboot one-way commands, with HID readback confirming active/stored modes after re-enumeration.
-- BLE rawpass mode-switch command delivery is hardware-tested. BLE writes to service `0xFFF0` RX characteristic `0xFFF2` switched Mode 2 -> Mode 3 and Mode 3 -> Mode 2 with CH9329 command `0x30` frames; HID readback confirmed both transitions after reboot. The Windows helper is `tools/test_usb_mode_ble_windows.py` and scans for `KVM-GO`, `KeyMod`, or service UUID `0xFFF0`.
+- Runtime mode-switch matrix test script added at `tests/test_usb_mode_switch_matrix_windows.py`. Smoke-tested Mode 2 -> Mode 2 and Mode 2 -> Mode 3 cycles successfully on Windows. Functional testing support is added: Mode 2 smoke confirms PortAudio-visible UAC devices, and Mode 3 full test passed host-to-target and target-to-host ACM transfer at 115200 baud with 16-byte payloads.
+- CH9329 command `0x30` Windows test helper added at `tests/test_usb_mode_ch9329_windows.ps1`, and the matrix script supports `--control-path ch9329`. Firmware now routes host CDC ACM command frames to the CH9329 parser in non-bridge CDC modes and recognizes valid command `0x30` frames before normal Mode 3 bridge forwarding. Hardware retest passed Mode 2 -> Mode 3 and Mode 3 -> Mode 2 using CH9329 write/reboot one-way commands, with HID readback confirming active/stored modes after re-enumeration.
+- BLE rawpass mode-switch command delivery is hardware-tested. BLE writes to service `0xFFF0` RX characteristic `0xFFF2` switched Mode 2 -> Mode 3 and Mode 3 -> Mode 2 with CH9329 command `0x30` frames; HID readback confirmed both transitions after reboot. The Windows helper is `tests/test_usb_mode_ble_windows.py` and scans for `KVM-GO`, `KeyMod`, or service UUID `0xFFF0`.

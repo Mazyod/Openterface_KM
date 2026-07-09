@@ -1,6 +1,6 @@
 # ETH Bridge Test Suite
 
-Test script: `tools/test_eth_bridge.py`
+Test script: `tests/test_eth_bridge.py`
 
 ## Overview
 
@@ -79,16 +79,16 @@ The current validated configuration:
 
 ```bash
 # Full bridge test (requires target PC connected)
-python3 tools/test_eth_bridge.py
+python3 tests/test_eth_bridge.py
 
 # BLE + PING only (no target needed)
-python3 tools/test_eth_bridge.py --ble-only
+python3 tests/test_eth_bridge.py --ble-only
 
 # Test specific target IP
-python3 tools/test_eth_bridge.py --target 192.168.11.2 --port 22
+python3 tests/test_eth_bridge.py --target 192.168.11.2 --port 22
 
 # Verbose logging
-python3 tools/test_eth_bridge.py -v
+python3 tests/test_eth_bridge.py -v
 ```
 
 ## Test Results

@@ -164,7 +164,7 @@ SSH banner: SSH-2.0-OpenSSH_10.2
 For a repeatable “connect + banner + exit” check (useful for transport validation loops):
 
 ```bash
-python3 tools/test_ble_eth_ssh.py --target 192.168.11.2 --test-only --ack-window 6
+python3 tests/test_ble_eth_ssh.py --target 192.168.11.2 --test-only --ack-window 6
 ```
 
 Notes:

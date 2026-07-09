@@ -8,7 +8,7 @@ Improve high-flow stability for interactive SSH and terminal workloads without r
 
 ## Status (2026-06-03)
 
-- Phase 1 (sender sliding window) is implemented on the host when metadata ACKs are enabled (window size configurable via `--ack-window` in `tools/test_ble_eth_ssh.py`).
+- Phase 1 (sender sliding window) is implemented on the host when metadata ACKs are enabled (window size configurable via `--ack-window` in `tests/test_ble_eth_ssh.py`).
   - Host ACK matching also treats `expected_seq` as cumulative progress, so a later metadata ACK can unblock earlier pending fragments if individual ACK frames were dropped/delayed.
 - Phase 2 (receiver window feedback) is implemented end-to-end:
   - firmware includes `rx_window` in DATA ACK payloads when supported
@@ -31,7 +31,7 @@ Quick validation workflow:
 
 ```bash
 # Quick smoke: banner through strict ACK/window mode
-python3 tools/test_ble_eth_ssh.py --target 192.168.11.1 --port 22 --test-only --ack-window 6
+python3 tests/test_ble_eth_ssh.py --target 192.168.11.1 --port 22 --test-only --ack-window 6
 
 # Terminal A: start proxy
 python3 tools/ssh_through_ble_eth.py --proxy-only --local-port 18048
@@ -131,7 +131,7 @@ Add a repeatable test path for the transport changes.
 Files:
 
 - `tools/ble_top_poll.sh`
-- `tools/test_ble_eth_ssh.py`
+- `tests/test_ble_eth_ssh.py`
 - `tools/ssh_through_ble_eth.py`
 - `docs/ble-eth-ssh-usage.md`
 
