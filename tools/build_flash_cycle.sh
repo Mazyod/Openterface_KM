@@ -12,7 +12,10 @@ LOCAL_ZIP="/tmp/openterface-km-build.zip"
 REMOTE_ZIP="/tmp/openterface-km-build.zip"
 REMOTE_PROJECT_UNIX="/c/tmp/openterface-km-build"
 REMOTE_BIN="/tmp/openterface-km-build/obj/openterface-km-firmware.bin"
+REMOTE_BL_BIN="/tmp/openterface-km-build/Bootloader/build/bootloader.bin"
 LOCAL_BIN="/tmp/openterface-km-firmware.bin"
+LOCAL_BL_BIN="/tmp/openterface-km-bootloader.bin"
+LOCAL_COMBINED="/tmp/openterface-km-firmware-combined.bin"
 
 WINDOWS_BUILD_DIR='C:\tmp\openterface-km-build'
 WINDOWS_ZIP='C:\tmp\openterface-km-build.zip'
@@ -37,6 +40,7 @@ if [[ -z "${BLE_NAME:-}" ]]; then
 fi
 
 DO_BUILD=1
+DO_BUILD_BOOTLOADER=1
 DO_FLASH=1
 DO_VERIFY=1
 DO_SKIP_ISP=0
@@ -61,6 +65,7 @@ Options:
   --enable-uac <0|1>           Default: 0
   --enable-oscillator <0|1>    Default: 0 (0=internal RC, 1=external 32K crystal)
   --no-build                   Skip zip/upload/remote build/download
+  --no-build-bootloader        Skip bootloader build
   --no-flash                   Skip flash/power-cycle steps
   --no-verify                  Skip post-flash ioreg verification
   --skip-isp                   Skip ISP mode entry (device already in ISP mode)
@@ -164,6 +169,10 @@ parse_args() {
                 DO_BUILD=0
                 shift
                 ;;
+            --no-build-bootloader)
+                DO_BUILD_BOOTLOADER=0
+                shift
+                ;;
             --no-flash)
                 DO_FLASH=0
                 shift
@@ -201,8 +210,9 @@ build_remote() {
 
     log "Creating project zip"
     run_in_root zip -r "$LOCAL_ZIP" \
-        SRC/ Profile/ HAL/ LIB/ APP/ \
+        SRC/ Profile/ HAL/ LIB/ APP/ Bootloader/ \
         tools/build_firmware.sh \
+        Bootloader/build.sh \
         tools/wchisp_c.c \
         HAL/Link.ld \
         -x "*/.DS_Store" -x "__MACOSX/*"
@@ -216,8 +226,29 @@ build_remote() {
     log "Building firmware on remote MSYS2"
     run ssh "$REMOTE_SSH" "${MSYS_BASH} -l -c \"cd ${REMOTE_PROJECT_UNIX} && rm -rf obj && BOARD_VERSION=${BOARD_VERSION} BLE_NAME=${BLE_NAME} ENABLE_BLE=${ENABLE_BLE} ENABLE_UAC=${ENABLE_UAC} ENABLE_OSCILLATOR=${ENABLE_OSCILLATOR} bash tools/build_firmware.sh\""
 
+    if [[ "$DO_BUILD_BOOTLOADER" -eq 1 ]]; then
+        log "Building bootloader on remote MSYS2"
+        run ssh "$REMOTE_SSH" "${MSYS_BASH} -l -c \"cd ${REMOTE_PROJECT_UNIX} && rm -rf Bootloader/build && bash Bootloader/build.sh\""
+
+        log "Downloading built bootloader binary"
+        run scp "${REMOTE_SSH}:${REMOTE_BL_BIN}" "$LOCAL_BL_BIN"
+    fi
+
     log "Downloading built firmware binary"
     run scp "${REMOTE_SSH}:${REMOTE_BIN}" "$LOCAL_BIN"
+
+    if [[ "$DO_BUILD_BOOTLOADER" -eq 1 ]]; then
+        log "Generating combined firmware (bootloader + app)"
+        # Pad bootloader to 16KB
+        run_in_root dd if=/dev/zero bs=16384 count=1 2>/dev/null > "${LOCAL_BL_BIN}.padded"
+        run_in_root dd if="$LOCAL_BL_BIN" of="${LOCAL_BL_BIN}.padded" conv=notrunc 2>/dev/null
+        # Concatenate bootloader + app
+        run_in_root cat "${LOCAL_BL_BIN}.padded" "$LOCAL_BIN" > "$LOCAL_COMBINED"
+        run_in_root rm -f "${LOCAL_BL_BIN}.padded"
+        LOCAL_BIN="$LOCAL_COMBINED"
+
+        log "Combined firmware: $(wc -c < "$LOCAL_COMBINED" | tr -d ' ') bytes"
+    fi
 }
 
 flash_local() {

@@ -46,6 +46,7 @@
 #define CMD_SD_SWITCH  0x17
 #define CMD_DS18B20_GET_TEMP   0x18
 #define CMD_USB_WORK_MODE      0x30
+#define CMD_BOOTLOADER_JUMP   0x40
 // ACK Status Codes
 #define STATUS_SUCCESS        0x00
 #define STATUS_ERR_TIMEOUT    0xE1

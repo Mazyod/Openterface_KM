@@ -286,6 +286,33 @@ void CH9329_DispatchCommand(uint8_t addr, uint8_t cmd_code, uint8_t* pdata, uint
         }
         break;
 
+        //cmd=40, Bootloader jump
+        case CMD_BOOTLOADER_JUMP:
+        {
+            // ponytail: BKP backup reg signals bootloader on next reset
+            RCC_APB1PeriphClockCmd(RCC_APB1Periph_PWR | RCC_APB1Periph_BKP, ENABLE);
+            PWR_BackupAccessCmd(ENABLE);
+            BKP_WriteBackupRegister(BKP_DR1, 0x10AD);
+            BKP_WriteBackupRegister(BKP_DR2, 0xB007);
+
+            /* Verify writes committed */
+            for (volatile uint32_t i = 0; i < 100000; i++);
+            uint32_t v1 = BKP_ReadBackupRegister(BKP_DR1);
+            uint32_t v2 = BKP_ReadBackupRegister(BKP_DR2);
+
+            CH9329_SendResponse(addr, cmd_code, NULL, 0, 1);
+
+            /* Longer delay before reset */
+            for (volatile uint32_t i = 0; i < 500000; i++);
+
+            /* Direct PFIC SCTLR write (alternative reset method) */
+            /* SCTLR at 0xE000ED10, VECTKEY=0x5FA, SYSRESETREQ=bit 1 */
+            *(volatile uint32_t *)0xE000ED10 = 0x5FA0002;
+
+            NVIC_SystemReset();
+            while(1);
+        }
+
         default:
         {
             uint8_t st = STATUS_ERR_CMD;

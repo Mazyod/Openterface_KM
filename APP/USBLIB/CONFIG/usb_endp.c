@@ -38,7 +38,7 @@ static uint8_t USBD_IsCh9329ModeCommandFrame(const uint8_t *buf, uint16_t len)
     if (buf == 0 || len < 6) {
         return 0;
     }
-    if (buf[0] != CH9329_FRAME_HEAD1 || buf[1] != CH9329_FRAME_HEAD2 || buf[3] != CMD_USB_WORK_MODE) {
+    if (buf[0] != CH9329_FRAME_HEAD1 || buf[1] != CH9329_FRAME_HEAD2) {
         return 0;
     }
 
@@ -168,7 +168,12 @@ void EP5_OUT_Callback(void)
     }
     else if (USB_ModeConfig_ActiveModeBridgeEcm())
     {
-        ECM_Bridge_HostRxDone( buf, (uint16_t)len );
+        if (USBD_IsCh9329ModeCommandFrame( buf, (uint16_t)len )) {
+            CH9329_RxBuffer_Add( buf, (uint16_t)len );
+        }
+        else {
+            ECM_Bridge_HostRxDone( buf, (uint16_t)len );
+        }
     }
     else if (USB_ModeConfig_ActiveModeHasHostCdcAcm())
     {
