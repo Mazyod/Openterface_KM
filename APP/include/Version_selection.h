@@ -13,7 +13,7 @@
 #define version 3
 #endif
 // Use this definition to set endpoint 3 as a touchscreen device,or an absolute mouse device
-#define EP3_USE_STYLUS
+// #define EP3_USE_STYLUS
 /* USB Audio Class (UAC) support is derived from USB_WORK_MODE.
  * Mode 1 omits UAC. Mode 2 keeps the existing target/host UAC bridge. */
 #if defined(ENABLE_UAC) && !USB_WORK_MODE_COMPILES_TARGET_UAC
