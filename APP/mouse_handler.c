@@ -34,6 +34,7 @@ void Mouse_Init(void) {
     memset(ABS_MS_Data_Pack, 0, sizeof(ABS_MS_Data_Pack));
     MS_Scan_Done = 0x00;
     MS_Scan_Result = 0x00F0;
+    
 }
 
 /*********************************************************************

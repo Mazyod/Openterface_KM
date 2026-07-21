@@ -21,6 +21,9 @@ ENABLE_UAC ?= 1
 #   0 = use internal 32K RC oscillator (CLK_OSC32K=1) — "Mini" variant
 ENABLE_OSCILLATOR ?= 0
 
+# EP3 USB endpoint mode: 0 = Absolute Mouse (default), 1 = Stylus/Touchscreen
+ENABLE_STYLUS ?= 0
+
 # USB work modes:
 #   hid_acm        = target HID only, host CDC ACM
 #   hid_uac_acm    = target HID+UAC, host CDC ACM+UAC bridge (default)
@@ -185,6 +188,10 @@ ifeq ($(ENABLE_UAC),1)
 CFLAGS += -DENABLE_UAC
 endif
 
+ifeq ($(ENABLE_STYLUS),1)
+CFLAGS += -DEP3_USE_STYLUS
+endif
+
 ifeq ($(ENABLE_BLE),1)
 CFLAGS += -DENABLE_BLE
 CFLAGS += -DBLE_DEVICE_NAME="\"$(BLE_NAME)\""
@@ -213,6 +220,7 @@ $(BUILD_CONFIG_STAMP): FORCE
 		printf 'USB_WORK_MODE=%s\n' "$(USB_WORK_MODE)"; \
 		printf 'ENABLE_UAC=%s\n' "$(ENABLE_UAC)"; \
 		printf 'ENABLE_BLE=%s\n' "$(ENABLE_BLE)"; \
+			printf 'ENABLE_STYLUS=%s\n' "$(ENABLE_STYLUS)"; \
 		printf 'BLE_NAME=%s\n' "$(BLE_NAME)"; \
 		printf 'ENABLE_OSCILLATOR=%s\n' "$(ENABLE_OSCILLATOR)"; \
 		printf 'BLE_MEMHEAP_SIZE=%s\n' "$(BLE_MEMHEAP_SIZE)"; \
