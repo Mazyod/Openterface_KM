@@ -4,6 +4,18 @@ on:
   push:
     branches:
       - main
+  workflow_call:
+    inputs:
+      enable_uac:
+        description: Enable USB Audio Class (UAC)
+        required: false
+        default: '1'
+        type: string
+      enable_ble:
+        description: Enable Bluetooth Low Energy (BLE)
+        required: false
+        default: '1'
+        type: string
   workflow_dispatch:
     inputs:
       enable_uac:
@@ -28,8 +40,8 @@ env:
   BUILD_DIR: ${{ github.workspace }}\build
   GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
   RISC_COMPILER_VERSION: 8.2.0-3.1.1
-  ENABLE_UAC: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.enable_uac || '1' }}
-  ENABLE_BLE: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.enable_ble || '1' }}
+  ENABLE_UAC: ${{ inputs.enable_uac || github.event.inputs.enable_uac || '1' }}
+  ENABLE_BLE: ${{ inputs.enable_ble || github.event.inputs.enable_ble || '1' }}
 
 jobs:
   build:

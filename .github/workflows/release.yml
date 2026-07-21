@@ -1,0 +1,109 @@
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release version (e.g. 0.0.1 — do NOT include the leading "v")'
+        required: true
+        type: string
+      enable_uac:
+        description: Enable USB Audio Class (UAC)
+        required: false
+        default: '1'
+        type: choice
+        options:
+          - '1'
+          - '0'
+      enable_ble:
+        description: Enable Bluetooth Low Energy (BLE)
+        required: false
+        default: '1'
+        type: choice
+        options:
+          - '1'
+          - '0'
+      prerelease:
+        description: Mark as pre-release
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: write
+
+jobs:
+  validate:
+    name: Validate version
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.norm.outputs.tag }}
+    steps:
+      - name: Validate version format
+        id: norm
+        run: |
+          v="${{ inputs.version }}"
+          # Strip a leading 'v' if the user typed one
+          v="${v#v}"
+          if [[ ! "$v" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[A-Za-z0-9.]+)?$ ]]; then
+            echo "::error::Version '$v' is not valid semver (expected X.Y.Z or X.Y.Z-suffix)"
+            exit 1
+          fi
+          echo "tag=v$v" >> "$GITHUB_OUTPUT"
+          echo "Version: v$v -> tag v$v"
+
+  build:
+    name: Build firmware
+    needs: validate
+    uses: ./.github/workflows/build.yml
+    with:
+      enable_uac: ${{ inputs.enable_uac }}
+      enable_ble: ${{ inputs.enable_ble }}
+
+  release:
+    name: Create GitHub Release
+    needs: [validate, build]
+    runs-on: ubuntu-latest
+    env:
+      TAG: ${{ needs.validate.outputs.tag }}
+    steps:
+      - name: Download KVMGo firmware
+        uses: actions/download-artifact@v4
+        with:
+          name: openterface-km-firmware-kvmgo
+          path: artifacts/kvmgo
+
+      - name: Download Mini-KVM v1.2 firmware
+        uses: actions/download-artifact@v4
+        with:
+          name: openterface-km-firmware-mini-kvm-v1.2
+          path: artifacts/mini-kvm
+
+      - name: Download KeyMod Plus firmware
+        uses: actions/download-artifact@v4
+        with:
+          name: openterface-km-firmware-keymod-plus
+          path: artifacts/keymod-plus
+
+      - name: Download KeyMod Mini firmware
+        uses: actions/download-artifact@v4
+        with:
+          name: openterface-km-firmware-keymod-mini
+          path: artifacts/keymod-mini
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.TAG }}
+          name: ${{ env.TAG }}
+          prerelease: ${{ inputs.prerelease }}
+          generate_release_notes: true
+          files: |
+            artifacts/kvmgo/*.hex
+            artifacts/kvmgo/*.bin
+            artifacts/mini-kvm/*.hex
+            artifacts/mini-kvm/*.bin
+            artifacts/keymod-plus/*.hex
+            artifacts/keymod-plus/*.bin
+            artifacts/keymod-mini/*.hex
+            artifacts/keymod-mini/*.bin
