@@ -3,12 +3,22 @@ name: Release
 on:
   workflow_dispatch:
     inputs:
-      version:
-        description: 'Release version (e.g. 0.0.1 — do NOT include the leading "v")'
+      bump:
+        description: 'Version bump level'
         required: true
-        type: string
+        default: 'patch'
+        type: choice
+        options:
+          - patch
+          - minor
+          - major
+      prerelease:
+        description: Mark as pre-release
+        required: false
+        default: false
+        type: boolean
       enable_uac:
-        description: Enable USB Audio Class (UAC)
+        description: 'Build: enable USB Audio Class (UAC)'
         required: false
         default: '1'
         type: choice
@@ -16,45 +26,67 @@ on:
           - '1'
           - '0'
       enable_ble:
-        description: Enable Bluetooth Low Energy (BLE)
+        description: 'Build: enable Bluetooth Low Energy (BLE)'
         required: false
         default: '1'
         type: choice
         options:
           - '1'
           - '0'
-      prerelease:
-        description: Mark as pre-release
-        required: false
-        default: false
-        type: boolean
 
 permissions:
   contents: write
 
 jobs:
-  validate:
-    name: Validate version
+  version:
+    name: Compute next version
     runs-on: ubuntu-latest
     outputs:
-      tag: ${{ steps.norm.outputs.tag }}
+      tag: ${{ steps.bump.outputs.tag }}
+      prev: ${{ steps.bump.outputs.prev }}
     steps:
-      - name: Validate version format
-        id: norm
+      - name: Checkout (full history for tags)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Bump version
+        id: bump
+        shell: bash
         run: |
-          v="${{ inputs.version }}"
-          # Strip a leading 'v' if the user typed one
-          v="${v#v}"
-          if [[ ! "$v" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[A-Za-z0-9.]+)?$ ]]; then
-            echo "::error::Version '$v' is not valid semver (expected X.Y.Z or X.Y.Z-suffix)"
-            exit 1
+          set -euo pipefail
+          bump="${{ inputs.bump }}"
+
+          # Grab the latest semver tag from the repo. If none exists, start from v0.0.0.
+          prev=$(git tag --list 'v*' --sort=-version:refname | head -n1 || true)
+          if [[ -z "$prev" ]]; then
+            echo "No existing release tag found. Starting from v0.0.0."
+            prev="v0.0.0"
+          else
+            echo "Latest tag: $prev"
           fi
-          echo "tag=v$v" >> "$GITHUB_OUTPUT"
-          echo "Version: v$v -> tag v$v"
+
+          # Strip leading 'v' and any pre-release suffix for math
+          base="${prev#v}"
+          base="${base%%[!0-9.]*}"  # drop -rc.1 etc.
+          IFS='.' read -r M m p <<< "$base"
+          M=${M:-0}; m=${m:-0}; p=${p:-0}
+
+          case "$bump" in
+            major) M=$((M+1)); m=0; p=0 ;;
+            minor) m=$((m+1)); p=0 ;;
+            patch) p=$((p+1)) ;;
+            *) echo "::error::Unknown bump level '$bump'" ; exit 1 ;;
+          esac
+
+          new="v${M}.${m}.${p}"
+          echo "Bump: $bump -> $prev  ->  $new"
+          echo "tag=$new" >> "$GITHUB_OUTPUT"
+          echo "prev=$prev" >> "$GITHUB_OUTPUT"
 
   build:
     name: Build firmware
-    needs: validate
+    needs: version
     uses: ./.github/workflows/build.yml
     with:
       enable_uac: ${{ inputs.enable_uac }}
@@ -62,10 +94,11 @@ jobs:
 
   release:
     name: Create GitHub Release
-    needs: [validate, build]
+    needs: [version, build]
     runs-on: ubuntu-latest
     env:
-      TAG: ${{ needs.validate.outputs.tag }}
+      TAG: ${{ needs.version.outputs.tag }}
+      PREV: ${{ needs.version.outputs.prev }}
     steps:
       - name: Download KVMGo firmware
         uses: actions/download-artifact@v4
