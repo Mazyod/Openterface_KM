@@ -95,7 +95,7 @@ void Main_Circulation(void)
         //rgb_state
         RGB_Update();
         USB_ModeConfig_Poll();
-        //SDcard_state — BLE connection LED overrides when active
+        // BLE connection LED overrides when active
 #if defined(ENABLE_BLE) && version == 1
         if (g_ble_led_state) {
             static uint8_t last_ble_led = 0;
@@ -108,9 +108,9 @@ void Main_Circulation(void)
                     case 4: RGB_SetColorSolid(RGB_RED, 1.0f); break;    // error → solid red
                 }
             }
-        } else {
-            Update_SDcard();
         }
+        // KVM-Go: always check PA14 via SD card switch logic
+        Update_SDcard();
 #else
         Update_SDcard();
 #endif
