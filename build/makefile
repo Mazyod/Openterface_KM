@@ -14,7 +14,7 @@ RM := rm -rf
 # BLE support: build with 'make ENABLE_BLE=0' to omit BLE (frees ~14 KB RAM)
 ENABLE_BLE ?= 1
 ENABLE_UAC_ORIGIN := $(origin ENABLE_UAC)
-ENABLE_UAC ?= 1
+ENABLE_UAC ?= 0
 
 # External 32KHz crystal oscillator for RTC/BLE timing.
 #   1 = board has external 32KHz crystal (CLK_OSC32K=0) — "Plus" variant
