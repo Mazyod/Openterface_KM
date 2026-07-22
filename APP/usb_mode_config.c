@@ -83,12 +83,21 @@ void USB_ModeConfig_Init(void)
         g_stored_flags = record->flags;
         g_status |= USB_MODE_CONFIG_STATUS_VALID;
 
-        if (mode_is_runtime_supported(record->selected_mode)) {
+        /* Compiled-mode priority: only use the stored mode if it matches
+         * the compiled mode.  A mismatch means the firmware was rebuilt
+         * with a different USB_WORK_MODE — in that case ignore the stale
+         * flash record so the new descriptor/endpoints take effect
+         * immediately without requiring a manual flash erase.             */
+        if (record->selected_mode == USB_WORK_MODE &&
+            mode_is_runtime_supported(record->selected_mode)) {
             g_active_mode = record->selected_mode;
-        }
-
-        if (record->selected_mode != g_active_mode) {
+        } else {
+            /* Stale record — discard it directly (don't call Clear(),
+             * which would recurse back into Init).                        */
             g_status |= USB_MODE_CONFIG_STATUS_MISMATCH;
+            FLASH_Unlock();
+            FLASH_ErasePage(USB_MODE_CONFIG_FLASH_ADDR);
+            FLASH_Lock();
         }
     }
 }
