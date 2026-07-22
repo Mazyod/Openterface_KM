@@ -88,7 +88,6 @@ Open:
 
 **Settings → Firmware Upgrade → Keyboard & Mouse**
 
-*(Insert screenshot here.)*
 ![penterface-kvm-macos](images/openterface-kvm-macos.jpg)
 
 ---
