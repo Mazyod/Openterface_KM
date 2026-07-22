@@ -43,7 +43,8 @@ static uint8_t mode_is_valid(uint8_t mode)
             mode == USB_WORK_MODE_HID_UAC_ACM ||
             mode == USB_WORK_MODE_HID_ACM_BRIDGE ||
             mode == USB_WORK_MODE_HID_ECM_BRIDGE ||
-            mode == USB_WORK_MODE_HID_UAC_ECM) ? 1u : 0u;
+            mode == USB_WORK_MODE_HID_UAC_ECM ||
+            mode == USB_WORK_MODE_HID_ACM_ECM) ? 1u : 0u;
 }
 
 static uint8_t mode_is_runtime_supported(uint8_t mode)
@@ -53,7 +54,8 @@ static uint8_t mode_is_runtime_supported(uint8_t mode)
             mode == USB_WORK_MODE_HID_UAC_ACM ||
             mode == USB_WORK_MODE_HID_ACM_BRIDGE ||
             mode == USB_WORK_MODE_HID_ECM_BRIDGE ||
-            mode == USB_WORK_MODE_HID_UAC_ECM) ? 1u : 0u;
+            mode == USB_WORK_MODE_HID_UAC_ECM ||
+            mode == USB_WORK_MODE_HID_ACM_ECM) ? 1u : 0u;
 #else
     return (mode == USB_WORK_MODE) ? 1u : 0u;
 #endif
@@ -123,7 +125,8 @@ uint32_t USB_ModeConfig_GetCapabilityMask(void)
             ((uint32_t)1u << USB_WORK_MODE_HID_UAC_ACM) |
            ((uint32_t)1u << USB_WORK_MODE_HID_ACM_BRIDGE) |
            ((uint32_t)1u << USB_WORK_MODE_HID_ECM_BRIDGE) |
-           ((uint32_t)1u << USB_WORK_MODE_HID_UAC_ECM);
+           ((uint32_t)1u << USB_WORK_MODE_HID_UAC_ECM) |
+           ((uint32_t)1u << USB_WORK_MODE_HID_ACM_ECM);
 #else
     return (uint32_t)1u << USB_WORK_MODE;
 #endif
@@ -155,7 +158,8 @@ uint8_t USB_ModeConfig_ModeHasHostCdcAcm(uint8_t mode)
 {
     return (mode == USB_WORK_MODE_HID_ACM ||
             mode == USB_WORK_MODE_HID_UAC_ACM ||
-            mode == USB_WORK_MODE_HID_ACM_BRIDGE) ? 1u : 0u;
+            mode == USB_WORK_MODE_HID_ACM_BRIDGE ||
+            mode == USB_WORK_MODE_HID_ACM_ECM) ? 1u : 0u;
 }
 
 uint8_t USB_ModeConfig_ModeHasTargetCdcEcm(uint8_t mode)
@@ -167,7 +171,8 @@ uint8_t USB_ModeConfig_ModeHasTargetCdcEcm(uint8_t mode)
 uint8_t USB_ModeConfig_ModeHasHostCdcEcm(uint8_t mode)
 {
     return ((mode == USB_WORK_MODE_HID_ECM_BRIDGE) ||
-            (mode == USB_WORK_MODE_HID_UAC_ECM)) ? 1u : 0u;
+            (mode == USB_WORK_MODE_HID_UAC_ECM) ||
+            (mode == USB_WORK_MODE_HID_ACM_ECM)) ? 1u : 0u;
 }
 
 uint8_t USB_ModeConfig_ModeBridgeAcm(uint8_t mode)

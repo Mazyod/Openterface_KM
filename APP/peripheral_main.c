@@ -137,6 +137,13 @@ void Main_Circulation(void)
             ECM_Bridge_Poll();
             ecm_polled = 1;
         }
+#if USB_WORK_MODE_HAS_HOST_ACM_AND_ECM
+        else if (USB_ModeConfig_ActiveModeHasHostCdcEcm() &&
+                 USB_ModeConfig_ActiveModeHasHostCdcAcm()) {
+            ECM_Bridge_Poll();
+            ecm_polled = 1;
+        }
+#endif
         /* Also poll ECM bridge when BLE-Eth has active tunnels or ARP-pending connections */
         else if (BLE_Eth_HasActiveOrPendingConnection()) {
             ECM_Bridge_Poll();

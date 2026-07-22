@@ -26,6 +26,10 @@
 
 uint8_t USBD_Endp1_Busy;
 uint8_t USBD_Endp3_Busy;
+#if USB_WORK_MODE_HAS_HOST_ACM_AND_ECM
+uint8_t USBD_Endp2_Busy;  /* ECM INT busy */
+uint8_t USBD_Endp4_Busy;  /* ECM BULK IN busy */
+#endif
 uint16_t USB_Rx_Cnt=0; 
 
 #if USB_WORK_MODE_COMPILES_HOST_CDC_ACM
@@ -65,6 +69,24 @@ void EP1_IN_Callback (void)
 {
     USBD_Endp1_Busy = 0;
 }
+
+/*********************************************************************
+ * @fn      EP2_IN_Callback
+ *
+ * @brief  Endpoint 2 IN — ECM interrupt notification (combined ACM+ECM mode).
+ *         Called when the interrupt transfer completes.
+ *
+ * @return  none
+ */
+#if USB_WORK_MODE_HAS_HOST_ACM_AND_ECM
+void EP2_IN_Callback (void)
+{
+    if (USB_ModeConfig_ActiveModeHasHostCdcAcm() &&
+        USB_ModeConfig_ActiveModeHasHostCdcEcm()) {
+        USBD_Endp2_Busy = 0;
+    }
+}
+#endif
 
 
 
@@ -133,6 +155,12 @@ void EP4_IN_Callback(void)
 #ifdef ENABLE_UAC
     UAC_USBD_EP3_TxDone();   /* loads next H→T frame into EP4 PMA buffer */
 #endif
+#if USB_WORK_MODE_HAS_HOST_ACM_AND_ECM
+    if (USB_ModeConfig_ActiveModeHasHostCdcAcm() &&
+        USB_ModeConfig_ActiveModeHasHostCdcEcm()) {
+        USBD_Endp4_Busy = 0;
+    }
+#endif
 }
 
 void EP4_OUT_Callback(void)
@@ -199,6 +227,33 @@ void EP5_OUT_Callback(void)
 #endif
 }
 
+#if USB_WORK_MODE_HAS_HOST_ACM_AND_ECM
+/*********************************************************************
+ * @fn      EP6_OUT_Callback
+ *
+ * @brief  Endpoint 6 OUT — ECM bulk data (host → device).
+ *         Only used in combined ACM+ECM mode.
+ *
+ * @return  none
+ */
+void EP6_OUT_Callback(void)
+{
+    if (USB_ModeConfig_ActiveModeHasHostCdcAcm() &&
+        USB_ModeConfig_ActiveModeHasHostCdcEcm()) {
+        uint8_t buf[64];
+        uint32_t len;
+        len = GetEPRxCount( ENDP6 );
+        if (len > sizeof(buf)) {
+            len = sizeof(buf);
+        }
+        PMAToUserBufferCopy( buf, GetEPRxAddr( ENDP6 ), len );
+        ECM_Bridge_HostRxDone( buf, (uint16_t)len );
+        SetEPRxCount( ENDP6, 64 );
+        SetEPRxValid( ENDP6 );
+    }
+}
+#endif
+
 /*********************************************************************
  * @fn      USBD_ENDPx_DataUp
  *
@@ -242,6 +297,38 @@ uint8_t USBD_ENDPx_DataUp( uint8_t endp, uint8_t *pbuf, uint16_t len )
 		USBD_Endp3_Busy = 1;
 		SetEPTxStatus( ENDP3, EP_TX_VALID );
 	}
+#if USB_WORK_MODE_HAS_HOST_ACM_AND_ECM
+    else if( endp == ENDP2 )
+    {
+        /* ECM interrupt notification (combined ACM+ECM mode) */
+        if (len > DEF_USBD_MAX_PACK_SIZE)
+        {
+            return USB_ERROR;
+        }
+        if (USBD_Endp2_Busy)
+        {
+            return USB_ERROR;
+        }
+        USB_SIL_Write( EP2_IN, pbuf, len );
+        USBD_Endp2_Busy = 1;
+        SetEPTxStatus( ENDP2, EP_TX_VALID );
+    }
+    else if( endp == ENDP4 )
+    {
+        /* ECM bulk IN (combined ACM+ECM mode) */
+        if (len > 64)
+        {
+            return USB_ERROR;
+        }
+        if (USBD_Endp4_Busy)
+        {
+            return USB_ERROR;
+        }
+        USB_SIL_Write( EP4_IN, pbuf, len );
+        USBD_Endp4_Busy = 1;
+        SetEPTxStatus( ENDP4, EP_TX_VALID );
+    }
+#endif
 
 	else
 	{

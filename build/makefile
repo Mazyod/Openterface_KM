@@ -26,9 +26,10 @@ ENABLE_STYLUS ?= 0
 
 # USB work modes:
 #   hid_acm        = target HID only, host CDC ACM
-#   hid_uac_acm    = target HID+UAC, host CDC ACM+UAC bridge (default)
+#   hid_uac_acm    = target HID+UAC, host CDC ACM+UAC bridge
 #   hid_acm_bridge = target CDC ACM enumeration scaffold + host CDC ACM
 #   hid_ecm_bridge = target/host CDC ECM enumeration scaffold
+#   hid_acm_ecm    = host CDC ACM + CDC ECM combined (keymod-plus)
 USB_WORK_MODE ?= $(if $(filter 0,$(ENABLE_UAC)),hid_acm,hid_uac_acm)
 
 ifeq ($(USB_WORK_MODE),hid_acm)
@@ -42,6 +43,9 @@ USB_WORK_MODE_ID := 3
 USB_WORK_MODE_ENABLE_UAC := 0
 else ifeq ($(USB_WORK_MODE),hid_ecm_bridge)
 USB_WORK_MODE_ID := 4
+USB_WORK_MODE_ENABLE_UAC := 0
+else ifeq ($(USB_WORK_MODE),hid_acm_ecm)
+USB_WORK_MODE_ID := 6
 USB_WORK_MODE_ENABLE_UAC := 0
 else
 $(error Unsupported USB_WORK_MODE '$(USB_WORK_MODE)')
@@ -134,18 +138,18 @@ all:
 
 # KeyMod build configurations
 keymod-plus:
-	$(MAKE) --no-print-directory BOARD_VERSION=3 ENABLE_OSCILLATOR=1 ENABLE_BLE=1 BLE_NAME=KeyMod USB_WORK_MODE=hid_ecm_bridge
+	$(MAKE) --no-print-directory BOARD_VERSION=3 ENABLE_OSCILLATOR=1 ENABLE_BLE=1 BLE_NAME=KeyMod USB_WORK_MODE=hid_acm_ecm
 	@cp openterface-km-firmware.elf openterface-km-firmware-keymod-plus.elf
 	@cp openterface-km-firmware.bin openterface-km-firmware-keymod-plus.bin
 	@cp openterface-km-firmware.hex openterface-km-firmware-keymod-plus.hex
-	@echo "Built: openterface-km-firmware-keymod-plus (oscillator=on, CLK_OSC32K=0)"
+	@echo "Built: openterface-km-firmware-keymod-plus (oscillator=on, CLK_OSC32K=0, CDC ACM+ECM)"
 
 keymod-mini:
 	$(MAKE) --no-print-directory BOARD_VERSION=3 ENABLE_OSCILLATOR=0 ENABLE_BLE=1 BLE_NAME=KeyMod USB_WORK_MODE=hid_ecm_bridge
 	@cp openterface-km-firmware.elf openterface-km-firmware-keymod-mini.elf
 	@cp openterface-km-firmware.bin openterface-km-firmware-keymod-mini.bin
 	@cp openterface-km-firmware.hex openterface-km-firmware-keymod-mini.hex
-	@echo "Built: openterface-km-firmware-keymod-mini (oscillator=off, CLK_OSC32K=1)"
+	@echo "Built: openterface-km-firmware-keymod-mini (oscillator=off, CLK_OSC32K=1, CDC ECM only)"
 
 main-build: openterface-km-firmware.elf secondary-outputs
 

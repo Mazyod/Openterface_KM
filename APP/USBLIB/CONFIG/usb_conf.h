@@ -13,6 +13,8 @@
 #ifndef __USB_CONF_H
 #define __USB_CONF_H
 
+#include "../../include/usb_work_mode.h"
+
 
 #define EP_NUM                          (15)
 
@@ -51,6 +53,31 @@
 #define USBD_SERIAL_BUSY       USBD_Endp3_Busy
 
 
+/* Combined ACM+ECM mode uses different endpoints for ECM to avoid conflicts:
+ *   ACM: EP1 INT, EP5 BULK OUT, EP3 BULK IN (same as standard ACM)
+ *   ECM: EP2 INT, EP4 BULK IN,  EP6 BULK OUT (shifted to avoid EP1/3/5 conflict) */
+#if USB_WORK_MODE_HAS_HOST_ACM_AND_ECM
+#define ECM_USBD_INT_ENDP        ENDP2
+#define ECM_USBD_BULK_IN_ENDP    ENDP4
+#define ECM_USBD_BULK_OUT_ENDP   ENDP6
+#define ECM_USBD_INT_BUSY        USBD_Endp2_Busy
+#define ECM_USBD_BULK_IN_BUSY    USBD_Endp4_Busy
+#define ECM_USBD_EP_INT_IN       EP2_IN
+#define ECM_USBD_EP_BULK_IN      EP4_IN
+#define ENDP2_TX_ECM_ADDR        (0x150)   /* 16B, ECM INT IN */
+#define ENDP4_TX_ECM_ADDR        (0x160)   /* 64B, ECM BULK IN */
+#define ENDP6_RX_ECM_ADDR        (0x1A0)   /* 64B, ECM BULK OUT */
+#else
+#define ECM_USBD_INT_ENDP        ENDP1
+#define ECM_USBD_BULK_IN_ENDP    ENDP3
+#define ECM_USBD_BULK_OUT_ENDP   ENDP5
+#define ECM_USBD_INT_BUSY        USBD_Endp1_Busy
+#define ECM_USBD_BULK_IN_BUSY    USBD_Endp3_Busy
+#define ECM_USBD_EP_INT_IN       EP1_IN
+#define ECM_USBD_EP_BULK_IN      EP3_IN
+#endif
+
+
 /* ISTR events */
 /* IMR_MSK */
 /* mask defining which events has to be handled */
@@ -71,7 +98,11 @@
 /* CTR service routines */
 /* associated to defined endpoints */
 // #define  EP1_IN_Callback   NOP_Process
+#if USB_WORK_MODE_HAS_HOST_ACM_AND_ECM
+/* EP2 IN and EP6 OUT handled in usb_endp.c for combined ACM+ECM mode */
+#else
 #define  EP2_IN_Callback   NOP_Process
+#endif
 // #define  EP3_IN_Callback   NOP_Process
 // #define  EP4_IN_Callback   NOP_Process  /* UAC ISO IN handled in uac_handler */
 #define  EP5_IN_Callback   NOP_Process
@@ -83,7 +114,11 @@
 #define  EP3_OUT_Callback   NOP_Process
 // #define  EP4_OUT_Callback   NOP_Process  /* EP4 ISO OUT handled in usb_endp.c */
 // #define  EP5_OUT_Callback   NOP_Process  /* CDC bulk OUT relocated to EP5 */
+#if USB_WORK_MODE_HAS_HOST_ACM_AND_ECM
+/* EP6 OUT handled in usb_endp.c for combined ACM+ECM mode */
+#else
 #define  EP6_OUT_Callback   NOP_Process
+#endif
 #define  EP7_OUT_Callback   NOP_Process
 
 #endif /* __USB_CONF_H */

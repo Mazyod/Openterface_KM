@@ -23,7 +23,13 @@
    descriptor advertises 64-byte max packet for EP5/EP3 bulk endpoints. */
 #define ECM_BRIDGE_USBD_PACKET_SIZE     64u
 #define ECM_BRIDGE_TARGET_COMM_IF       4u
+/* In combined ACM+ECM mode, the host-side ECM comm interface is IF2.
+   Otherwise it's IF0 (standalone ECM mode). */
+#if USB_WORK_MODE_HAS_HOST_ACM_AND_ECM
+#define ECM_BRIDGE_HOST_COMM_IF         2u
+#else
 #define ECM_BRIDGE_HOST_COMM_IF         0u
+#endif
 #define ECM_BRIDGE_LINK_SPEED_BPS       12000000u
 #define ECM_ETH_TYPE_IPV4               0x0800u
 #define ECM_ETH_TYPE_VLAN               0x8100u
@@ -149,8 +155,8 @@ volatile uint8_t g_target_garp_sent = 0; /* USBFS EP7 GARP sent */
 /* Diagnostic: 0=idle, 1=GARP queued, 2=DataUp called & SUCCESS, 3=EP3 busy, 4=DataUp FAILED */
 volatile uint8_t g_ecm_tx_state = 0;
 
-extern uint8_t USBD_Endp1_Busy;
-extern uint8_t USBD_Endp3_Busy;
+extern uint8_t ECM_USBD_INT_BUSY;
+extern uint8_t ECM_USBD_BULK_IN_BUSY;
 
 /* Callback invoked when target frame data is pushed to BLE.
    Set by peripheral.c to trigger BLE TX event. */
@@ -1481,12 +1487,12 @@ static void poll_host_notification(void)
     uint8_t packet[16];
     uint8_t len;
 
-    if (g_host_notify_state == 0 || USBD_Endp1_Busy != 0) {
+    if (g_host_notify_state == 0 || ECM_USBD_INT_BUSY != 0) {
         return;
     }
 
     len = make_notification(g_host_notify_state, ECM_BRIDGE_HOST_COMM_IF, packet);
-    if (USBD_ENDPx_DataUp(ENDP1, packet, len) == USB_SUCCESS) {
+    if (USBD_ENDPx_DataUp(ECM_USBD_INT_ENDP, packet, len) == USB_SUCCESS) {
         g_host_notify_state++;
         if (g_host_notify_state > 2) {
             g_host_notify_state = 0;
@@ -1605,20 +1611,20 @@ static void poll_host_tx(void)
         return;
     }
 
-    if (USBD_Endp3_Busy != 0) {
+    if (ECM_USBD_BULK_IN_BUSY != 0) {
         g_ecm_tx_state = 3;
         return;
     }
 
     static uint8_t tx_count = 0;
     if ((++tx_count & 0x0F) == 0) {
-        USB_DEBUG("EP3 TX len=%d busy=%d if_active=%d\r\n", frame->len,
-                   USBD_Endp3_Busy, g_host_ecm_data_if_active);
+        USB_DEBUG("ECM TX len=%d busy=%d if_active=%d\r\n", frame->len,
+                   ECM_USBD_BULK_IN_BUSY, g_host_ecm_data_if_active);
     }
 
     if (g_host_zlp_pending) {
         g_ecm_tx_state = 2;
-        if (USBD_ENDPx_DataUp(ENDP3, frame->data, 0) == USB_SUCCESS) {
+        if (USBD_ENDPx_DataUp(ECM_USBD_BULK_IN_ENDP, frame->data, 0) == USB_SUCCESS) {
             g_ecm_tx_count++;
             g_ecm_tx_state = 2;  /* success */
             g_host_zlp_pending = 0;
@@ -1636,7 +1642,7 @@ static void poll_host_tx(void)
         len = ECM_BRIDGE_USBD_PACKET_SIZE;
     }
 
-    if (USBD_ENDPx_DataUp(ENDP3, &frame->data[g_host_tx_offset], len) == USB_SUCCESS) {
+    if (USBD_ENDPx_DataUp(ECM_USBD_BULK_IN_ENDP, &frame->data[g_host_tx_offset], len) == USB_SUCCESS) {
         g_ecm_tx_count++;
         g_ecm_tx_state = 2;  /* success */
         g_host_tx_offset = (uint16_t)(g_host_tx_offset + len);

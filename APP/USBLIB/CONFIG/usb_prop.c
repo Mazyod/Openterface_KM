@@ -303,6 +303,31 @@ void USBD_SetInterface_Impl(void)
         }
     }
 #endif
+
+#if USB_WORK_MODE_HAS_HOST_ACM_AND_ECM
+    /* Combined ACM+ECM mode: IF3 = CDC-ECM Data interface.
+     * alt=0: EP4 (bulk IN) and EP6 (bulk OUT) disabled;
+     * alt=1: enable EP4/EP6. */
+    if (USB_ModeConfig_ActiveModeHasHostCdcAcm() &&
+        USB_ModeConfig_ActiveModeHasHostCdcEcm() && iface == 3) {
+        if (alt == 1) {
+            _ClearDTOG_TX(ENDP4);
+            _ClearDTOG_RX(ENDP4);
+            SetEPTxStatus(ENDP4, EP_TX_NAK);
+            SetEPRxAddr(ENDP6, ENDP6_RX_ECM_ADDR);
+            SetEPRxCount(ENDP6, 64);
+            _ClearDTOG_RX(ENDP6);
+            SetEPRxStatus(ENDP6, EP_RX_VALID);
+            extern volatile uint8_t g_host_ecm_data_if_active;
+            g_host_ecm_data_if_active = 1;
+        } else {
+            SetEPTxStatus(ENDP4, EP_TX_DIS);
+            SetEPRxStatus(ENDP6, EP_RX_DIS);
+            extern volatile uint8_t g_host_ecm_data_if_active;
+            g_host_ecm_data_if_active = 0;
+        }
+    }
+#endif
 }
 
 /*******************************************************************************
@@ -393,10 +418,45 @@ void USBD_Reset(void)
   SetEPRxStatus(ENDP5, USB_ModeConfig_ActiveModeBridgeEcm() ? EP_RX_DIS : EP_RX_VALID);
   SetEPTxStatus(ENDP5, EP_TX_DIS);
 
+#if USB_WORK_MODE_HAS_HOST_ACM_AND_ECM
+  /* Combined ACM+ECM mode: initialize ECM endpoints (EP2, EP4, EP6) */
+  if (USB_ModeConfig_ActiveModeHasHostCdcAcm() && USB_ModeConfig_ActiveModeHasHostCdcEcm()) {
+      /* EP2: ECM interrupt IN (notification) */
+      SetEPType(ENDP2, EP_INTERRUPT);
+      SetEPTxStatus(ENDP2, EP_TX_NAK);
+      SetEPTxAddr(ENDP2, ENDP2_TX_ECM_ADDR);
+      SetEPRxStatus(ENDP2, EP_RX_DIS);
+      _ClearDTOG_TX(ENDP2);
+      _ClearDTOG_RX(ENDP2);
+
+      /* EP4: ECM bulk IN (device → host) */
+      SetEPType(ENDP4, EP_BULK);
+      SetEPTxStatus(ENDP4, EP_TX_DIS);
+      SetEPTxAddr(ENDP4, ENDP4_TX_ECM_ADDR);
+      SetEPRxStatus(ENDP4, EP_RX_DIS);
+      _ClearDTOG_TX(ENDP4);
+      _ClearDTOG_RX(ENDP4);
+
+      /* EP6: ECM bulk OUT (host → device) */
+      SetEPType(ENDP6, EP_BULK);
+      SetEPRxAddr(ENDP6, ENDP6_RX_ECM_ADDR);
+      SetEPRxCount(ENDP6, 64);
+      _ClearDTOG_RX(ENDP6);
+      _ClearDTOG_TX(ENDP6);
+      /* Start disabled; enabled by SET_INTERFACE(IF3, alt=1) */
+      SetEPRxStatus(ENDP6, EP_RX_DIS);
+      SetEPTxStatus(ENDP6, EP_TX_DIS);
+  }
+#endif
+
   SetDeviceAddress(0);
 
   USBD_Endp3_Busy = 0;
   USBD_Endp1_Busy = 0;
+#if USB_WORK_MODE_HAS_HOST_ACM_AND_ECM
+  USBD_Endp2_Busy = 0;
+  USBD_Endp4_Busy = 0;
+#endif
   if (USB_ModeConfig_ActiveModeBridgeAcm())
   {
     ACM_Bridge_Init();
@@ -405,6 +465,13 @@ void USBD_Reset(void)
   {
     ECM_Bridge_Init();
   }
+#if USB_WORK_MODE_HAS_HOST_ACM_AND_ECM
+  else if (USB_ModeConfig_ActiveModeHasHostCdcEcm() &&
+           USB_ModeConfig_ActiveModeHasHostCdcAcm())
+  {
+    ECM_Bridge_Init();
+  }
+#endif
 
   bDeviceState = ATTACHED;
 }
@@ -476,7 +543,30 @@ uint8_t *USBD_GetStringDescriptor(uint16_t Length)
 RESULT USBD_Get_Interface_Setting(uint8_t Interface, uint8_t AlternateSetting)
 {
 #if USB_WORK_MODE_RUNTIME_PROFILES
-  if (USB_ModeConfig_ActiveModeHasHostCdcEcm())
+  if (USB_ModeConfig_ActiveModeHasHostCdcAcm() && USB_ModeConfig_ActiveModeHasHostCdcEcm())
+  {
+    /* Combined ACM+ECM: IF0/IF1=ACM (alt0 only), IF2=ECM comm (alt0), IF3=ECM data (alt0/1) */
+    if (Interface == 0 || Interface == 2)
+    {
+      if (AlternateSetting > 0)
+        return USB_UNSUPPORT;
+    }
+    else if (Interface == 1)
+    {
+      if (AlternateSetting > 0)
+        return USB_UNSUPPORT;
+    }
+    else if (Interface == 3)
+    {
+      if (AlternateSetting > 1)
+        return USB_UNSUPPORT;
+    }
+    else
+    {
+      return USB_UNSUPPORT;
+    }
+  }
+  else if (USB_ModeConfig_ActiveModeHasHostCdcEcm())
   {
     if (Interface == 0)
     {
@@ -511,6 +601,27 @@ RESULT USBD_Get_Interface_Setting(uint8_t Interface, uint8_t AlternateSetting)
     }
   }
   else if (Interface > 1 || AlternateSetting > 0)
+  {
+    return USB_UNSUPPORT;
+  }
+#elif USB_WORK_MODE_HAS_HOST_CDC_ACM && USB_WORK_MODE_HAS_HOST_CDC_ECM
+  /* Static combined ACM+ECM: IF0/IF1=ACM (alt0), IF2=ECM comm (alt0), IF3=ECM data (alt0/1) */
+  if (Interface == 0 || Interface == 2)
+  {
+    if (AlternateSetting > 0)
+      return USB_UNSUPPORT;
+  }
+  else if (Interface == 1)
+  {
+    if (AlternateSetting > 0)
+      return USB_UNSUPPORT;
+  }
+  else if (Interface == 3)
+  {
+    if (AlternateSetting > 1)
+      return USB_UNSUPPORT;
+  }
+  else
   {
     return USB_UNSUPPORT;
   }
@@ -675,7 +786,7 @@ RESULT USBD_Data_Setup(uint8_t RequestNo)
     {
       CopyRoutine = &USBD_CDC_ECM_SetCtrl;
     }
-    else if (!USB_ModeConfig_ActiveModeHasHostCdcEcm())
+    else if (!USB_ModeConfig_ActiveModeHasHostCdcEcm() || USB_ModeConfig_ActiveModeHasHostCdcAcm())
 #endif
     {
     if (Request_No == CDC_GET_LINE_CODING)

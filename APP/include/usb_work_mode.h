@@ -6,6 +6,7 @@
 #define USB_WORK_MODE_HID_ACM_BRIDGE  3
 #define USB_WORK_MODE_HID_ECM_BRIDGE  4
 #define USB_WORK_MODE_HID_UAC_ECM     5
+#define USB_WORK_MODE_HID_ACM_ECM     6   /* Host CDC-ACM + CDC-ECM combined (keymod-plus) */
 
 #ifndef USB_WORK_MODE
 #define USB_WORK_MODE USB_WORK_MODE_HID_ECM_BRIDGE
@@ -15,7 +16,8 @@
     (USB_WORK_MODE != USB_WORK_MODE_HID_UAC_ACM) && \
     (USB_WORK_MODE != USB_WORK_MODE_HID_ACM_BRIDGE) && \
     (USB_WORK_MODE != USB_WORK_MODE_HID_ECM_BRIDGE) && \
-    (USB_WORK_MODE != USB_WORK_MODE_HID_UAC_ECM)
+    (USB_WORK_MODE != USB_WORK_MODE_HID_UAC_ECM) && \
+    (USB_WORK_MODE != USB_WORK_MODE_HID_ACM_ECM)
 #error Unsupported USB_WORK_MODE.
 #endif
 
@@ -31,11 +33,13 @@
 #define USB_WORK_MODE_HAS_TARGET_CDC_ACM   (USB_WORK_MODE == USB_WORK_MODE_HID_ACM_BRIDGE)
 #define USB_WORK_MODE_HAS_HOST_CDC_ACM     ((USB_WORK_MODE == USB_WORK_MODE_HID_ACM) || \
                                             (USB_WORK_MODE == USB_WORK_MODE_HID_UAC_ACM) || \
-                                            (USB_WORK_MODE == USB_WORK_MODE_HID_ACM_BRIDGE))
+                                            (USB_WORK_MODE == USB_WORK_MODE_HID_ACM_BRIDGE) || \
+                                            (USB_WORK_MODE == USB_WORK_MODE_HID_ACM_ECM))
 #define USB_WORK_MODE_HAS_TARGET_CDC_ECM   ((USB_WORK_MODE == USB_WORK_MODE_HID_ECM_BRIDGE) || \
                                             (USB_WORK_MODE == USB_WORK_MODE_HID_UAC_ECM))
 #define USB_WORK_MODE_HAS_HOST_CDC_ECM     ((USB_WORK_MODE == USB_WORK_MODE_HID_ECM_BRIDGE) || \
-                                            (USB_WORK_MODE == USB_WORK_MODE_HID_UAC_ECM))
+                                            (USB_WORK_MODE == USB_WORK_MODE_HID_UAC_ECM) || \
+                                            (USB_WORK_MODE == USB_WORK_MODE_HID_ACM_ECM))
 
 #define USB_WORK_MODE_BRIDGE_NONE          (USB_WORK_MODE == USB_WORK_MODE_HID_ACM)
 #define USB_WORK_MODE_BRIDGE_UAC           (USB_WORK_MODE == USB_WORK_MODE_HID_UAC_ACM)
@@ -52,5 +56,8 @@
 #define USB_WORK_MODE_COMPILES_BRIDGE_UAC      (USB_WORK_MODE_BRIDGE_UAC || USB_WORK_MODE_RUNTIME_PROFILES)
 #define USB_WORK_MODE_COMPILES_BRIDGE_ACM      (USB_WORK_MODE_BRIDGE_ACM || USB_WORK_MODE_RUNTIME_PROFILES)
 #define USB_WORK_MODE_COMPILES_BRIDGE_ECM      (USB_WORK_MODE_BRIDGE_ECM || USB_WORK_MODE_RUNTIME_PROFILES)
+
+/* Convenience: host-side has both CDC ACM and CDC ECM simultaneously */
+#define USB_WORK_MODE_HAS_HOST_ACM_AND_ECM     (USB_WORK_MODE_HAS_HOST_CDC_ACM && USB_WORK_MODE_HAS_HOST_CDC_ECM)
 
 #endif /* USB_WORK_MODE_H */
