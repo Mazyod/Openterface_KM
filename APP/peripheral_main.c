@@ -99,7 +99,7 @@ void Main_Circulation(void)
 #if defined(ENABLE_BLE) && version == 1
         if (g_ble_led_state) {
             static uint8_t last_ble_led = 0;
-            if (g_ble_led_state != last_ble_led) {
+            iprintf("");f (g_ble_led_state != last_ble_led) {
                 last_ble_led = g_ble_led_state;
                 switch (g_ble_led_state) {
                     case 1: RGB_SetBreathMode(0.03f); break;            // advertising → blue pulse

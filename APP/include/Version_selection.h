@@ -24,6 +24,21 @@
 #define ENABLE_UAC
 #endif
 
+/* TEMP: Disable UAC on both USB interfaces across all firmware versions.
+ * Override the above ENABLE_UAC and all UAC-related compile-time macros.
+ * Restore original behavior by removing the override block below. */
+#undef ENABLE_UAC
+#undef USB_WORK_MODE_HAS_TARGET_UAC
+#undef USB_WORK_MODE_HAS_HOST_UAC
+#undef USB_WORK_MODE_COMPILES_TARGET_UAC
+#undef USB_WORK_MODE_COMPILES_HOST_UAC
+#undef USB_WORK_MODE_COMPILES_BRIDGE_UAC
+#define USB_WORK_MODE_HAS_TARGET_UAC        0
+#define USB_WORK_MODE_HAS_HOST_UAC          0
+#define USB_WORK_MODE_COMPILES_TARGET_UAC   0
+#define USB_WORK_MODE_COMPILES_HOST_UAC     0
+#define USB_WORK_MODE_COMPILES_BRIDGE_UAC   0
+
 /* BLE support — controlled by the build system.
  * Default: enabled (ENABLE_BLE is defined via CFLAGS when ENABLE_BLE=1).
  * To build without BLE (frees ~14 KB RAM: 10 KB heap + 4 KB ring buffers):
