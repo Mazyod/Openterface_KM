@@ -126,34 +126,7 @@ static uint16_t g_host_tx_offset;
 static uint8_t g_host_zlp_pending;
 static uint8_t g_host_notify_state;
 
-/* Track whether the USBFS CDC ECM data interface (IF5, alt=1) has been
-   activated by the host. Set in ch32v20x_usbfs_device.c SET_INTERFACE handler.
-   Prevents sending through EP7 before the host is ready. */
-volatile uint8_t g_host_ecm_data_if_active = 0;   /* USBD EP3 TX activated */
-volatile uint8_t g_target_ecm_data_if_active = 0; /* USBFS EP7 TX activated */
-volatile uint16_t g_ecm_tx_count = 0;             /* successful TX count */
-/* LED debug overrides (set by RX path, read by main loop).
-   0 = no override (normal pattern)
-   1 = HostRxDone called (data arrived on EP6)
-   2 = handle_arp_frame detected ARP (EtherType 0x0806)
-   3 = ARP target IP matched device (reply queued)
-   4 = ARP request but wrong IP
-   5 = frame received but not ARP */
-volatile uint8_t g_ecm_led_override = 0;
-/* DHCP diagnostic LED (separate from g_ecm_led_override so it doesn't
-   get clobbered by every incoming frame).
-   0 = no DHCP activity
-   9 = handle_host_control_frame entered
-   10 = DHCP packet hit port 67 (pause 2s, on 1s)
-   11 = DHCP msg type parsed OK (pause 1s, on 3s)
-   12 = DHCP ACK queued for TX (pause 1s, on 5s) */
-volatile uint8_t g_dhcp_led_mode = 0;
-/* GARP queued flags — reset to 0 in SET_INTERFACE handler on every activation
-   so GARP is re-queued each time the host enables the data interface. */
-volatile uint8_t g_host_garp_sent = 0;   /* USBD EP3 GARP sent */
-volatile uint8_t g_target_garp_sent = 0; /* USBFS EP7 GARP sent */
-/* Diagnostic: 0=idle, 1=GARP queued, 2=DataUp called & SUCCESS, 3=EP3 busy, 4=DataUp FAILED */
-volatile uint8_t g_ecm_tx_state = 0;
+/* Diagnostic variables moved to after #endif (always defined, see bottom of file) */
 
 extern uint8_t ECM_USBD_INT_BUSY;
 extern uint8_t ECM_USBD_BULK_IN_BUSY;
@@ -1780,3 +1753,15 @@ void ECM_Bridge_Poll(void)
 }
 
 #endif /* USB_WORK_MODE_COMPILES_BRIDGE_ECM */
+
+/* Diagnostic/debug variables — always defined so other files can reference
+ * them even when COMPILES_BRIDGE_ECM=0. When ECM is not compiled they stay
+ * at their initial values (unused). */
+volatile uint8_t g_host_ecm_data_if_active = 0;
+volatile uint8_t g_target_ecm_data_if_active = 0;
+volatile uint16_t g_ecm_tx_count = 0;
+volatile uint8_t g_ecm_led_override = 0;
+volatile uint8_t g_dhcp_led_mode = 0;
+volatile uint8_t g_host_garp_sent = 0;
+volatile uint8_t g_target_garp_sent = 0;
+volatile uint8_t g_ecm_tx_state = 0;

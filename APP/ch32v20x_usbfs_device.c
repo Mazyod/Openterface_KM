@@ -1462,6 +1462,7 @@ void USBFS_IRQHandler( void )
                             }
 #endif /* ENABLE_UAC */
 
+#if USB_WORK_MODE_COMPILES_TARGET_CDC_ECM
                             /* CDC-ECM data interface: alt=0 disables endpoints,
                              * alt=1 enables EP6 (bulk OUT) and EP7 (bulk IN).
                              * Interface number depends on whether UAC is present:
@@ -1499,6 +1500,7 @@ void USBFS_IRQHandler( void )
                                     g_target_ecm_data_if_active = 1;
                                 }
                             }
+#endif /* USB_WORK_MODE_COMPILES_TARGET_CDC_ECM */
                             break;
 
                         /* host get status of specified device/interface/end-points */

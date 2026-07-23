@@ -318,13 +318,17 @@ void USBD_SetInterface_Impl(void)
             SetEPRxCount(ENDP6, 64);
             _ClearDTOG_RX(ENDP6);
             SetEPRxStatus(ENDP6, EP_RX_VALID);
+#if USB_WORK_MODE_COMPILES_BRIDGE_ECM
             extern volatile uint8_t g_host_ecm_data_if_active;
             g_host_ecm_data_if_active = 1;
+#endif
         } else {
             SetEPTxStatus(ENDP4, EP_TX_DIS);
             SetEPRxStatus(ENDP6, EP_RX_DIS);
+#if USB_WORK_MODE_COMPILES_BRIDGE_ECM
             extern volatile uint8_t g_host_ecm_data_if_active;
             g_host_ecm_data_if_active = 0;
+#endif
         }
     }
 #endif
