@@ -26,13 +26,11 @@ ENABLE_STYLUS ?= 0
 
 BOARD_VERSION ?= 1
 
-# KVMGo (v1) and Mini-KVM (v2): force no UAC — use hid_acm only.
-# This ensures audio interfaces are never exposed on these firmware versions.
-# Use 'override' to ensure command-line arguments cannot enable UAC on these boards.
-ifneq ($(filter 1 2,$(BOARD_VERSION)),)
+# All firmware versions: force CDC ACM only (hid_acm).
+# No UAC audio interfaces, no ECM networking, no bridge modes.
+# This ensures consistent serial command interface across all boards.
 override ENABLE_UAC := 0
 override USB_WORK_MODE := hid_acm
-endif
 
 # USB work modes:
 #   hid_acm        = target HID only, host CDC ACM
@@ -147,18 +145,18 @@ all:
 
 # KeyMod build configurations
 keymod-plus:
-	$(MAKE) --no-print-directory BOARD_VERSION=3 ENABLE_OSCILLATOR=1 ENABLE_BLE=1 BLE_NAME=KeyMod USB_WORK_MODE=hid_acm_ecm
+	$(MAKE) --no-print-directory BOARD_VERSION=3 ENABLE_OSCILLATOR=1 ENABLE_BLE=1 BLE_NAME=KeyMod
 	@cp openterface-km-firmware.elf openterface-km-firmware-keymod-plus.elf
 	@cp openterface-km-firmware.bin openterface-km-firmware-keymod-plus.bin
 	@cp openterface-km-firmware.hex openterface-km-firmware-keymod-plus.hex
-	@echo "Built: openterface-km-firmware-keymod-plus (oscillator=on, CLK_OSC32K=0, CDC ACM+ECM)"
+	@echo "Built: openterface-km-firmware-keymod-plus (oscillator=on, CLK_OSC32K=0, CDC ACM)"
 
 keymod-mini:
-	$(MAKE) --no-print-directory BOARD_VERSION=3 ENABLE_OSCILLATOR=0 ENABLE_BLE=1 BLE_NAME=KeyMod USB_WORK_MODE=hid_ecm_bridge
+	$(MAKE) --no-print-directory BOARD_VERSION=3 ENABLE_OSCILLATOR=0 ENABLE_BLE=1 BLE_NAME=KeyMod
 	@cp openterface-km-firmware.elf openterface-km-firmware-keymod-mini.elf
 	@cp openterface-km-firmware.bin openterface-km-firmware-keymod-mini.bin
 	@cp openterface-km-firmware.hex openterface-km-firmware-keymod-mini.hex
-	@echo "Built: openterface-km-firmware-keymod-mini (oscillator=off, CLK_OSC32K=1, CDC ECM only)"
+	@echo "Built: openterface-km-firmware-keymod-mini (oscillator=off, CLK_OSC32K=1, CDC ACM)"
 
 main-build: openterface-km-firmware.elf secondary-outputs
 
@@ -189,11 +187,9 @@ CFLAGS += -include stdint.h -include stddef.h
 CFLAGS += -Dversion=$(BOARD_VERSION)
 CFLAGS += -DUSB_WORK_MODE=$(USB_WORK_MODE_ID)
 
-# KVMGo (v1) and Mini-KVM (v2): disable runtime profile switching to prevent
-# accidental UAC mode activation. These versions have no audio hardware.
-ifneq ($(filter 1 2,$(BOARD_VERSION)),)
+# All firmware versions: disable runtime profile switching to prevent
+# accidental mode changes. All boards use hid_acm only.
 CFLAGS += -DUSB_WORK_MODE_RUNTIME_PROFILES=0
-endif
 
 ifeq ($(ENABLE_OSCILLATOR),1)
 CFLAGS += -DCLK_OSC32K=0
