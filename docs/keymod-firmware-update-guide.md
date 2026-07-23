@@ -75,12 +75,17 @@ Your KeyMod is now ready for firmware flashing.
 
 Launch the appropriate application.
 
-### Openterface KVM (Windoews/Linux)
+### Openterface KVM (Windows/Linux)
 
 Open:
 
 **Menu → Advanced → WCH ISP Flash**
-![penterface-kvm-qt](images/openterface-kvm-qt.jpg)
+
+![Openterface KVM (Windows) – Main window with menu](images/openterface-kvm-qt.jpg)
+
+From the menu, navigate to **Advanced → WCH ISP Flash** to open the flash tool.
+
+![Openterface KVM (Windows) – Advanced menu → WCH ISP Flash](images/openterface-kvm-qt-setting.png)
 
 ### Openterface KVM (MacOS)
 
@@ -96,12 +101,18 @@ This opens the **WCH Firmware Flash** panel where you can scan, connect, choose 
 
 # Step 3 — Connect to Your KeyMod
 
-### Openterface QT (Windows/Linux)
+### Openterface KVM (Windows/Linux)
 
 1. Click **Scan**.
 2. Wait for your KeyMod to appear.
 3. Select it.
 4. Click **Connect**.
+
+![Openterface KVM (Windows) – Click Scan to detect devices](images/openterface-kvm-qt-scan.png)
+
+After scanning, select your KeyMod from the device list and click **Connect**.
+
+![Openterface KVM (Windows) – Connect to KeyMod](images/openterface-kvm-qt-connect.png)
 
 ### Openterface KVM (MacOS)
 
@@ -126,11 +137,13 @@ If no device appears, return to **Step 1** and enter Update Mode again.
 
 # Step 4 — Choose the Firmware
 
-### Openterface QT (Windows/Linux)
+### Openterface KVM (Windows/Linux)
 
 Click **Browse**.
 
 Select the firmware file you downloaded.
+
+![Openterface KVM (Windows) – Browse to choose firmware file](images/openterface-kvm-qt-choose.png)
 
 ### Openterface KVM (MacOS)
 
