@@ -86,25 +86,39 @@ Open:
 
 Open:
 
-**Settings → Firmware Upgrade → Keyboard & Mouse**
+**Settings → Firmware Update Tool...**
 
-![penterface-kvm-macos](images/openterface-kvm-macos.jpg)
+![Openterface KVM macOS – Settings menu](images/openterface-kvm-macos-settings.png)
+
+This opens the **WCH Firmware Flash** panel where you can scan, connect, choose firmware, and flash.
 
 ---
 
 # Step 3 — Connect to Your KeyMod
+
+### Openterface QT (Windows/Linux)
 
 1. Click **Scan**.
 2. Wait for your KeyMod to appear.
 3. Select it.
 4. Click **Connect**.
 
-If everything is working correctly, the application will display:
+### Openterface KVM (MacOS)
 
-* Chip model
-* Bootloader version
+1. In the **WCH Firmware Flash** panel, click **Scan** to detect devices.
+2. Wait for your KeyMod to appear in the **Device** section.
+3. Click **Connect** to establish a connection.
+
+![Openterface KVM macOS – Scan for device](images/openterface-vkm-macos-scan.png)
+
+After connecting, the **Device** section will show your KeyMod's details:
+
+* Chip model (e.g. CH32V208GBU6)
+* Bootloader version (e.g. BTVER: 02.80)
 * Device UID
 * Flash protection status
+
+![Openterface KVM macOS – Device connected](images/openterface-kvm-macos-connect.png)
 
 If no device appears, return to **Step 1** and enter Update Mode again.
 
@@ -112,9 +126,19 @@ If no device appears, return to **Step 1** and enter Update Mode again.
 
 # Step 4 — Choose the Firmware
 
-Click **Browse** (or **Choose**).
+### Openterface QT (Windows/Linux)
+
+Click **Browse**.
 
 Select the firmware file you downloaded.
+
+### Openterface KVM (MacOS)
+
+Click **Choose...** to open the macOS file picker.
+
+Select the firmware file you downloaded.
+
+![Openterface KVM macOS – Choose firmware file](images/openterface-kvm-macos-choose.png)
 
 Supported formats:
 
