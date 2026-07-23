@@ -24,6 +24,16 @@ ENABLE_OSCILLATOR ?= 0
 # EP3 USB endpoint mode: 0 = Absolute Mouse (default), 1 = Stylus/Touchscreen
 ENABLE_STYLUS ?= 0
 
+BOARD_VERSION ?= 1
+
+# KVMGo (v1) and Mini-KVM (v2): force no UAC — use hid_acm only.
+# This ensures audio interfaces are never exposed on these firmware versions.
+# Use 'override' to ensure command-line arguments cannot enable UAC on these boards.
+ifneq ($(filter 1 2,$(BOARD_VERSION)),)
+override ENABLE_UAC := 0
+override USB_WORK_MODE := hid_acm
+endif
+
 # USB work modes:
 #   hid_acm        = target HID only, host CDC ACM
 #   hid_uac_acm    = target HID+UAC, host CDC ACM+UAC bridge
@@ -62,7 +72,6 @@ PKG_CONFIG ?= pkg-config
 WCHISP ?= ../tools/wchisp_c
 BUILD_CONFIG_STAMP := .build-config.stamp
 
-BOARD_VERSION ?= 1
 # BLE name per board version: 1=KVMGo, 2=Mini-KVM, 3=KeyMod
 ifeq ($(BOARD_VERSION),1)
 BLE_NAME ?= KVM-GO
@@ -179,6 +188,12 @@ endif
 CFLAGS += -include stdint.h -include stddef.h
 CFLAGS += -Dversion=$(BOARD_VERSION)
 CFLAGS += -DUSB_WORK_MODE=$(USB_WORK_MODE_ID)
+
+# KVMGo (v1) and Mini-KVM (v2): disable runtime profile switching to prevent
+# accidental UAC mode activation. These versions have no audio hardware.
+ifneq ($(filter 1 2,$(BOARD_VERSION)),)
+CFLAGS += -DUSB_WORK_MODE_RUNTIME_PROFILES=0
+endif
 
 ifeq ($(ENABLE_OSCILLATOR),1)
 CFLAGS += -DCLK_OSC32K=0

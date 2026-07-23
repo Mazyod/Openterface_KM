@@ -858,7 +858,7 @@ RESULT USBD_NoData_Setup(uint8_t RequestNo)
       USBD_CDC_ECM_PacketFilter = pInformation->USBwValue;
       return USB_SUCCESS;
     }
-    if (USB_ModeConfig_ActiveModeHasHostCdcEcm())
+    if (USB_ModeConfig_ActiveModeHasHostCdcEcm() && !USB_ModeConfig_ActiveModeHasHostCdcAcm())
     {
       return USB_UNSUPPORT;
     }
