@@ -178,6 +178,14 @@ void USBD_Status_In(void)
             {
             UART2_USB_Init();
             }
+            /* Enable ACM data IN endpoint (EP3) after line coding is set.
+             * EP3 starts as EP_TX_DIS in USBD_Reset(); it must be enabled
+             * so the host COM-port driver can read data.                    */
+            if (USB_ModeConfig_ActiveModeHasHostCdcAcm())
+            {
+                _ClearDTOG_TX(ENDP3);
+                SetEPTxStatus(ENDP3, EP_TX_NAK);
+            }
         }
     }
 }

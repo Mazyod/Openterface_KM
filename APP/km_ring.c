@@ -132,8 +132,9 @@ void USB_SendFromQueues(void) {
     }
 
     if (USB_ModeConfig_ActiveModeHasHostCdcEcm()) {
-        resp_queue.head = resp_queue.tail;
-        return;
+        /* In combined ACM+ECM mode, ACM responses still need to be sent via
+         * EP3 (ACM bulk IN). ECM bridge has its own separate response handling
+         * in ecm_bridge.c, so we don't clear the queue here.               */
     }
 
     while (resp_queue.head != resp_queue.tail) {
