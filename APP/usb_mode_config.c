@@ -174,7 +174,8 @@ uint8_t USB_ModeConfig_ModeHasHostCdcAcm(uint8_t mode)
 uint8_t USB_ModeConfig_ModeHasTargetCdcEcm(uint8_t mode)
 {
     return ((mode == USB_WORK_MODE_HID_ECM_BRIDGE) ||
-            (mode == USB_WORK_MODE_HID_UAC_ECM)) ? 1u : 0u;
+            (mode == USB_WORK_MODE_HID_UAC_ECM) ||
+            (mode == USB_WORK_MODE_HID_ACM_ECM)) ? 1u : 0u;
 }
 
 uint8_t USB_ModeConfig_ModeHasHostCdcEcm(uint8_t mode)
@@ -192,7 +193,8 @@ uint8_t USB_ModeConfig_ModeBridgeAcm(uint8_t mode)
 uint8_t USB_ModeConfig_ModeBridgeEcm(uint8_t mode)
 {
     return ((mode == USB_WORK_MODE_HID_ECM_BRIDGE) ||
-            (mode == USB_WORK_MODE_HID_UAC_ECM)) ? 1u : 0u;
+            (mode == USB_WORK_MODE_HID_UAC_ECM) ||
+            (mode == USB_WORK_MODE_HID_ACM_ECM)) ? 1u : 0u;
 }
 
 uint8_t USB_ModeConfig_ModeBridgeUac(uint8_t mode)
