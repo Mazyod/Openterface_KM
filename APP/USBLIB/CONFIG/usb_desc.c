@@ -19,9 +19,17 @@ const uint8_t  USBD_DeviceDescriptor[] = {
     USBD_SIZE_DEVICE_DESC,           // bLength
     0x01,                           // bDescriptorType
     0x10, 0x01,                     // bcdUSB 1.10
+#if USB_WORK_MODE_HAS_HOST_CDC_ECM
+    /* Composite device with IAD (CDC ACM + CDC ECM) */
     0xEF,                           // bDeviceClass: Miscellaneous (IAD for composite)
     0x02,                           // bDeviceSubClass: Common Class
     0x01,                           // bDeviceProtocol: Interface Association Descriptor
+#else
+    /* Single-function CDC device (CDC ACM only) */
+    0x02,                           // bDeviceClass: Communications (CDC)
+    0x00,                           // bDeviceSubClass: No subclass
+    0x00,                           // bDeviceProtocol: No specific protocol
+#endif
     DEF_USBD_UEP0_SIZE,             // bMaxPacketSize0
     0x86, 0x1A,                     // idVendor
     0x0C, 0xFE,                     // idProduct

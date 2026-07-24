@@ -25,6 +25,7 @@ on:
 env:
   SOURCE_DIR: ${{ github.workspace }}
   BUILD_DIR: ${{ github.workspace }}\build
+  OUTPUT_DIR: ${{ github.workspace }}\output
   GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
   RISC_COMPILER_VERSION: 8.2.0-3.1.1
   ENABLE_BLE: ${{ inputs.enable_ble || github.event.inputs.enable_ble || '1' }}
@@ -36,6 +37,9 @@ jobs:
     steps:
     - name: Checkout code
       uses: actions/checkout@v2
+
+    - name: Create output directory
+      run: New-Item -ItemType Directory -Path "${{ env.OUTPUT_DIR }}" -Force
 
     - name: Cache chocolatey packages
       uses: actions/cache@v3
@@ -98,12 +102,12 @@ jobs:
           exit 1
         }
 
-        # Copy artifact with version suffix
-        Copy-Item "${{ env.BUILD_DIR }}\openterface-km-firmware.hex" "${{ env.BUILD_DIR }}\openterface-km-firmware-kvmgo.hex"
-        Copy-Item "${{ env.BUILD_DIR }}\openterface-km-firmware.bin" "${{ env.BUILD_DIR }}\openterface-km-firmware-kvmgo.bin"
-        Copy-Item "${{ env.BUILD_DIR }}\openterface-km-firmware.elf" "${{ env.BUILD_DIR }}\openterface-km-firmware-kvmgo.elf"
-        Copy-Item "${{ env.BUILD_DIR }}\openterface-km-firmware.map" "${{ env.BUILD_DIR }}\openterface-km-firmware-kvmgo.map"
-        Copy-Item "${{ env.BUILD_DIR }}\openterface-km-firmware.siz" "${{ env.BUILD_DIR }}\openterface-km-firmware-kvmgo.siz"
+        # Copy artifact with version suffix to output directory
+        Copy-Item "${{ env.BUILD_DIR }}\openterface-km-firmware.hex" "${{ env.OUTPUT_DIR }}\openterface-km-firmware-kvmgo.hex"
+        Copy-Item "${{ env.BUILD_DIR }}\openterface-km-firmware.bin" "${{ env.OUTPUT_DIR }}\openterface-km-firmware-kvmgo.bin"
+        Copy-Item "${{ env.BUILD_DIR }}\openterface-km-firmware.elf" "${{ env.OUTPUT_DIR }}\openterface-km-firmware-kvmgo.elf"
+        Copy-Item "${{ env.BUILD_DIR }}\openterface-km-firmware.map" "${{ env.OUTPUT_DIR }}\openterface-km-firmware-kvmgo.map"
+        Copy-Item "${{ env.BUILD_DIR }}\openterface-km-firmware.siz" "${{ env.OUTPUT_DIR }}\openterface-km-firmware-kvmgo.siz"
 
     - name: Build Mini-KVM v1.2 (version 2)
       run: |
@@ -125,12 +129,12 @@ jobs:
           exit 1
         }
 
-        # Copy artifact with version suffix
-        Copy-Item "${{ env.BUILD_DIR }}\openterface-km-firmware.hex" "${{ env.BUILD_DIR }}\openterface-km-firmware-mini-kvm.hex"
-        Copy-Item "${{ env.BUILD_DIR }}\openterface-km-firmware.bin" "${{ env.BUILD_DIR }}\openterface-km-firmware-mini-kvm.bin"
-        Copy-Item "${{ env.BUILD_DIR }}\openterface-km-firmware.elf" "${{ env.BUILD_DIR }}\openterface-km-firmware-mini-kvm.elf"
-        Copy-Item "${{ env.BUILD_DIR }}\openterface-km-firmware.map" "${{ env.BUILD_DIR }}\openterface-km-firmware-mini-kvm.map"
-        Copy-Item "${{ env.BUILD_DIR }}\openterface-km-firmware.siz" "${{ env.BUILD_DIR }}\openterface-km-firmware-mini-kvm.siz"
+        # Copy artifact with version suffix to output directory
+        Copy-Item "${{ env.BUILD_DIR }}\openterface-km-firmware.hex" "${{ env.OUTPUT_DIR }}\openterface-km-firmware-mini-kvm.hex"
+        Copy-Item "${{ env.BUILD_DIR }}\openterface-km-firmware.bin" "${{ env.OUTPUT_DIR }}\openterface-km-firmware-mini-kvm.bin"
+        Copy-Item "${{ env.BUILD_DIR }}\openterface-km-firmware.elf" "${{ env.OUTPUT_DIR }}\openterface-km-firmware-mini-kvm.elf"
+        Copy-Item "${{ env.BUILD_DIR }}\openterface-km-firmware.map" "${{ env.OUTPUT_DIR }}\openterface-km-firmware-mini-kvm.map"
+        Copy-Item "${{ env.BUILD_DIR }}\openterface-km-firmware.siz" "${{ env.OUTPUT_DIR }}\openterface-km-firmware-mini-kvm.siz"
 
     - name: Build KeyMod Plus (version 3, external oscillator)
       run: |
@@ -152,12 +156,12 @@ jobs:
           exit 1
         }
 
-        # Copy artifact with version suffix
-        Copy-Item "${{ env.BUILD_DIR }}\openterface-km-firmware.hex" "${{ env.BUILD_DIR }}\openterface-km-firmware-keymod-plus.hex"
-        Copy-Item "${{ env.BUILD_DIR }}\openterface-km-firmware.bin" "${{ env.BUILD_DIR }}\openterface-km-firmware-keymod-plus.bin"
-        Copy-Item "${{ env.BUILD_DIR }}\openterface-km-firmware.elf" "${{ env.BUILD_DIR }}\openterface-km-firmware-keymod-plus.elf"
-        Copy-Item "${{ env.BUILD_DIR }}\openterface-km-firmware.map" "${{ env.BUILD_DIR }}\openterface-km-firmware-keymod-plus.map"
-        Copy-Item "${{ env.BUILD_DIR }}\openterface-km-firmware.siz" "${{ env.BUILD_DIR }}\openterface-km-firmware-keymod-plus.siz"
+        # Copy artifact with version suffix to output directory
+        Copy-Item "${{ env.BUILD_DIR }}\openterface-km-firmware.hex" "${{ env.OUTPUT_DIR }}\openterface-km-firmware-keymod-plus.hex"
+        Copy-Item "${{ env.BUILD_DIR }}\openterface-km-firmware.bin" "${{ env.OUTPUT_DIR }}\openterface-km-firmware-keymod-plus.bin"
+        Copy-Item "${{ env.BUILD_DIR }}\openterface-km-firmware.elf" "${{ env.OUTPUT_DIR }}\openterface-km-firmware-keymod-plus.elf"
+        Copy-Item "${{ env.BUILD_DIR }}\openterface-km-firmware.map" "${{ env.OUTPUT_DIR }}\openterface-km-firmware-keymod-plus.map"
+        Copy-Item "${{ env.BUILD_DIR }}\openterface-km-firmware.siz" "${{ env.OUTPUT_DIR }}\openterface-km-firmware-keymod-plus.siz"
 
     - name: Build KeyMod Mini (version 3, internal RC oscillator)
       run: |
@@ -179,12 +183,12 @@ jobs:
           exit 1
         }
 
-        # Copy artifact with version suffix
-        Copy-Item "${{ env.BUILD_DIR }}\openterface-km-firmware.hex" "${{ env.BUILD_DIR }}\openterface-km-firmware-keymod-mini.hex"
-        Copy-Item "${{ env.BUILD_DIR }}\openterface-km-firmware.bin" "${{ env.BUILD_DIR }}\openterface-km-firmware-keymod-mini.bin"
-        Copy-Item "${{ env.BUILD_DIR }}\openterface-km-firmware.elf" "${{ env.BUILD_DIR }}\openterface-km-firmware-keymod-mini.elf"
-        Copy-Item "${{ env.BUILD_DIR }}\openterface-km-firmware.map" "${{ env.BUILD_DIR }}\openterface-km-firmware-keymod-mini.map"
-        Copy-Item "${{ env.BUILD_DIR }}\openterface-km-firmware.siz" "${{ env.BUILD_DIR }}\openterface-km-firmware-keymod-mini.siz"
+        # Copy artifact with version suffix to output directory
+        Copy-Item "${{ env.BUILD_DIR }}\openterface-km-firmware.hex" "${{ env.OUTPUT_DIR }}\openterface-km-firmware-keymod-mini.hex"
+        Copy-Item "${{ env.BUILD_DIR }}\openterface-km-firmware.bin" "${{ env.OUTPUT_DIR }}\openterface-km-firmware-keymod-mini.bin"
+        Copy-Item "${{ env.BUILD_DIR }}\openterface-km-firmware.elf" "${{ env.OUTPUT_DIR }}\openterface-km-firmware-keymod-mini.elf"
+        Copy-Item "${{ env.BUILD_DIR }}\openterface-km-firmware.map" "${{ env.OUTPUT_DIR }}\openterface-km-firmware-keymod-mini.map"
+        Copy-Item "${{ env.BUILD_DIR }}\openterface-km-firmware.siz" "${{ env.OUTPUT_DIR }}\openterface-km-firmware-keymod-mini.siz"
 
     - name: Upload KVMGo firmware
       uses: actions/upload-artifact@v4
@@ -192,8 +196,8 @@ jobs:
         name: openterface-km-firmware-kvmgo
         if-no-files-found: error
         path: |
-          ${{ env.BUILD_DIR }}\openterface-km-firmware-kvmgo.hex
-          ${{ env.BUILD_DIR }}\openterface-km-firmware-kvmgo.bin
+          ${{ env.OUTPUT_DIR }}\openterface-km-firmware-kvmgo.hex
+          ${{ env.OUTPUT_DIR }}\openterface-km-firmware-kvmgo.bin
 
     - name: Upload Mini-KVM v1.2 firmware
       uses: actions/upload-artifact@v4
@@ -201,8 +205,8 @@ jobs:
         name: openterface-km-firmware-mini-kvm-v1.2
         if-no-files-found: error
         path: |
-          ${{ env.BUILD_DIR }}\openterface-km-firmware-mini-kvm.hex
-          ${{ env.BUILD_DIR }}\openterface-km-firmware-mini-kvm.bin
+          ${{ env.OUTPUT_DIR }}\openterface-km-firmware-mini-kvm.hex
+          ${{ env.OUTPUT_DIR }}\openterface-km-firmware-mini-kvm.bin
 
     - name: Upload KeyMod Plus firmware (external oscillator)
       uses: actions/upload-artifact@v4
@@ -210,8 +214,8 @@ jobs:
         name: openterface-km-firmware-keymod-plus
         if-no-files-found: error
         path: |
-          ${{ env.BUILD_DIR }}\openterface-km-firmware-keymod-plus.hex
-          ${{ env.BUILD_DIR }}\openterface-km-firmware-keymod-plus.bin
+          ${{ env.OUTPUT_DIR }}\openterface-km-firmware-keymod-plus.hex
+          ${{ env.OUTPUT_DIR }}\openterface-km-firmware-keymod-plus.bin
 
     - name: Upload KeyMod Mini firmware (internal RC oscillator)
       uses: actions/upload-artifact@v4
@@ -219,6 +223,6 @@ jobs:
         name: openterface-km-firmware-keymod-mini
         if-no-files-found: error
         path: |
-          ${{ env.BUILD_DIR }}\openterface-km-firmware-keymod-mini.hex
-          ${{ env.BUILD_DIR }}\openterface-km-firmware-keymod-mini.bin
+          ${{ env.OUTPUT_DIR }}\openterface-km-firmware-keymod-mini.hex
+          ${{ env.OUTPUT_DIR }}\openterface-km-firmware-keymod-mini.bin
 
