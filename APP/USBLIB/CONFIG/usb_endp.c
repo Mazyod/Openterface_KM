@@ -40,9 +40,20 @@ static uint8_t USBD_IsCh9329ModeCommandFrame(const uint8_t *buf, uint16_t len)
     if (buf == 0 || len < 6) {
         return 0;
     }
-    if (buf[0] != CH9329_FRAME_HEAD1 || buf[1] != CH9329_FRAME_HEAD2 || buf[3] != CMD_USB_WORK_MODE) {
+    if (buf[0] != CH9329_FRAME_HEAD1 || buf[1] != CH9329_FRAME_HEAD2) {
         return 0;
     }
+
+#if version == 3
+    /* KeyMod Plus: accept any valid CH9329 frame (not just CMD_USB_WORK_MODE)
+     * so that keyboard/mouse/media commands over CDC reach the CH9329 parser
+     * even in ACM bridge mode.  Other hardware versions keep the original
+     * behaviour — only mode-switch (0x30) frames are intercepted.           */
+#else
+    if (buf[3] != CMD_USB_WORK_MODE) {
+        return 0;
+    }
+#endif
 
     frame_len = (uint16_t)(6u + buf[4]);
     if (len < frame_len) {
