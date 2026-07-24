@@ -131,9 +131,7 @@ void Main_Circulation(void)
          * On KeyMod (version==3), BLE status overrides when active. */
         uint8_t ecm_polled = 0;
         if (USB_ModeConfig_ActiveModeBridgeAcm()) {
-#if version != 3
             ACM_Bridge_Poll();
-#endif
         }
         else if (USB_ModeConfig_ActiveModeBridgeEcm()) {
             ECM_Bridge_Poll();

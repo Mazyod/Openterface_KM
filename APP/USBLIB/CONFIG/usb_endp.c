@@ -40,20 +40,9 @@ static uint8_t USBD_IsCh9329ModeCommandFrame(const uint8_t *buf, uint16_t len)
     if (buf == 0 || len < 6) {
         return 0;
     }
-    if (buf[0] != CH9329_FRAME_HEAD1 || buf[1] != CH9329_FRAME_HEAD2) {
+    if (buf[0] != CH9329_FRAME_HEAD1 || buf[1] != CH9329_FRAME_HEAD2 || buf[3] != CMD_USB_WORK_MODE) {
         return 0;
     }
-
-#if version == 3
-    /* KeyMod Plus: accept any valid CH9329 frame (not just CMD_USB_WORK_MODE)
-     * so that keyboard/mouse/media commands over CDC reach the CH9329 parser
-     * even in ACM bridge mode.  Other hardware versions keep the original
-     * behaviour — only mode-switch (0x30) frames are intercepted.           */
-#else
-    if (buf[3] != CMD_USB_WORK_MODE) {
-        return 0;
-    }
-#endif
 
     frame_len = (uint16_t)(6u + buf[4]);
     if (len < frame_len) {
@@ -196,25 +185,20 @@ void EP5_OUT_Callback(void)
     PMAToUserBufferCopy( buf, GetEPRxAddr( ENDP5 ), len );
     if (USB_ModeConfig_ActiveModeBridgeAcm())
     {
-#if version == 3
-        /* KeyMod Plus: no ACM bridge passthrough — COM data → CH9329 parser only */
-        CH9329_RxBuffer_Add( buf, (uint16_t)len );
-#else
         if (USBD_IsCh9329ModeCommandFrame( buf, (uint16_t)len )) {
             CH9329_RxBuffer_Add( buf, (uint16_t)len );
         }
         else {
             ACM_Bridge_HostRxDone( buf, (uint16_t)len );
         }
-#endif
-    }
-    else if (USB_ModeConfig_ActiveModeBridgeEcm())
-    {
-        ECM_Bridge_HostRxDone( buf, (uint16_t)len );
     }
     else if (USB_ModeConfig_ActiveModeHasHostCdcAcm())
     {
         CH9329_RxBuffer_Add( buf, (uint16_t)len );
+    }
+    else if (USB_ModeConfig_ActiveModeBridgeEcm())
+    {
+        ECM_Bridge_HostRxDone( buf, (uint16_t)len );
     }
     SetEPRxCount( ENDP5, USB_ModeConfig_ActiveModeBridgeEcm() ? 64 : DEF_USBD_MAX_PACK_SIZE );
     SetEPRxValid( ENDP5 );

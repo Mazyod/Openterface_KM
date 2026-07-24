@@ -806,10 +806,7 @@ void USBFS_IRQHandler( void )
                         if( intst & USBFS_UIS_TOG_OK )
                         {
                             if (USB_ModeConfig_ActiveModeBridgeAcm()) {
-#if version != 3
-                                /* KeyMod Plus: ACM bridge disabled */
                                 ACM_Bridge_TargetRxDone( EP6_DatabufHD, USBFSD->RX_LEN );
-#endif
                             }
                             else if (USB_ModeConfig_ActiveModeBridgeEcm()) {
                                 ECM_Bridge_TargetRxDone( EP6_DatabufHD, USBFSD->RX_LEN );
