@@ -196,12 +196,17 @@ void EP5_OUT_Callback(void)
     PMAToUserBufferCopy( buf, GetEPRxAddr( ENDP5 ), len );
     if (USB_ModeConfig_ActiveModeBridgeAcm())
     {
+#if version == 3
+        /* KeyMod Plus: no ACM bridge passthrough — COM data → CH9329 parser only */
+        CH9329_RxBuffer_Add( buf, (uint16_t)len );
+#else
         if (USBD_IsCh9329ModeCommandFrame( buf, (uint16_t)len )) {
             CH9329_RxBuffer_Add( buf, (uint16_t)len );
         }
         else {
             ACM_Bridge_HostRxDone( buf, (uint16_t)len );
         }
+#endif
     }
     else if (USB_ModeConfig_ActiveModeBridgeEcm())
     {
