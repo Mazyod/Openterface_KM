@@ -15,11 +15,11 @@
 #include <string.h>
 
 /* USB Device Descriptors */
-const uint8_t  USBD_DeviceDescriptor[] = { 
+const uint8_t  USBD_DeviceDescriptor[] = {
     USBD_SIZE_DEVICE_DESC,           // bLength
     0x01,                           // bDescriptorType
     0x10, 0x01,                     // bcdUSB 1.10
-    0xEF,                           // bDeviceClass: Miscellaneous (required for IAD)
+    0xEF,                           // bDeviceClass: Miscellaneous (IAD for composite)
     0x02,                           // bDeviceSubClass: Common Class
     0x01,                           // bDeviceProtocol: Interface Association Descriptor
     DEF_USBD_UEP0_SIZE,             // bMaxPacketSize0

@@ -26,12 +26,14 @@ ENABLE_STYLUS ?= 0
 
 BOARD_VERSION ?= 1
 
-# KVMGo (v1) and Mini-KVM (v2): force no UAC — use hid_acm only.
-# This ensures audio interfaces are never exposed on these firmware versions.
-# Use 'override' to ensure command-line arguments cannot enable UAC on these boards.
-ifneq ($(filter 1 2,$(BOARD_VERSION)),)
+# USB work mode per board version:
+#   KVMGo (v1) and Mini-KVM (v2): CDC COM only (hid_acm)
+#   KeyMod (v3):                  CDC COM + CDC ECM (hid_acm_ecm)
 override ENABLE_UAC := 0
+ifneq ($(filter 1 2,$(BOARD_VERSION)),)
 override USB_WORK_MODE := hid_acm
+else
+override USB_WORK_MODE := hid_acm_ecm
 endif
 
 # USB work modes:
@@ -145,20 +147,37 @@ openterface-km-firmware.siz \
 all:
 	$(MAKE) --no-print-directory main-build
 
-# KeyMod build configurations
+# KVMGo build configuration (BOARD_VERSION=1, CDC COM only)
+kvmgo:
+	$(MAKE) --no-print-directory BOARD_VERSION=1 ENABLE_BLE=1 BLE_NAME=KVM-GO
+	@cp openterface-km-firmware.elf openterface-km-firmware-kvmgo.elf
+	@cp openterface-km-firmware.bin openterface-km-firmware-kvmgo.bin
+	@cp openterface-km-firmware.hex openterface-km-firmware-kvmgo.hex
+	@echo "Built: openterface-km-firmware-kvmgo (CDC COM only)"
+
+# Mini-KVM build configuration (BOARD_VERSION=2, CDC COM only)
+minikvm:
+	$(MAKE) --no-print-directory BOARD_VERSION=2 ENABLE_BLE=1 BLE_NAME=Mini-KVM
+	@cp openterface-km-firmware.elf openterface-km-firmware-minikvm.elf
+	@cp openterface-km-firmware.bin openterface-km-firmware-minikvm.bin
+	@cp openterface-km-firmware.hex openterface-km-firmware-minikvm.hex
+	@echo "Built: openterface-km-firmware-minikvm (CDC COM only)"
+
+# KeyMod Plus build configuration (BOARD_VERSION=3, CDC COM + ECM)
 keymod-plus:
-	$(MAKE) --no-print-directory BOARD_VERSION=3 ENABLE_OSCILLATOR=1 ENABLE_BLE=1 BLE_NAME=KeyMod USB_WORK_MODE=hid_acm_ecm
+	$(MAKE) --no-print-directory BOARD_VERSION=3 ENABLE_OSCILLATOR=1 ENABLE_BLE=1 BLE_NAME=KeyMod
 	@cp openterface-km-firmware.elf openterface-km-firmware-keymod-plus.elf
 	@cp openterface-km-firmware.bin openterface-km-firmware-keymod-plus.bin
 	@cp openterface-km-firmware.hex openterface-km-firmware-keymod-plus.hex
-	@echo "Built: openterface-km-firmware-keymod-plus (oscillator=on, CLK_OSC32K=0, CDC ACM+ECM)"
+	@echo "Built: openterface-km-firmware-keymod-plus (CDC COM+ECM, osc=on)"
 
+# KeyMod Mini build configuration (BOARD_VERSION=3, CDC COM + ECM)
 keymod-mini:
-	$(MAKE) --no-print-directory BOARD_VERSION=3 ENABLE_OSCILLATOR=0 ENABLE_BLE=1 BLE_NAME=KeyMod USB_WORK_MODE=hid_ecm_bridge
+	$(MAKE) --no-print-directory BOARD_VERSION=3 ENABLE_OSCILLATOR=0 ENABLE_BLE=1 BLE_NAME=KeyMod
 	@cp openterface-km-firmware.elf openterface-km-firmware-keymod-mini.elf
 	@cp openterface-km-firmware.bin openterface-km-firmware-keymod-mini.bin
 	@cp openterface-km-firmware.hex openterface-km-firmware-keymod-mini.hex
-	@echo "Built: openterface-km-firmware-keymod-mini (oscillator=off, CLK_OSC32K=1, CDC ECM only)"
+	@echo "Built: openterface-km-firmware-keymod-mini (CDC COM+ECM, osc=off)"
 
 main-build: openterface-km-firmware.elf secondary-outputs
 
@@ -189,11 +208,9 @@ CFLAGS += -include stdint.h -include stddef.h
 CFLAGS += -Dversion=$(BOARD_VERSION)
 CFLAGS += -DUSB_WORK_MODE=$(USB_WORK_MODE_ID)
 
-# KVMGo (v1) and Mini-KVM (v2): disable runtime profile switching to prevent
-# accidental UAC mode activation. These versions have no audio hardware.
-ifneq ($(filter 1 2,$(BOARD_VERSION)),)
+# All firmware versions: disable runtime profile switching to prevent
+# accidental mode changes. Each board uses its compiled work mode.
 CFLAGS += -DUSB_WORK_MODE_RUNTIME_PROFILES=0
-endif
 
 ifeq ($(ENABLE_OSCILLATOR),1)
 CFLAGS += -DCLK_OSC32K=0
@@ -279,11 +296,11 @@ openterface-km-firmware.siz: openterface-km-firmware.elf
 
 # Other Targets
 clean:
-	-$(RM) $(OBJS)$(SECONDARY_FLASH)$(SECONDARY_LIST)$(SECONDARY_SIZE)$(S_DEPS)$(S_UPPER_DEPS)$(ASM_DEPS)$(ASM_UPPER_DEPS)$(C_DEPS) openterface-km-firmware.elf openterface-km-firmware.hex openterface-km-firmware.bin openterface-km-firmware-plus.elf openterface-km-firmware-plus.hex openterface-km-firmware-plus.bin openterface-km-firmware-mini.elf openterface-km-firmware-mini.hex openterface-km-firmware-mini.bin $(BUILD_CONFIG_STAMP)
+	-$(RM) $(OBJS)$(SECONDARY_FLASH)$(SECONDARY_LIST)$(SECONDARY_SIZE)$(S_DEPS)$(S_UPPER_DEPS)$(ASM_DEPS)$(ASM_UPPER_DEPS)$(C_DEPS) openterface-km-firmware.elf openterface-km-firmware.hex openterface-km-firmware.bin openterface-km-firmware-plus.elf openterface-km-firmware-plus.hex openterface-km-firmware-plus.bin openterface-km-firmware-mini.elf openterface-km-firmware-mini.hex openterface-km-firmware-mini.bin openterface-km-firmware-kvmgo.elf openterface-km-firmware-kvmgo.hex openterface-km-firmware-kvmgo.bin openterface-km-firmware-minikvm.elf openterface-km-firmware-minikvm.hex openterface-km-firmware-minikvm.bin openterface-km-firmware-keymod-plus.elf openterface-km-firmware-keymod-plus.hex openterface-km-firmware-keymod-plus.bin openterface-km-firmware-keymod-mini.elf openterface-km-firmware-keymod-mini.hex openterface-km-firmware-keymod-mini.bin $(BUILD_CONFIG_STAMP)
 
 secondary-outputs: $(SECONDARY_FLASH) $(SECONDARY_LIST) $(SECONDARY_SIZE)
 
-.PHONY: all clean dependents bin flash probe FORCE keymod-plus keymod-mini
+.PHONY: all clean dependents bin flash probe FORCE keymod-plus keymod-mini kvmgo minikvm
 
 FORCE:
 

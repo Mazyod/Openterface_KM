@@ -17,14 +17,6 @@ on:
         required: false
         default: false
         type: boolean
-      enable_uac:
-        description: 'Build: enable USB Audio Class (UAC)'
-        required: false
-        default: '1'
-        type: choice
-        options:
-          - '1'
-          - '0'
       enable_ble:
         description: 'Build: enable Bluetooth Low Energy (BLE)'
         required: false
@@ -89,7 +81,6 @@ jobs:
     needs: version
     uses: ./.github/workflows/build.yml
     with:
-      enable_uac: ${{ inputs.enable_uac }}
       enable_ble: ${{ inputs.enable_ble }}
 
   release:
