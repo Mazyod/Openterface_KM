@@ -296,7 +296,7 @@ openterface-km-firmware.siz: openterface-km-firmware.elf
 
 # Other Targets
 clean:
-	-$(RM) $(OBJS)$(SECONDARY_FLASH)$(SECONDARY_LIST)$(SECONDARY_SIZE)$(S_DEPS)$(S_UPPER_DEPS)$(ASM_DEPS)$(ASM_UPPER_DEPS)$(C_DEPS) openterface-km-firmware.elf openterface-km-firmware.hex openterface-km-firmware.bin openterface-km-firmware-plus.elf openterface-km-firmware-plus.hex openterface-km-firmware-plus.bin openterface-km-firmware-mini.elf openterface-km-firmware-mini.hex openterface-km-firmware-mini.bin openterface-km-firmware-kvmgo.elf openterface-km-firmware-kvmgo.hex openterface-km-firmware-kvmgo.bin openterface-km-firmware-minikvm.elf openterface-km-firmware-minikvm.hex openterface-km-firmware-minikvm.bin openterface-km-firmware-keymod-plus.elf openterface-km-firmware-keymod-plus.hex openterface-km-firmware-keymod-plus.bin openterface-km-firmware-keymod-mini.elf openterface-km-firmware-keymod-mini.hex openterface-km-firmware-keymod-mini.bin $(BUILD_CONFIG_STAMP)
+	-$(RM) $(OBJS)$(SECONDARY_FLASH)$(SECONDARY_LIST)$(SECONDARY_SIZE)$(S_DEPS)$(S_UPPER_DEPS)$(ASM_DEPS)$(ASM_UPPER_DEPS)$(C_DEPS) openterface-km-firmware.elf openterface-km-firmware.hex openterface-km-firmware.bin openterface-km-firmware-plus.elf openterface-km-firmware-plus.hex openterface-km-firmware-plus.bin openterface-km-firmware-mini.elf openterface-km-firmware-mini.hex openterface-km-firmware-mini.bin $(BUILD_CONFIG_STAMP)
 
 secondary-outputs: $(SECONDARY_FLASH) $(SECONDARY_LIST) $(SECONDARY_SIZE)
 
