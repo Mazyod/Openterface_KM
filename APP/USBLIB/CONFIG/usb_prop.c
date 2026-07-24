@@ -428,8 +428,10 @@ void USBD_Reset(void)
   SetEPRxCount(ENDP5, USB_ModeConfig_ActiveModeBridgeEcm() ? 64 : DEF_USBD_MAX_PACK_SIZE);
   _ClearDTOG_RX(ENDP5);
   _ClearDTOG_TX(ENDP5);
-  /* In ECM bridge mode, start disabled; enabled by SET_INTERFACE(IF1, alt=1) */
-  SetEPRxStatus(ENDP5, USB_ModeConfig_ActiveModeBridgeEcm() ? EP_RX_DIS : EP_RX_VALID);
+  /* In ECM-only bridge mode (no ACM), EP5 is the ECM data endpoint — start
+   * disabled; enabled by SET_INTERFACE.  In combined ACM+ECM mode (mode 6),
+   * EP5 is the ACM bulk-OUT endpoint — must be enabled immediately.        */
+  SetEPRxStatus(ENDP5, (USB_ModeConfig_ActiveModeBridgeEcm() && !USB_ModeConfig_ActiveModeHasHostCdcAcm()) ? EP_RX_DIS : EP_RX_VALID);
   SetEPTxStatus(ENDP5, EP_TX_DIS);
 
 #if USB_WORK_MODE_HAS_HOST_ACM_AND_ECM
