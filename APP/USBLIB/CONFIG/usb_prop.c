@@ -39,6 +39,8 @@ static volatile uint16_t USBD_CDC_ECM_PacketFilter;
 
 extern uint8_t USBD_Endp3_Busy;
 extern uint8_t USBD_Endp1_Busy;
+extern uint8_t USBD_Endp2_Busy;
+extern uint8_t USBD_Endp4_Busy;
 
 DEVICE Device_Table =
 {

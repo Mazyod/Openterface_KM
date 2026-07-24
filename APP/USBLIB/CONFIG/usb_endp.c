@@ -26,10 +26,8 @@
 
 uint8_t USBD_Endp1_Busy;
 uint8_t USBD_Endp3_Busy;
-#if USB_WORK_MODE_HAS_HOST_ACM_AND_ECM
-uint8_t USBD_Endp2_Busy;  /* ECM INT busy */
-uint8_t USBD_Endp4_Busy;  /* ECM BULK IN busy */
-#endif
+uint8_t USBD_Endp2_Busy;  /* ECM INT busy (also used in ACM+ECM combined mode) */
+uint8_t USBD_Endp4_Busy;  /* ECM BULK IN busy (also used in ACM+ECM combined mode) */
 uint16_t USB_Rx_Cnt=0; 
 
 #if USB_WORK_MODE_COMPILES_HOST_CDC_ACM
