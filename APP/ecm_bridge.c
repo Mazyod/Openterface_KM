@@ -339,7 +339,7 @@ static uint8_t handle_dhcp_packet(const uint8_t *frame, uint16_t frame_len)
     uint8_t dhcp_msg_type;
     uint8_t requested_ip[4];
     uint8_t has_requested_ip = 0;
-    uint8_t reply[576];  /* DHCP response buffer (min DHCP: 14+20+8+240=282, with options ~350) */
+    static uint8_t reply[576];  /* DHCP response buffer (min DHCP: 14+20+8+240=282, with options ~350) */
     uint16_t off;
     uint16_t dhcp_off;
     uint16_t udp_payload_len;
@@ -709,7 +709,7 @@ static uint8_t handle_target_dhcp_packet(const uint8_t *frame, uint16_t frame_le
     uint8_t dhcp_msg_type;
     uint8_t requested_ip[4];
     uint8_t has_requested_ip = 0;
-    uint8_t reply[576];  /* DHCP response buffer */
+    static uint8_t reply[576];  /* DHCP response buffer */
     uint16_t off;
     uint16_t ip_start;
     uint16_t udp_start;
@@ -1147,7 +1147,7 @@ static uint8_t handle_host_control_frame(const uint8_t *frame, uint16_t frame_le
      * the ECM bridge's bulk IN endpoint. */
     Resp_Report_t resp;
     if (Queue_Pop_Response(&resp)) {
-        uint8_t out_frame[ECM_BRIDGE_MTU_FRAME_SIZE];
+        static uint8_t out_frame[ECM_BRIDGE_MTU_FRAME_SIZE];  /* static: avoid stack overflow */
         uint16_t off = 0;
 
         /* Ethernet header: src←dst, dst←src (reverse direction) */

@@ -97,6 +97,10 @@ SAFE_BLE_STREAM_CHUNK = 180
 
 MAX_FRAG_DATA = MAX_PAYLOAD_LEN - FRAG_HEADER_LEN  # 246
 MAX_REASSEMBLED = MAX_FRAG_DATA * 6  # fits one full-size TCP segment in firmware
+# Per-message cap used when splitting outbound data. Must stay below the
+# firmware TCP MSS (1460): the firmware forwards one reassembled message as
+# one TCP segment, and a segment beyond MTU 1500 gets dropped on the wire.
+MAX_MESSAGE_LEN = 240 * 6  # 1440 bytes, still exactly 6 fragments
 
 # BLE GATT UUIDs (16-bit, used with Nordic UUID base)
 SERVICE_UUID = "0000fff0-0000-1000-8000-00805f9b34fb"
@@ -886,9 +890,9 @@ class BleEthClient:
                 len(data),
                 _short_hex(data),
             )
-        if len(data) > MAX_REASSEMBLED:
-            for offset in range(0, len(data), MAX_REASSEMBLED):
-                await self.send_data(conn_id, data[offset:offset + MAX_REASSEMBLED])
+        if len(data) > MAX_MESSAGE_LEN:
+            for offset in range(0, len(data), MAX_MESSAGE_LEN):
+                await self.send_data(conn_id, data[offset:offset + MAX_MESSAGE_LEN])
             return
 
         if len(data) <= MAX_FRAG_DATA:

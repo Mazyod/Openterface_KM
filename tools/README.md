@@ -8,6 +8,17 @@ See [docs/ble-eth-ssh-usage.md](../docs/ble-eth-ssh-usage.md) for:
 - interactive SSH login
 - scripted SSH login through the local forwarded port
 
+BLE-Eth tunnel library examples
+
+See [docs/ble-eth-tunnel-examples.md](../docs/ble-eth-tunnel-examples.md) for
+`tools/ble_eth_tunnel.py` usage:
+
+- minimal tunnel (read SSH banner)
+- local TCP proxy for stock clients (`ssh`, `scp`)
+- automated SSH command execution from Python
+- INFO/PING link health checks
+- message size / MSS constraints
+
 CDC-ACM mode switch helper
 
 Install dependencies:

@@ -88,7 +88,7 @@ Returns a fixed 8-byte payload:
 
 | Byte | Meaning |
 | --- | --- |
-| 0 | Hardware selector: `0x01` for board version 1, `0x02` for board version 2 |
+| 0 | Hardware selector (board version): `0x01` = KVM-GO, `0x02` = MiniKVM, `0x03` = KeyMod |
 | 1 | Target USB enumeration state: `0x01` connected, `0x00` not connected |
 | 2 | Keyboard LED bits (`CapsLock`, `NumLock`, `ScrollLock`) |
 | 3..7 | Reserved / placeholder bytes in the current implementation |
