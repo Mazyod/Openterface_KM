@@ -447,11 +447,12 @@ void USBD_Reset(void)
 
       /* EP4: ECM bulk IN (device → host) */
       SetEPType(ENDP4, EP_BULK);
-      SetEPTxStatus(ENDP4, EP_TX_DIS);
       SetEPTxAddr(ENDP4, ENDP4_TX_ECM_ADDR);
       SetEPRxStatus(ENDP4, EP_RX_DIS);
       _ClearDTOG_TX(ENDP4);
       _ClearDTOG_RX(ENDP4);
+      /* Enable IN so device can send DHCP replies without waiting for SET_INTERFACE */
+      SetEPTxStatus(ENDP4, EP_TX_NAK);
 
       /* EP6: ECM bulk OUT (host → device) */
       SetEPType(ENDP6, EP_BULK);
@@ -459,9 +460,13 @@ void USBD_Reset(void)
       SetEPRxCount(ENDP6, 64);
       _ClearDTOG_RX(ENDP6);
       _ClearDTOG_TX(ENDP6);
-      /* Start disabled; enabled by SET_INTERFACE(IF3, alt=1) */
-      SetEPRxStatus(ENDP6, EP_RX_DIS);
+      /* Enable immediately so Host can send DHCP without waiting for SET_INTERFACE */
+      SetEPRxStatus(ENDP6, EP_RX_VALID);
       SetEPTxStatus(ENDP6, EP_TX_DIS);
+#if USB_WORK_MODE_COMPILES_BRIDGE_ECM
+      extern volatile uint8_t g_host_ecm_data_if_active;
+      g_host_ecm_data_if_active = 1;
+#endif
   }
 #endif
 
@@ -486,6 +491,11 @@ void USBD_Reset(void)
            USB_ModeConfig_ActiveModeHasHostCdcAcm())
   {
     ECM_Bridge_Init();
+#if USB_WORK_MODE_COMPILES_BRIDGE_ECM
+    /* Force-enable Host ECM interface since EP6/EP4 are enabled at init */
+    extern volatile uint8_t g_host_ecm_data_if_active;
+    g_host_ecm_data_if_active = 1;
+#endif
   }
 #endif
 

@@ -198,7 +198,7 @@ const uint8_t  USBD_ConfigDescriptor[] = {
     0x05,                           // bDescriptorType (Endpoint)
     0x06,                           // bEndpointAddress (OUT/H2D)
     0x02,                           // bmAttributes (Bulk)
-    0x10, 0x00,                     // wMaxPacketSize 16
+    0x40, 0x00,                     // wMaxPacketSize 64 (ECM bridge transmits 64-byte bulk packets)
     0x00,                           // bInterval
 
     /* Endpoint descriptor — CDC ECM bulk IN — EP4 IN (0x84) */
@@ -206,7 +206,7 @@ const uint8_t  USBD_ConfigDescriptor[] = {
     0x05,                           // bDescriptorType (Endpoint)
     0x84,                           // bEndpointAddress (IN/D2H)
     0x02,                           // bmAttributes (Bulk)
-    0x10, 0x00,                     // wMaxPacketSize 16
+    0x40, 0x00,                     // wMaxPacketSize 64 (ECM bridge transmits 64-byte bulk packets)
     0x00,                           // bInterval
 #endif /* USB_WORK_MODE_HAS_HOST_CDC_ECM (inside ACM block) */
 
@@ -276,7 +276,7 @@ const uint8_t  USBD_ConfigDescriptor[] = {
     0x05,                           // bDescriptorType (Endpoint)
     0x05,                           // bEndpointAddress (OUT/H2D)
     0x02,                           // bmAttributes (Bulk)
-    0x10, 0x00,                     // wMaxPacketSize 16
+    0x40, 0x00,                     // wMaxPacketSize 64 (ECM bridge transmits 64-byte bulk packets)
     0x00,                           // bInterval
 
     /* Endpoint descriptor — CDC ECM bulk IN */
@@ -284,7 +284,7 @@ const uint8_t  USBD_ConfigDescriptor[] = {
     0x05,                           // bDescriptorType (Endpoint)
     0x83,                           // bEndpointAddress (IN/D2H)
     0x02,                           // bmAttributes (Bulk)
-    0x10, 0x00,                     // wMaxPacketSize 16
+    0x40, 0x00,                     // wMaxPacketSize 64 (ECM bridge transmits 64-byte bulk packets)
     0x00,                           // bInterval
 #endif
 
