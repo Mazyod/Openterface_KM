@@ -138,6 +138,9 @@ uint8_t       RingMemBLEBuf[512];
 
 // BLE LED status — 0=default(SD card), 1=advertising, 2=connected, 3=disconnected, 4=error
 uint8_t g_ble_led_state = 0;
+
+// Flag to route CH9329 responses via BLE notification instead of USB EP3
+static uint8_t g_ble_ch9329_response = 0;
 /*********************************************************************
  * LOCAL FUNCTIONS
  */
@@ -178,6 +181,60 @@ static uint8_t Peripheral_IsCh9329ModeCommandFrame(const uint8_t *buf, uint16_t 
         sum = (uint8_t)(sum + buf[index]);
     }
     return (sum == buf[frame_len - 1u]) ? 1u : 0u;
+}
+
+/*********************************************************************
+ * @fn      Peripheral_IsCh9329CommandByte
+ *
+ * @brief   Check if a command byte is a CH9329 command that should be
+ *          handled locally by the device (not forwarded to USB host).
+ *
+ * @param   cmd - Command byte to check
+ *
+ * @return  1 if CH9329 command, 0 otherwise (BLE-Eth or unknown)
+ */
+uint8_t Peripheral_IsCh9329CommandByte(uint8_t cmd)
+{
+    switch (cmd)
+    {
+        case CMD_GET_INFO:           // 0x01
+        case CMD_SEND_KB_GENERAL_DATA: // 0x02
+        case CMD_SEND_KB_MEDIA_DATA: // 0x03
+        case CMD_SEND_MS_ABS_DATA:   // 0x04
+        case CMD_SEND_MS_REL_DATA:   // 0x05
+        case CMD_GET_PARA_CFG:       // 0x08
+        case CMD_SD_SWITCH:          // 0x17
+        case CMD_DS18B20_GET_TEMP:   // 0x18
+        case CMD_USB_WORK_MODE:      // 0x30
+            return 1;
+        default:
+            return 0;
+    }
+}
+
+/*********************************************************************
+ * @fn      Peripheral_SetBleCh9329Response
+ *
+ * @brief   Enable/disable BLE CH9329 response routing.
+ *          When enabled, CH9329_SendResponse sends via BLE notification.
+ *
+ * @param   enable - 1 to enable, 0 to disable
+ */
+void Peripheral_SetBleCh9329Response(uint8_t enable)
+{
+    g_ble_ch9329_response = enable;
+}
+
+/*********************************************************************
+ * @fn      Peripheral_GetBleCh9329Response
+ *
+ * @brief   Check if BLE CH9329 response routing is enabled.
+ *
+ * @return  1 if enabled, 0 if disabled
+ */
+uint8_t Peripheral_GetBleCh9329Response(void)
+{
+    return g_ble_ch9329_response;
 }
 
 /*********************************************************************
@@ -911,25 +968,40 @@ void ble_usb_ServiceEvt(uint16_t connection_handle, ble_usb_evt_t *p_evt)
         case BLE_USB_EVT_BLE_DATA_RECIEVED:
             PRINT("BLE RX DATA len:%d\r\n", p_evt->data.length);
 
-            /* First try BLE-Eth protocol parser (handles 0x57 0xAB frames for
-             * TCP tunneling). If it matches BLE-Eth commands, the parser will
-             * handle it via events. */
-            BLE_Eth_Parse(p_evt->data.p_data, p_evt->data.length);
-            tmos_set_event(Peripheral_TaskID, SBP_PROCESS_BLEETH_TX_EVT);
-
-            /* Also feed into legacy CH9329 path for backward compatibility.
-             * The CH9329 parser is stateful and will only match its own commands. */
-            if(Peripheral_IsCh9329ModeCommandFrame(p_evt->data.p_data, p_evt->data.length))
+            /* Check if this is a CH9329 command that should be handled locally.
+             * CH9329 commands (0x01-0x08, 0x17, 0x18, 0x30) are processed by the
+             * device and responses are sent back via BLE notification.
+             * BLE-Eth commands (0x10-0x12, 0x1F) are handled by BLE_Eth_Parse. */
+            if (p_evt->data.length >= 6 &&
+                p_evt->data.p_data[0] == CH9329_FRAME_HEAD1 &&
+                p_evt->data.p_data[1] == CH9329_FRAME_HEAD2 &&
+                Peripheral_IsCh9329CommandByte(p_evt->data.p_data[3]))
             {
-                CH9329_RxBuffer_Add((uint8_t *)p_evt->data.p_data, p_evt->data.length);
-            }
-            else if(RingMemWrite(&RingMemBLE, (uint8_t *)p_evt->data.p_data, p_evt->data.length) != SUCCESS)
-            {
-                PRINT("RingMemBLE ERR \n");
+                /* CH9329 command from BLE — route response via BLE notification */
+                Peripheral_SetBleCh9329Response(1);
+                CH9329_DataParser((uint8_t *)p_evt->data.p_data, p_evt->data.length);
+                Peripheral_SetBleCh9329Response(0);
             }
             else
             {
-                tmos_set_event(Peripheral_TaskID, SBP_PROCESS_BLEDATA_EVT);
+                /* Not a CH9329 command — try BLE-Eth protocol parser */
+                BLE_Eth_Parse(p_evt->data.p_data, p_evt->data.length);
+                tmos_set_event(Peripheral_TaskID, SBP_PROCESS_BLEETH_TX_EVT);
+
+                /* Also feed into legacy CH9329 path for backward compatibility.
+                 * The CH9329 parser is stateful and will only match its own commands. */
+                if(Peripheral_IsCh9329ModeCommandFrame(p_evt->data.p_data, p_evt->data.length))
+                {
+                    CH9329_RxBuffer_Add((uint8_t *)p_evt->data.p_data, p_evt->data.length);
+                }
+                else if(RingMemWrite(&RingMemBLE, (uint8_t *)p_evt->data.p_data, p_evt->data.length) != SUCCESS)
+                {
+                    PRINT("RingMemBLE ERR \n");
+                }
+                else
+                {
+                    tmos_set_event(Peripheral_TaskID, SBP_PROCESS_BLEDATA_EVT);
+                }
             }
 
             break;

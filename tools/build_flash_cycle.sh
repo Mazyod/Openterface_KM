@@ -26,15 +26,9 @@ BOARD_VERSION="${BOARD_VERSION:-1}"
 ENABLE_BLE="${ENABLE_BLE:-1}"
 ENABLE_UAC="${ENABLE_UAC:-0}"
 ENABLE_OSCILLATOR="${ENABLE_OSCILLATOR:-0}"
-
-if [[ -z "${BLE_NAME:-}" ]]; then
-  case "$BOARD_VERSION" in
-    1) BLE_NAME="KVM-GO" ;;
-    3) BLE_NAME="KeyMod" ;;
-    2) BLE_NAME="Mini-KVM" ;;
-    *) BLE_NAME="KeyMod" ;;
-  esac
-fi
+# BLE_NAME is resolved after argument parsing (see finalize_ble_name)
+# so that --board-version is honoured.
+BLE_NAME="${BLE_NAME:-}"
 
 DO_BUILD=1
 DO_FLASH=1
@@ -193,6 +187,17 @@ parse_args() {
     done
 
     REMOTE_SSH="${REMOTE_USER}@${REMOTE_HOST}"
+
+    # Resolve BLE_NAME after parsing so --board-version takes effect.
+    if [[ -z "$BLE_NAME" ]]; then
+      case "$BOARD_VERSION" in
+        1) BLE_NAME="KVM-GO" ;;
+        2) BLE_NAME="Mini-KVM" ;;
+        3) BLE_NAME="KeyMod" ;;
+        *) BLE_NAME="KeyMod" ;;
+      esac
+    fi
+    log "Build config: BOARD_VERSION=${BOARD_VERSION} BLE_NAME=${BLE_NAME} ENABLE_BLE=${ENABLE_BLE} ENABLE_UAC=${ENABLE_UAC} ENABLE_OSCILLATOR=${ENABLE_OSCILLATOR}"
 }
 
 build_remote() {

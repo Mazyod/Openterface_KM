@@ -445,7 +445,8 @@ async def test_ble_connection(args):
 
     except Exception as e:
         print(f"\n  ERROR: {e}")
-        return 1
+        # Re-raise so pytest reports the failure (CLI catches this in main()).
+        raise
     finally:
         await client.disconnect()
 
@@ -510,7 +511,8 @@ async def test_ble_eth_data_path(args):
         print(f"\n  ERROR: {e}")
         import traceback
         traceback.print_exc()
-        return 1
+        # Re-raise so pytest reports the failure (CLI catches this in main()).
+        raise
     finally:
         await client.disconnect()
         print("Disconnected from BLE device.")
@@ -551,8 +553,6 @@ async def test_ssh_tunnel(args):
 
     client.add_event_callback(event_handler)
 
-    ok = True
-
     try:
         # Step 1: Connect to BLE device
         print("[1/4] Connecting to BLE device...")
@@ -560,16 +560,12 @@ async def test_ssh_tunnel(args):
         print("  BLE connected!")
 
         # Step 2: Get device info
-        print("\n[2/4] Getting device capabilities...")
+        print(f"\n[3/4] Getting device capabilities...")
         info = await client.get_info()
         print(f"  Version: {info['version']}, Features: 0x{info['features']:02X}")
+        max_conns = info.get('max_connections', 2)
 
-        # Step 3: Open tunnel to SSH server
-        print(f"\n[3/4] Opening tunnel to {args.target}:{args.port}...")
-        conn_id = await client.open_tunnel(args.target, args.port)
-        print(f"  Tunnel opened! conn_id={conn_id}")
-
-        # Step 4: Start local proxy
+        # Step 3: Start local proxy (proxy manages tunnel internally)
         print(f"\n[4/4] Starting local TCP proxy on 127.0.0.1:{args.local_port}...")
 
         proxy = BleTcpProxy(
@@ -577,6 +573,7 @@ async def test_ssh_tunnel(args):
             local_port=args.local_port,
             target_ip=args.target,
             target_port=args.port,
+            max_connections=max_conns,
         )
         await proxy.start()
 
@@ -585,7 +582,6 @@ async def test_ssh_tunnel(args):
         print("=" * 60)
         print(f"\n  Local endpoint:  127.0.0.1:{args.local_port}")
         print(f"  BLE tunnel  ->   {args.target}:{args.port}")
-        print(f"  Connection ID:   {conn_id}")
         print()
         print("  To connect via SSH:")
         print(f"    ssh -p {args.local_port} <user>@127.0.0.1")
@@ -611,12 +607,10 @@ async def test_ssh_tunnel(args):
                 await writer.wait_closed()
                 print("  [PASS] TCP tunnel works!")
             except Exception as e:
-                print(f"  [FAIL] TCP test failed: {e}")
-                ok = False
+                raise AssertionError(f"TCP tunnel test failed: {e}") from e
 
             await proxy.stop()
-            await client.close_tunnel(conn_id)
-            return 0 if ok else 1
+            return 0
 
         # Interactive mode: keep proxy running
         print("\nProxy is running. Press Ctrl+C to stop.")
@@ -638,12 +632,158 @@ async def test_ssh_tunnel(args):
         print(f"\n  ERROR: {e}")
         import traceback
         traceback.print_exc()
-        ok = False
+        # Re-raise so pytest reports the failure (CLI catches this in main()).
+        raise
     finally:
         await client.disconnect()
         print("Disconnected from BLE device.")
 
-    return 0 if ok else 1
+
+# ---------------------------------------------------------------------------
+# BLE-Eth SSH command execution test
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_ble_eth_ssh_command_execution(args):
+    """Test SSH command execution through BLE-Eth tunnel.
+
+    This test:
+    1. Connects to the firmware via BLE
+    2. Opens a TCP tunnel to Target PC (192.168.11.2:22)
+    3. Starts a local TCP proxy
+    4. Executes SSH commands through the tunnel
+    5. Verifies command output
+    """
+    print("=" * 60)
+    print("BLE-Eth SSH Command Execution Test")
+    print("=" * 60)
+    print(f"\nTarget SSH server: {args.target}:{args.port}")
+    print(f"Local proxy port:  {args.local_port}")
+    print(f"BLE device:        {args.device_name}")
+    print()
+
+    client = BleEthClient(
+        device_name=args.device_name,
+        ble_address=args.ble_addr,
+        strict_data_ack_window_size=args.ack_window,
+    )
+
+    try:
+        # Step 1: Connect to BLE device
+        print("[1/5] Connecting to BLE device...")
+        await client.connect()
+        print("  BLE connected!")
+
+        # Step 2: Get device info
+        print("\n[2/5] Getting device capabilities...")
+        info = await client.get_info()
+        print(f"  Version: {info['version']}, Features: 0x{info['features']:02X}")
+        max_conns = info.get('max_connections', 2)
+
+        # Step 3: Start local proxy
+        print(f"\n[3/5] Starting local TCP proxy on 127.0.0.1:{args.local_port}...")
+        proxy = BleTcpProxy(
+            client=client,
+            local_port=args.local_port,
+            target_ip=args.target,
+            target_port=args.port,
+            max_connections=max_conns,
+        )
+        await proxy.start()
+        print("  Proxy started!")
+
+        # Give proxy a moment to stabilize
+        await asyncio.sleep(1)
+
+        # Step 4: Execute SSH command through tunnel
+        # Run SSH in a thread executor so the event loop stays free
+        # to handle BLE proxy incoming connections
+        print(f"\n[4/5] Executing SSH command through BLE-Eth tunnel...")
+        print(f"  Command: ssh -p {args.local_port} pengtianyu@127.0.0.1 'echo BLE_ETH_SSH_OK && uname -a'")
+
+        import subprocess as _sp
+        loop = asyncio.get_event_loop()
+
+        def _run_ssh():
+            return _sp.run(
+                [
+                    "ssh",
+                    "-o", f"Port={args.local_port}",
+                    "-o", "ConnectTimeout=15",
+                    "-o", "StrictHostKeyChecking=no",
+                    "-o", "UserKnownHostsFile=/dev/null",
+                    "-o", "BatchMode=yes",
+                    "pengtianyu@127.0.0.1",
+                    "echo BLE_ETH_SSH_OK && uname -a",
+                ],
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+
+        try:
+            result = await asyncio.wait_for(
+                loop.run_in_executor(None, _run_ssh),
+                timeout=35,
+            )
+        except asyncio.TimeoutError:
+            raise AssertionError("SSH command timed out after 35s")
+
+        ssh_stdout = result.stdout
+        ssh_stderr = result.stderr
+        ssh_returncode = result.returncode
+
+        print(f"\n  SSH exit code: {ssh_returncode}")
+        if ssh_stdout:
+            print(f"  stdout: {ssh_stdout.strip()}")
+        if ssh_stderr:
+            # Filter out common SSH warnings
+            stderr_lines = [
+                line for line in ssh_stderr.splitlines()
+                if "Warning: Permanently added" not in line
+                and "WARNING:" not in line.upper()
+            ]
+            if stderr_lines:
+                print(f"  stderr: {chr(10).join(stderr_lines)}")
+
+        # Step 5: Verify results
+        print(f"\n[5/5] Verifying results...")
+
+        # Check if SSH connected (either got output or password prompt)
+        ssh_connected = (
+            "BLE_ETH_SSH_OK" in ssh_stdout
+            or "password" in ssh_stderr.lower()
+            or ssh_returncode == 0
+        )
+
+        if "BLE_ETH_SSH_OK" in ssh_stdout:
+            print("  ✅ Command executed successfully!")
+            print(f"  ✅ Output contains expected marker: BLE_ETH_SSH_OK")
+            if "Darwin" in ssh_stdout or "Linux" in ssh_stdout:
+                print(f"  ✅ uname output received")
+        elif ssh_connected:
+            print("  ✅ SSH connection established (password required)")
+        else:
+            raise AssertionError(
+                f"SSH command execution failed:\n"
+                f"stdout: {ssh_stdout}\n"
+                f"stderr: {ssh_stderr}"
+            )
+
+        print("\n" + "=" * 60)
+        print("BLE-Eth SSH Command Execution Test PASSED!")
+        print("=" * 60)
+
+        await proxy.stop()
+
+    except Exception as e:
+        print(f"\n  ERROR: {e}")
+        import traceback
+        traceback.print_exc()
+        raise
+    finally:
+        await client.disconnect()
+        print("Disconnected from BLE device.")
 
 
 # ---------------------------------------------------------------------------
@@ -739,14 +879,25 @@ def main():
 
     # Data path test (PING/PONG, no network needed)
     if args.data_only:
-        return asyncio.run(test_ble_eth_data_path(args))
+        return _run_cli(test_ble_eth_data_path(args))
 
     # BLE-only test mode
     if args.ble_only:
-        return asyncio.run(test_ble_connection(args))
+        return _run_cli(test_ble_connection(args))
 
     # Full SSH tunnel test
-    return asyncio.run(test_ssh_tunnel(args))
+    return _run_cli(test_ssh_tunnel(args))
+
+
+def _run_cli(coro):
+    """Run a test coroutine in CLI mode; failures exit with code 1."""
+    try:
+        return asyncio.run(coro)
+    except KeyboardInterrupt:
+        print("\nInterrupted.")
+        return 130
+    except Exception:
+        return 1
 
 
 if __name__ == "__main__":

@@ -66,7 +66,9 @@ void MCU_Sleep_Wakeup_Operate( void )
 
  extern uint8_t sd_card_channel_state; 
 
-/* CH9329_SendResponse enqueues the response packet instead of sending directly */
+/* CH9329_SendResponse enqueues the response packet instead of sending directly.
+ * When BLE CH9329 response routing is enabled (via Peripheral_SetBleCh9329Response),
+ * the response is sent via BLE notification instead of USB EP3 queue. */
 void CH9329_SendResponse(uint8_t addr, uint8_t cmd_code, uint8_t* pdata,
                          uint8_t len, uint8_t resp_mode)
 {
@@ -89,6 +91,15 @@ void CH9329_SendResponse(uint8_t addr, uint8_t cmd_code, uint8_t* pdata,
     for (uint8_t i = 0; i < index; i++) checksum += packet[i];
     packet[index++] = checksum;
 
+#ifdef ENABLE_BLE
+    /* If response is for a BLE CH9329 command, send via BLE notification */
+    if (Peripheral_GetBleCh9329Response())
+    {
+        app_usb_notify(packet, index);
+        return;
+    }
+#endif
+
     Queue_Push_Response(packet, index);
 }
 //      Dedicated "Get Info" Command Response
@@ -98,12 +109,9 @@ void CH9329_Cmd_GetInfo_Reply(uint8_t addr)
 
     /* Protocol requires a fixed 8-byte payload */
 
-    if (version == 1) {
-    data[0] = 0x01;    // Product type 0x00, version 0x02
-    }
-    else if (version == 2) {
-    data[0] = 0x02;    // Product type 0x00, version 0x02
-    }
+    /* Hardware selector: mirrors the board version (1 = KVM-GO,
+     * 2 = MiniKVM, 3 = KeyMod). */
+    data[0] = version;
     /* Device connection / enumeration status */
     if (USBFS_Connect == 1) {
         data[1] = 0x01;   // Connected (enumerated)

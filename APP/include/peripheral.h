@@ -68,6 +68,26 @@ extern void Peripheral_Init(void);
  */
 extern uint16_t Peripheral_ProcessEvent(uint8_t task_id, uint16_t events);
 uint8_t app_usb_notify(uint8_t *SendBuf, uint8_t l);
+
+/*
+ * Check if a CH9329 command byte should be handled locally (not forwarded to USB host).
+ * Returns 1 if the command is a CH9329 command that the device handles directly.
+ */
+uint8_t Peripheral_IsCh9329CommandByte(uint8_t cmd);
+
+/*
+ * Enable/disable BLE CH9329 response routing.
+ * When enabled, CH9329_SendResponse will send responses via BLE notification
+ * instead of USB EP3. Must be set before dispatching a CH9329 command from BLE.
+ */
+void Peripheral_SetBleCh9329Response(uint8_t enable);
+
+/*
+ * Check if BLE CH9329 response routing is enabled.
+ * Called by CH9329_SendResponse to determine where to send the response.
+ */
+uint8_t Peripheral_GetBleCh9329Response(void);
+
 #endif /* ENABLE_BLE */
 
 /*********************************************************************

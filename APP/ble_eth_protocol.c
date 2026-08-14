@@ -1263,13 +1263,25 @@ static void send_arp_request(uint8_t conn_id)
     g_ecm_tx_cb(buf, 42);
 }
 
-/* Send TCP data through tunnel. Wraps in Ethernet/IPv4/TCP. */
+/* Send TCP data through tunnel. Wraps in Ethernet/IPv4/TCP.
+ * Payloads larger than the TCP MSS are split into multiple segments:
+ * a single oversized frame would exceed the 1514-byte Ethernet MTU and
+ * be dropped silently by send_tcp_frame(), stalling the tunnel. */
+#define BLE_ETH_TCP_MSS  1460U  /* 1514 - 14 Eth - 20 IPv4 - 20 TCP */
+
 void BLE_Eth_SendDataToEth(uint8_t conn_id, const uint8_t *data, uint16_t len)
 {
     if (conn_id >= BLE_ETH_MAX_CONNECTIONS) return;
     ble_eth_conn_t *c = &g_connections[conn_id];
     if (!c->active || c->tcp_state != BLE_ETH_TCP_ESTABLISHED) return;
-    send_tcp_frame(conn_id, 0x18, data, len);  /* PSH+ACK */
+
+    uint16_t off = 0U;
+    while (off < len) {
+        uint16_t seg_len = (uint16_t)(len - off);
+        if (seg_len > BLE_ETH_TCP_MSS) seg_len = BLE_ETH_TCP_MSS;
+        send_tcp_frame(conn_id, 0x18, data + off, seg_len);  /* PSH+ACK */
+        off = (uint16_t)(off + seg_len);
+    }
 }
 
 /* ======================== Target frame handler =========================== */

@@ -33,6 +33,11 @@ class TestSerialHID:
         status = resp[5:13]
         print(f"Device status: {hexstr(status)}")
 
+        # Byte 0 = hardware selector (board version): 1=KVM-GO, 2=MiniKVM, 3=KeyMod
+        assert status[0] in (0x01, 0x02, 0x03), (
+            f"Bad hardware selector 0x{status[0]:02x}, expected board version 1..3"
+        )
+
     def test_keyboard_press_release(self, serial_port, flush_serial):
         """Test keyboard press/release (0x02) sends HID report."""
         # Key down: LShift + 'A'
