@@ -160,11 +160,13 @@ else
 fi
 
 # Enable BLE, board version and BLE name from env (override at call time).
-# Defaults: BOARD_VERSION=1 (KVMGo), ENABLE_BLE=1, ENABLE_UAC=0.
+# Defaults: BOARD_VERSION=1 (KVMGo), ENABLE_BLE=1, ENABLE_UAC=0,
+#           USB_WORK_MODE=hid_acm_ecm (CDC COM + CDC ECM for all boards).
 # BLE_NAME auto-detected from BOARD_VERSION unless explicitly set.
 BOARD_VERSION="${BOARD_VERSION:-1}"
 ENABLE_BLE="${ENABLE_BLE:-1}"
 ENABLE_UAC="${ENABLE_UAC:-0}"
+USB_WORK_MODE="${USB_WORK_MODE:-hid_acm_ecm}"
 
 if [[ -z "${BLE_NAME:-}" ]]; then
   case "$BOARD_VERSION" in
@@ -175,6 +177,17 @@ if [[ -z "${BLE_NAME:-}" ]]; then
   esac
 fi
 
+# Map USB_WORK_MODE name to numeric ID (must match build/makefile)
+case "$USB_WORK_MODE" in
+  hid_acm)        USB_WORK_MODE_ID=1 ;;
+  hid_uac_acm)    USB_WORK_MODE_ID=2 ;;
+  hid_acm_bridge) USB_WORK_MODE_ID=3 ;;
+  hid_ecm_bridge) USB_WORK_MODE_ID=4 ;;
+  hid_uac_ecm)    USB_WORK_MODE_ID=5 ;;
+  hid_acm_ecm)    USB_WORK_MODE_ID=6 ;;
+  *) echo "ERROR: unsupported USB_WORK_MODE '$USB_WORK_MODE'" >&2; exit 1 ;;
+esac
+
 if [[ "$ENABLE_BLE" == "1" ]]; then
   CFLAGS="$CFLAGS -DENABLE_BLE"
   CFLAGS="$CFLAGS -DBLE_DEVICE_NAME=\"$BLE_NAME\""
@@ -184,6 +197,9 @@ if [[ "$ENABLE_UAC" == "1" ]]; then
   CFLAGS="$CFLAGS -DENABLE_UAC"
 fi
 CFLAGS="$CFLAGS -Dversion=$BOARD_VERSION"
+CFLAGS="$CFLAGS -DUSB_WORK_MODE=$USB_WORK_MODE_ID"
+CFLAGS="$CFLAGS -DUSB_WORK_MODE_RUNTIME_PROFILES=0"
+echo "USB_WORK_MODE=$USB_WORK_MODE (ID=$USB_WORK_MODE_ID)"
 
 LINKER_SCRIPT="$REPO_ROOT/HAL/Link.ld"
 OUTPUT="$BUILD_DIR/openterface-km-firmware"

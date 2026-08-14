@@ -85,14 +85,14 @@ jobs:
     - name: Build KVMGo (version 1)
       run: |
         echo "Building KVMGo..."
-        echo "Feature flags: ENABLE_BLE=${{ env.ENABLE_BLE }}"
+        echo "Feature flags: ENABLE_BLE=${{ env.ENABLE_BLE }}, USB_WORK_MODE=hid_acm_ecm"
 
         # Build
         cd build
         $env:PATH = "C:\tools\risc-none-embed-gcc\bin;" + $env:PATH
         $env:RISC_COMPILER_PATH = "C:\tools\risc-none-embed-gcc"
         make clean
-        make -j4 ENABLE_BLE=${{ env.ENABLE_BLE }} BOARD_VERSION=1 all
+        make -j4 ENABLE_BLE=${{ env.ENABLE_BLE }} BOARD_VERSION=1 USB_WORK_MODE=hid_acm_ecm all
         riscv-none-embed-objcopy -O binary "openterface-km-firmware.elf" "openterface-km-firmware.bin"
         riscv-none-embed-size --format=berkeley openterface-km-firmware.elf | Out-File -Encoding ascii openterface-km-firmware.siz
         if ($LASTEXITCODE -eq 0) {
@@ -112,14 +112,14 @@ jobs:
     - name: Build Mini-KVM v1.2 (version 2)
       run: |
         echo "Building Mini-KVM v1.2..."
-        echo "Feature flags: ENABLE_BLE=${{ env.ENABLE_BLE }}"
+        echo "Feature flags: ENABLE_BLE=${{ env.ENABLE_BLE }}, USB_WORK_MODE=hid_acm_ecm"
 
         # Build
         cd build
         $env:PATH = "C:\tools\risc-none-embed-gcc\bin;" + $env:PATH
         $env:RISC_COMPILER_PATH = "C:\tools\risc-none-embed-gcc"
         make clean
-        make -j4 ENABLE_BLE=${{ env.ENABLE_BLE }} BOARD_VERSION=2 all
+        make -j4 ENABLE_BLE=${{ env.ENABLE_BLE }} BOARD_VERSION=2 USB_WORK_MODE=hid_acm_ecm all
         riscv-none-embed-objcopy -O binary "openterface-km-firmware.elf" "openterface-km-firmware.bin"
         riscv-none-embed-size --format=berkeley openterface-km-firmware.elf | Out-File -Encoding ascii openterface-km-firmware.siz
         if ($LASTEXITCODE -eq 0) {

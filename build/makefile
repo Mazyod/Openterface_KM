@@ -26,15 +26,11 @@ ENABLE_STYLUS ?= 0
 
 BOARD_VERSION ?= 1
 
-# USB work mode per board version:
-#   KVMGo (v1) and Mini-KVM (v2): CDC COM only (hid_acm)
+# USB work mode per board version (can be overridden via command line):
+#   KVMGo (v1) and Mini-KVM (v2): CDC COM + CDC ECM (hid_acm_ecm)
 #   KeyMod (v3):                  CDC COM + CDC ECM (hid_acm_ecm)
 override ENABLE_UAC := 0
-ifneq ($(filter 1 2,$(BOARD_VERSION)),)
-override USB_WORK_MODE := hid_acm
-else
-override USB_WORK_MODE := hid_acm_ecm
-endif
+USB_WORK_MODE ?= hid_acm_ecm
 
 # USB work modes:
 #   hid_acm        = target HID only, host CDC ACM
@@ -147,21 +143,21 @@ openterface-km-firmware.siz \
 all:
 	$(MAKE) --no-print-directory main-build
 
-# KVMGo build configuration (BOARD_VERSION=1, CDC COM only)
+# KVMGo build configuration (BOARD_VERSION=1, CDC COM + ECM)
 kvmgo:
-	$(MAKE) --no-print-directory BOARD_VERSION=1 ENABLE_BLE=1 BLE_NAME=KVM-GO
+	$(MAKE) --no-print-directory BOARD_VERSION=1 ENABLE_BLE=1 BLE_NAME=KVM-GO USB_WORK_MODE=hid_acm_ecm
 	@cp openterface-km-firmware.elf openterface-km-firmware-kvmgo.elf
 	@cp openterface-km-firmware.bin openterface-km-firmware-kvmgo.bin
 	@cp openterface-km-firmware.hex openterface-km-firmware-kvmgo.hex
-	@echo "Built: openterface-km-firmware-kvmgo (CDC COM only)"
+	@echo "Built: openterface-km-firmware-kvmgo (CDC COM+ECM)"
 
-# Mini-KVM build configuration (BOARD_VERSION=2, CDC COM only)
+# Mini-KVM build configuration (BOARD_VERSION=2, CDC COM + ECM)
 minikvm:
-	$(MAKE) --no-print-directory BOARD_VERSION=2 ENABLE_BLE=1 BLE_NAME=Mini-KVM
+	$(MAKE) --no-print-directory BOARD_VERSION=2 ENABLE_BLE=1 BLE_NAME=Mini-KVM USB_WORK_MODE=hid_acm_ecm
 	@cp openterface-km-firmware.elf openterface-km-firmware-minikvm.elf
 	@cp openterface-km-firmware.bin openterface-km-firmware-minikvm.bin
 	@cp openterface-km-firmware.hex openterface-km-firmware-minikvm.hex
-	@echo "Built: openterface-km-firmware-minikvm (CDC COM only)"
+	@echo "Built: openterface-km-firmware-minikvm (CDC COM+ECM)"
 
 # KeyMod Plus build configuration (BOARD_VERSION=3, CDC COM + ECM)
 keymod-plus:
