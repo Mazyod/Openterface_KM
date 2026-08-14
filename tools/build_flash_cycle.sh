@@ -26,6 +26,7 @@ BOARD_VERSION="${BOARD_VERSION:-1}"
 ENABLE_BLE="${ENABLE_BLE:-1}"
 ENABLE_UAC="${ENABLE_UAC:-0}"
 ENABLE_OSCILLATOR="${ENABLE_OSCILLATOR:-0}"
+USB_WORK_MODE="${USB_WORK_MODE:-hid_acm_ecm}"
 # BLE_NAME is resolved after argument parsing (see finalize_ble_name)
 # so that --board-version is honoured.
 BLE_NAME="${BLE_NAME:-}"
@@ -54,6 +55,7 @@ Options:
   --enable-ble <0|1>           Default: 1
   --enable-uac <0|1>           Default: 0
   --enable-oscillator <0|1>    Default: 0 (0=internal RC, 1=external 32K crystal)
+  --usb-work-mode <mode>       Default: hid_acm_ecm (1=hid_acm 4=hid_ecm_bridge 6=hid_acm_ecm ...)
   --no-build                   Skip zip/upload/remote build/download
   --no-flash                   Skip flash/power-cycle steps
   --no-verify                  Skip post-flash ioreg verification
@@ -154,6 +156,10 @@ parse_args() {
                 ENABLE_OSCILLATOR="$2"
                 shift 2
                 ;;
+            --usb-work-mode)
+                USB_WORK_MODE="$2"
+                shift 2
+                ;;
             --no-build)
                 DO_BUILD=0
                 shift
@@ -197,7 +203,7 @@ parse_args() {
         *) BLE_NAME="KeyMod" ;;
       esac
     fi
-    log "Build config: BOARD_VERSION=${BOARD_VERSION} BLE_NAME=${BLE_NAME} ENABLE_BLE=${ENABLE_BLE} ENABLE_UAC=${ENABLE_UAC} ENABLE_OSCILLATOR=${ENABLE_OSCILLATOR}"
+    log "Build config: BOARD_VERSION=${BOARD_VERSION} BLE_NAME=${BLE_NAME} ENABLE_BLE=${ENABLE_BLE} ENABLE_UAC=${ENABLE_UAC} ENABLE_OSCILLATOR=${ENABLE_OSCILLATOR} USB_WORK_MODE=${USB_WORK_MODE}"
 }
 
 build_remote() {
@@ -219,7 +225,7 @@ build_remote() {
     run ssh "$REMOTE_SSH" "powershell -NoProfile -Command \"Remove-Item -Recurse -Force ${WINDOWS_BUILD_DIR} -ErrorAction SilentlyContinue; Expand-Archive -Path ${WINDOWS_ZIP} -DestinationPath ${WINDOWS_BUILD_DIR} -Force\""
 
     log "Building firmware on remote MSYS2"
-    run ssh "$REMOTE_SSH" "${MSYS_BASH} -l -c \"cd ${REMOTE_PROJECT_UNIX} && rm -rf obj && BOARD_VERSION=${BOARD_VERSION} BLE_NAME=${BLE_NAME} ENABLE_BLE=${ENABLE_BLE} ENABLE_UAC=${ENABLE_UAC} ENABLE_OSCILLATOR=${ENABLE_OSCILLATOR} bash tools/build_firmware.sh\""
+    run ssh "$REMOTE_SSH" "${MSYS_BASH} -l -c \"cd ${REMOTE_PROJECT_UNIX} && rm -rf obj && BOARD_VERSION=${BOARD_VERSION} BLE_NAME=${BLE_NAME} ENABLE_BLE=${ENABLE_BLE} ENABLE_UAC=${ENABLE_UAC} ENABLE_OSCILLATOR=${ENABLE_OSCILLATOR} USB_WORK_MODE=${USB_WORK_MODE} bash tools/build_firmware.sh\""
 
     log "Downloading built firmware binary"
     run scp "${REMOTE_SSH}:${REMOTE_BIN}" "$LOCAL_BIN"
