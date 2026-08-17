@@ -114,6 +114,7 @@ static void USBFS_ModeHid_FillReport(uint8_t *report)
 
     /* Append-only diagnostics (do not change existing offsets above). */
     report[USBFS_MODE_HID_DIAG_VERSION_OFFSET] = 0x01u;
+#if USB_WORK_MODE_BRIDGE_ECM
     report[USBFS_MODE_HID_DIAG_FLAGS_OFFSET] = 0x01u; /* bit0: BLE-Eth stats present */
 
     ble_eth_reliability_stats_t st;
@@ -125,6 +126,9 @@ static void USBFS_ModeHid_FillReport(uint8_t *report)
     USBFS_ModeHid_WriteU32LE(report, USBFS_MODE_HID_DIAG_BLE_ETH_STATS_OFFSET + 16u, st.tx_queue_full_drop);
     USBFS_ModeHid_WriteU32LE(report, USBFS_MODE_HID_DIAG_BLE_ETH_STATS_OFFSET + 20u, st.frame_rx_len_err);
     USBFS_ModeHid_WriteU32LE(report, USBFS_MODE_HID_DIAG_BLE_ETH_STATS_OFFSET + 24u, st.frame_rx_checksum_err);
+#else
+    report[USBFS_MODE_HID_DIAG_FLAGS_OFFSET] = 0x00u; /* bit0: no BLE-Eth stats */
+#endif
 }
 
 static void USBFS_ModeHid_HandleSetReport(uint8_t *report, uint16_t report_len)
