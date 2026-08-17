@@ -26,11 +26,15 @@ ENABLE_STYLUS ?= 0
 
 BOARD_VERSION ?= 1
 
-# USB work mode per board version (can be overridden via command line):
-#   KVMGo (v1) and Mini-KVM (v2): CDC COM + CDC ECM (hid_acm_ecm)
+# USB work mode per board version:
+#   KVMGo (v1) and Mini-KVM (v2): CDC COM only (hid_acm)
 #   KeyMod (v3):                  CDC COM + CDC ECM (hid_acm_ecm)
 override ENABLE_UAC := 0
-USB_WORK_MODE ?= hid_acm_ecm
+ifneq ($(filter 1 2,$(BOARD_VERSION)),)
+override USB_WORK_MODE := hid_acm
+else
+override USB_WORK_MODE := hid_acm_ecm
+endif
 
 # USB work modes:
 #   hid_acm        = target HID only, host CDC ACM
