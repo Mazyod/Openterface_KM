@@ -17,6 +17,7 @@
 
 #include <stdint.h>
 #include <stdbool.h>
+#include "usb_work_mode.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -330,6 +331,8 @@ typedef void (*ble_eth_event_cb_t)(ble_eth_evt_t *evt);
 
 /* ======================== API ============================================ */
 
+#if USB_WORK_MODE_BRIDGE_ECM
+
 /**
  * @brief Initialize the BLE-Eth protocol parser and connection table.
  * @param event_cb  Callback for protocol events (may be NULL).
@@ -523,6 +526,36 @@ void BLE_Eth_GetReliabilityStats(ble_eth_reliability_stats_t *out_stats);
  * @brief Reset protocol reliability counters.
  */
 void BLE_Eth_ResetReliabilityStats(void);
+
+#else /* !USB_WORK_MODE_BRIDGE_ECM — stub out all BLE-Eth API as no-ops */
+
+#define BLE_Eth_Init(cb)                            ((void)0)
+#define BLE_Eth_Parse(data, len)                    ((void)0)
+#define BLE_Eth_BuildConnect(buf, ip, port)         (0U)
+#define BLE_Eth_BuildDisconnect(buf, id)            (0U)
+#define BLE_Eth_BuildData(buf, id, data, len)       (0U)
+#define BLE_Eth_BuildInfoRequest(buf)               (0U)
+#define BLE_Eth_BuildResponse(buf, cmd, a, s, p, l) (0U)
+#define BLE_Eth_GetConnection(id)                   ((const ble_eth_conn_t *)0)
+#define BLE_Eth_AllocConnection(ip, port)           (BLE_ETH_INVALID_CONN_ID)
+#define BLE_Eth_FreeConnection(id)                  ((void)0)
+#define BLE_Eth_PushTargetData(id, data, len)       (false)
+#define BLE_Eth_GetNextTxChunk(buf, max)            (0U)
+#define BLE_Eth_ConsumeTxChunk(len)                 ((void)0)
+#define BLE_Eth_ResetParser()                       ((void)0)
+#define BLE_Eth_SetEcmtxCb(cb)                      ((void)0)
+#define BLE_Eth_SendDataToEth(id, data, len)        ((void)0)
+#define BLE_Eth_HandleTargetFrame(frame, len)       (false)
+#define BLE_Eth_HasActiveTunnel()                   (false)
+#define BLE_Eth_AutoConnect()                       (false)
+#define BLE_Eth_HandleArpReply(ip, mac)             (false)
+#define BLE_Eth_HasActiveOrPendingConnection()      (false)
+#define BLE_Eth_LearnHostMac(mac)                   ((void)0)
+#define BLE_Eth_PeriodicTick()                      (false)
+#define BLE_Eth_GetReliabilityStats(out)            ((void)0)
+#define BLE_Eth_ResetReliabilityStats()             ((void)0)
+
+#endif /* USB_WORK_MODE_BRIDGE_ECM */
 
 #ifdef __cplusplus
 }

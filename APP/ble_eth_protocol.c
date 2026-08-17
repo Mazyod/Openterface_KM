@@ -16,6 +16,8 @@
 #include "debug.h"
 #include "include/pwm_led.h"
 
+#if USB_WORK_MODE_BRIDGE_ECM
+
 /* LED diagnostic patterns for BLE-Eth tunnel debugging */
 #define LED_DIAG_CONNECT_RX      90   /* CONNECT received from BLE */
 #define LED_DIAG_SYN_SENT        91   /* TCP SYN sent to HOST */
@@ -1469,3 +1471,5 @@ bool BLE_Eth_AutoConnect(void)
     PRINT("Auto-connect initiated (conn_id=%d, ARP pending)\r\n", conn_id);
     return true;
 }
+
+#endif /* USB_WORK_MODE_BRIDGE_ECM */
