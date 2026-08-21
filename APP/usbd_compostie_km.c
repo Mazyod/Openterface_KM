@@ -119,7 +119,7 @@ void CH9329_Cmd_GetInfo_Reply(uint8_t addr)
         data[1] = 0x00;   // Not connected
     }
     data[2] = Keyboard_GetLEDStatus() & 0x07; // bit2-bit0: LED status
-    data[3] = 0x05; // bit6 placeholder
+    data[3] = 0x06; // bit6 placeholder
     data[4] = 0x00; // bit5 placeholder
     data[5] = 0x00; // bit4 placeholder
     data[6] = 0x00; // bit3 placeholder
