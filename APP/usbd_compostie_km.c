@@ -119,11 +119,11 @@ void CH9329_Cmd_GetInfo_Reply(uint8_t addr)
         data[1] = 0x00;   // Not connected
     }
     data[2] = Keyboard_GetLEDStatus() & 0x07; // bit2-bit0: LED status
-    data[3] = 0x05; // bit6 placeholder
-    data[4] = 0x00; // bit5 placeholder
-    data[5] = 0x00; // bit4 placeholder
-    data[6] = 0x00; // bit3 placeholder
-    data[7] = 0x00; // bit3 placeholder
+    data[3] = 0x05; // firmware version number
+    data[4] = 0x00; // reserved
+    data[5] = 0x00; // reserved
+    data[6] = 0x00; // reserved
+    data[7] = 0x00; // reserved
     CH9329_SendResponse(addr, CMD_GET_INFO , data, 8, 1);
 }
 
@@ -273,6 +273,17 @@ void CH9329_DispatchCommand(uint8_t addr, uint8_t cmd_code, uint8_t* pdata, uint
             break;
         case CMD_USB_WORK_MODE:
             CH9329_Cmd_USBWorkMode(addr, cmd_code, pdata, data_len);
+            break;
+        //cmd=22,BLE security control (pairing window / bond management)
+        case CMD_BLE_SECURITY:
+#ifdef ENABLE_BLE
+            Peripheral_SecurityCommand(addr, cmd_code, pdata, data_len);
+#else
+        {
+            uint8_t err = STATUS_ERR_CMD;
+            CH9329_SendResponse(addr, cmd_code, &err, 1, 0);
+        }
+#endif
             break;
         //cmd=08,Get parameter configuration(Only used for matching with ch9329)
         case CMD_GET_PARA_CFG:

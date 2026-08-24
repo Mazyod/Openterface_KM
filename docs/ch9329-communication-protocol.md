@@ -78,6 +78,7 @@ The response payload is usually a 1-byte status for write-like commands, or a st
 | `0x08` | Get parameter config | none | 44-byte fixed blob | Compatibility response only |
 | `0x17` | SD switch | board-specific | board-specific | Openterface extension |
 | `0x18` | Temperature | board-specific | board-specific | DS18B20 extension |
+| `0x22` | BLE security | 1-byte sub-command | status + sub-command data | Openterface extension for BLE pairing/bond management |
 | `0x30` | USB work mode | optional control payload | 12-byte status block | Openterface extension for runtime USB personality selection |
 
 ## Command Details
@@ -91,7 +92,8 @@ Returns a fixed 8-byte payload:
 | 0 | Hardware selector (board version): `0x01` = KVM-GO, `0x02` = MiniKVM, `0x03` = KeyMod |
 | 1 | Target USB enumeration state: `0x01` connected, `0x00` not connected |
 | 2 | Keyboard LED bits (`CapsLock`, `NumLock`, `ScrollLock`) |
-| 3..7 | Reserved / placeholder bytes in the current implementation |
+| 3 | Firmware version number (e.g., `0x05` = version 5) |
+| 4..7 | Reserved / placeholder bytes |
 
 This is used as a compact device-status query, not just a static version read.
 
@@ -160,6 +162,21 @@ This is an Openterface-specific extension and is not part of the minimal keyboar
 ### `0x18` Temperature
 
 This is an Openterface-specific extension for the DS18B20 temperature sensor path.
+
+### `0x22` BLE Security
+
+Openterface extension managing BLE pairing and bonds (see `docs/ble-security.md`).
+The payload is a single sub-command byte; responses follow the standard
+`cmd | 0x80` (success) / `cmd | 0xC0` (error) encoding.
+
+| Sub-cmd | Name | Allowed origin | Response payload |
+| --- | --- | --- | --- |
+| `0x01` | Open pairing window | USB, BLE | status, remaining window seconds (u16 LE); when issued over USB additionally the 6-digit passkey (u32 LE). The passkey is never sent over BLE. |
+| `0x02` | Erase all bonds | USB only | status. Erases every bond and clears the BLE whitelist. BLE-originated requests are rejected with a frame error. |
+| `0x03` | Bond count | USB, BLE | status, number of stored bonds (u8) |
+
+Status values follow the status code table above. `0x01` and `0x03` can also be
+tunneled through the BLE rawpass characteristic once the link is encrypted.
 
 ### `0x30` USB Work Mode
 
