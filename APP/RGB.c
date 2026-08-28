@@ -260,10 +260,10 @@ void Update_SDcard(void)
     
     }
     else if(sd_card_channel_state == 0){
-        if(GPIO_ReadInputDataBit(GPIOA, GPIO_Pin_14)||sd_card_channel_state == 1)
+        if(GPIO_ReadInputDataBit(GPIOA, GPIO_Pin_14))
         RGB_SetColorSolid(RGB_OFF, 1.0f);
         else
-        RGB_SetColorSolid(RGB_BLUE, 1.0f);    
+        RGB_SetColorSolid(RGB_RED, 1.0f);
     }
 
 
