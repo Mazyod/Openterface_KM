@@ -266,10 +266,8 @@ int main(void) {
         Delay_Ms(100);
     }
 #elif version == 1
-    /* KVM-Go: magenta flash then white flash */
-    RGB_SetColor(1, 0, 0); Delay_Ms(300);
-    RGB_SetColor(0, 1, 0); Delay_Ms(300);
-    RGB_SetColor(0, 0, 1); Delay_Ms(200);
+    /* KVM-Go: RGB three-color flash */
+    RGB_FlashVersionVerify();
 #else
     (void)0;
 #endif

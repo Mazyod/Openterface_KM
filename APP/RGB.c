@@ -372,6 +372,33 @@ void RGB_Update(void)
 }
 
 
+/* ====================== RGB_FlashVersionVerify ====================== */
+/*
+ * Firmware version verification flash sequence.
+ * Called once at startup (after RGB_Init) to visually confirm the firmware
+ * is running. The pattern differs by hardware version:
+ *
+ *   version == 1 (KVM-Go):    red 300ms -> green 300ms -> blue 200ms
+ *   version == 3 (KeyMod):    handled separately via PC7 PWM LED in main()
+ *   version == 2 (Mini KVM):  no flash (silent)
+ *
+ * This function is blocking (uses Delay_Ms). Call it before entering the
+ * main loop.
+ */
+void RGB_FlashVersionVerify(void)
+{
+#if version == 1
+    /* KVM-Go: RGB three-color flash */
+    RGB_SetColor(1, 0, 0); Delay_Ms(300);   /* red   for 300ms */
+    RGB_SetColor(0, 1, 0); Delay_Ms(300);   /* green for 300ms */
+    RGB_SetColor(0, 0, 1); Delay_Ms(200);   /* blue  for 200ms */
+#else
+    /* version 2 and others: no flash */
+    (void)0;
+#endif
+}
+
+
 /* ====================== Update_SDcard ====================== */
 /*
  * Reflect the current SD card channel state on the RGB LED.
