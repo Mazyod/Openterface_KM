@@ -391,7 +391,7 @@ void RGB_FlashVersionVerify(void)
     /* KVM-Go: RGB three-color flash */
     RGB_SetColor(1, 0, 0); Delay_Ms(300);   /* red   for 300ms */
     RGB_SetColor(0, 1, 0); Delay_Ms(300);   /* green for 300ms */
-    RGB_SetColor(0, 0, 1); Delay_Ms(200);   /* blue  for 200ms */
+    RGB_SetColor(0, 0, 1); Delay_Ms(300);   /* blue  for 200ms */
 #else
     /* version 2 and others: no flash */
     (void)0;
