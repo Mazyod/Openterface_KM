@@ -16,7 +16,7 @@ NC='\033[0m' # No Color
 # Project directory
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BUILD_DIR="${SCRIPT_DIR}/build"
-OUTPUT_DIR="${BUILD_DIR}"
+OUTPUT_DIR="${SCRIPT_DIR}/output"
 
 # Default parameters
 ENABLE_BLE=1
