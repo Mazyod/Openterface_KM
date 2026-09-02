@@ -51,6 +51,9 @@ void MCU_Sleep_Wakeup_Operate( void )
     SystemCoreClockUpdate();
     USBFS_RCC_Init();
 
+    /* Fully re-initialize USBFS (all registers lost during STOP mode) */
+    USBFS_Device_Init(ENABLE);
+
     if( EXTI_GetFlagStatus( EXTI_Line12 | EXTI_Line13 | EXTI_Line14 | EXTI_Line15 ) != RESET  )
     {
         EXTI_ClearFlag( EXTI_Line12 | EXTI_Line13 | EXTI_Line14 | EXTI_Line15 );

@@ -460,6 +460,10 @@ void USBFS_Device_Init( FunctionalState sta )
         /* Initialize USB device configuration */
         USBFS_Device_Endp_Init( );
         USBFSD->INT_EN = USBFS_UIE_SUSPEND | USBFS_UIE_BUS_RST | USBFS_UIE_TRANSFER;
+
+        /* Wait for power stability before enabling D+ pull-up */
+        Delay_Ms( 100 );
+
         USBFSD->BASE_CTRL = USBFS_UC_DEV_PU_EN | USBFS_UC_INT_BUSY | USBFS_UC_DMA_EN;
         USBFSD->UDEV_CTRL = USBFS_UD_PD_DIS | USBFS_UD_PORT_EN;
         NVIC_EnableIRQ( USBFS_IRQn );
@@ -1644,6 +1648,12 @@ void USBFS_IRQHandler( void )
 
         USBFSD->DEV_ADDR = 0;
         USBFS_Device_Endp_Init( );
+
+        /* Restore critical control registers (consistent with USBFS_Device_Init) */
+        USBFSD->INT_EN    = USBFS_UIE_SUSPEND | USBFS_UIE_BUS_RST | USBFS_UIE_TRANSFER;
+        USBFSD->BASE_CTRL = USBFS_UC_DEV_PU_EN | USBFS_UC_INT_BUSY | USBFS_UC_DMA_EN;
+        USBFSD->UDEV_CTRL = USBFS_UD_PD_DIS | USBFS_UD_PORT_EN;
+
         if (USB_ModeConfig_ActiveModeBridgeAcm()) {
             ACM_Bridge_Init();
         }

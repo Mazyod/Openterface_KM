@@ -2,7 +2,7 @@
 
 **Document Version:** v1.0
 **Created:** 2026-08-31
-**Status:** Pending Fix
+**Status:** Fixes Applied (P0 + P1)
 **Scope:** Openterface KM Firmware (CH32V208) + Openterface QT Host
 
 ---
