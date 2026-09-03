@@ -1670,11 +1670,14 @@ void USBFS_IRQHandler( void )
         if( USBFSD->MIS_ST & USBFS_UMS_SUSPEND )
         {
             USBFS_DevSleepStatus |= 0x02;
-            if( USBFS_DevSleepStatus == 0x03 )
-            {
-                /* Handling usb sleep here */
-                MCU_Sleep_Wakeup_Operate( );
-            }
+            /* Do NOT enter STOP mode here. STOP mode stops the entire MCU,
+             * making it unable to respond to Host USB requests, which causes
+             * the Host to disconnect the device (error -71 on reconnect).
+             *
+             * Instead, just reset the sleep status to keep USBFS in a
+             * responsive state. The device will remain active and able to
+             * handle USB requests even when the bus is idle/suspended. */
+            USBFS_DevSleepStatus = 0;
         }
         else
         {
