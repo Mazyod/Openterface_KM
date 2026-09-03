@@ -32,29 +32,6 @@ ResumeS;
 __IO uint32_t remotewakeupon=0;
 
 /*******************************************************************************
- * @fn      USBD_WakeupTarget
- *
- * @brief   Send USB remote wakeup signal to Target PC through USBD port.
- *          This function should be called when the Target is suspended and
- *          the Host wants to wake it up via serial command.
- *
- * @return  0: Success, 1: USBD not in suspended state
- */
-uint8_t USBD_WakeupTarget(void)
-{
-    /* Only send wakeup if USBD is in suspended state */
-    if (bDeviceState != SUSPENDED) {
-        return 1;  /* Not in suspended state */
-    }
-
-    /* Trigger internal resume - this will send K-state on USB bus
-     * to wake up the Target PC */
-    Resume(RESUME_INTERNAL);
-
-    return 0;  /* Success */
-}
-
-/*******************************************************************************
  * @fn      PowerOn
  *
  * @brief   Enable power on.
