@@ -19,12 +19,7 @@
 extern __IO uint32_t esof_counter;
 
 __IO uint32_t bDeviceState = UNCONNECTED;
-/* Disable USB suspend to maintain connection when Target PC suspends.
- * When fSuspendEnabled is FALSE, the USBD controller will not enter
- * suspend mode when receiving SUSPEND interrupt from Target. Instead,
- * it will immediately resume, keeping the USBFS serial port connected
- * on the Host side. */
-__IO bool fSuspendEnabled = FALSE;
+__IO bool fSuspendEnabled = TRUE;
 __IO uint32_t EP[8];
 
 struct
