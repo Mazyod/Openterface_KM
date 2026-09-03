@@ -101,30 +101,20 @@ RESULT PowerOff()
  */
 void Suspend(void)
 {
-	uint32_t i =0;
 	uint16_t wCNTR;
 
+	/* Save endpoint state (not strictly needed without forced reset,
+	 * but kept for safety) */
+	{
+		uint32_t i;
+		for (i=0;i<8;i++) EP[i] = _GetENDPOINT(i);
+	}
+
+	/* Standard USB suspend: just set FSUSP and LPMODE.
+	 * Do NOT force a USB reset here - that would put the controller
+	 * in a "just reset" state expecting re-enumeration, which breaks
+	 * the resume flow when Target wakes up. */
 	wCNTR = _GetCNTR();
-  for (i=0;i<8;i++) EP[i] = _GetENDPOINT(i);
-
-	wCNTR|=CNTR_RESETM;
-	_SetCNTR(wCNTR);
-
-	/* Force USB reset to clear any pending transactions before suspend.
-	 * This is needed to ensure clean state before entering low power mode. */
-	wCNTR|=CNTR_FRES;
-	_SetCNTR(wCNTR);
-
-	wCNTR&=~CNTR_FRES;
-	_SetCNTR(wCNTR);
-
-	while((_GetISTR()&ISTR_RESET) == 0);
-
-	_SetISTR((uint16_t)CLR_RESET);
-
-	for (i=0;i<8;i++)
-	_SetENDPOINT(i, EP[i]);
-
 	wCNTR |= CNTR_FSUSP;
 	_SetCNTR(wCNTR);
 
@@ -132,9 +122,7 @@ void Suspend(void)
 	wCNTR |= CNTR_LPMODE;
 	_SetCNTR(wCNTR);
 
-	/* Reset ESOF counter to prevent false triggers on resume.
-	 * The ESOF handler monitors D+ and may force a reset if esof_counter
-	 * accumulates during suspend, causing enumeration issues. */
+	/* Reset ESOF counter to prevent false triggers on resume */
 	esof_counter = 0;
 
 	Enter_LowPowerMode();
