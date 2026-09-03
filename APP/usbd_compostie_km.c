@@ -4,6 +4,7 @@
 #include "usb_lib.h"
 #include "usb_desc.h"
 #include "usb_prop.h"
+#include "usb_pwr.h"
 #include "peripheral.h"
 #include "include/keyboard_handler.h"
 #include "include/mouse_handler.h"
@@ -294,6 +295,19 @@ void CH9329_DispatchCommand(uint8_t addr, uint8_t cmd_code, uint8_t* pdata, uint
 
             // Send parameter configuration response
             CH9329_SendResponse(addr, cmd_code, response, sizeof(response), 1);
+        }
+        break;
+
+        //cmd=19,Wake up Target PC via USB remote wakeup
+        case CMD_WAKEUP_TARGET:
+        {
+            uint8_t st = USBD_WakeupTarget();
+            if (st == 0) {
+                st = STATUS_SUCCESS;
+            } else {
+                st = STATUS_ERR_FRAME;  /* USBD not in suspended state */
+            }
+            CH9329_SendResponse(addr, cmd_code, &st, 1, 1);
         }
         break;
 

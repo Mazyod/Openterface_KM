@@ -45,6 +45,7 @@
 #define CMD_GET_PARA_CFG     0x08
 #define CMD_SD_SWITCH  0x17
 #define CMD_DS18B20_GET_TEMP   0x18
+#define CMD_WAKEUP_TARGET      0x19  /* Wake up Target PC via USB remote wakeup */
 #define CMD_USB_WORK_MODE      0x30
 // ACK Status Codes
 #define STATUS_SUCCESS        0x00

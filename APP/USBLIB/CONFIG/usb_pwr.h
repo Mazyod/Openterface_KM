@@ -45,6 +45,7 @@ void Resume_Init(void);
 void Resume(RESUME_STATE eResumeSetVal);
 RESULT PowerOn(void);
 RESULT PowerOff(void);
+uint8_t USBD_WakeupTarget(void);  /* Wake up Target PC via USB remote wakeup */
 
 extern  __IO uint32_t bDeviceState; /* USB device status */
 extern __IO bool fSuspendEnabled;  /* true when suspend is possible */
