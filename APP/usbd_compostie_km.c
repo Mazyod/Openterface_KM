@@ -13,6 +13,9 @@
 #include "km_ring.h"
 #include "Version_selection.h"
 #include "include/usb_mode_config.h"
+
+/* External variable from ch32v20x_usbfs_device.c - needs to be reset after STOP mode wakeup */
+extern volatile uint8_t USBFS_DevSleepStatus;
 /*******************************************************************************/
 /* Global Variable Definition */
 
@@ -54,6 +57,12 @@ void MCU_Sleep_Wakeup_Operate( void )
 
     /* Fully re-initialize USBFS (all registers lost during STOP mode) */
     USBFS_Device_Init(ENABLE);
+
+    /* Reset sleep status to prevent immediate re-entry into STOP mode.
+     * Without this, USBFS_DevSleepStatus remains 0x03 after wakeup,
+     * causing the next SUSPEND interrupt to trigger STOP mode again,
+     * leading to enumeration failures. */
+    USBFS_DevSleepStatus = 0;
 
     if( EXTI_GetFlagStatus( EXTI_Line12 | EXTI_Line13 | EXTI_Line14 | EXTI_Line15 ) != RESET  )
     {
