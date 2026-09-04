@@ -116,6 +116,15 @@ Select your KeyMod from the device list and click **Connect**.
 
 ![Openterface QT – Connect to KeyMod](images/openterface-qt-connect.PNG)
 
+After connecting, the **Chip Information** section will show your KeyMod's details:
+
+* Chip model (e.g. CH32V208GB)
+* Bootloader version (e.g. BTVER: 02.80)
+* Device UID
+* Flash protection status
+
+![Openterface QT – Device connected successfully](images/openterface-qt-after-connect.PNG)
+
 ### Openterface KVM (MacOS)
 
 1. In the **WCH Firmware Flash** panel, click **Scan** to detect devices.
