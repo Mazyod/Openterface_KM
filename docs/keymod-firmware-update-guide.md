@@ -106,9 +106,13 @@ This opens the **WCH Firmware Flash** panel where you can scan, connect, choose 
 3. Select it.
 4. Click **Connect**.
 
-![Openterface QT – Scan Devices](images/openterface-qt-after-scan.PNG)
+![Openterface QT – Control Chip Firmware page](images/openterface-qt-scan.PNG)
 
-After scanning, select your KeyMod from the device list and click **Connect**.
+After scanning, your KeyMod will appear in the device dropdown.
+
+![Openterface QT – Device found after scan](images/openterface-qt-after-scan.PNG)
+
+Select your KeyMod from the device list and click **Connect**.
 
 ![Openterface QT – Connect to KeyMod](images/openterface-qt-connect.PNG)
 
