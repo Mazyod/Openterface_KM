@@ -139,22 +139,31 @@ bool Queue_Pop_Media(Media_Report_t *out) {
 void USB_SendFromQueues(void) {
     while (kb_queue.head != kb_queue.tail && USBFS_Endp_Busy[DEF_UEP1] == 0) {
         KB_Report_t *pkt = &kb_queue.buf[kb_queue.head];
-        if (USBFS_Endp_DataUp(DEF_UEP1, pkt->data, sizeof(pkt->data), DEF_UEP_CPY_LOAD) == READY)
+        if (USBFS_Endp_DataUp(DEF_UEP1, pkt->data, sizeof(pkt->data), DEF_UEP_CPY_LOAD) == READY) {
+            ENTER_CRITICAL();
             kb_queue.head = (kb_queue.head + 1) % KB_QUEUE_SIZE;
+            EXIT_CRITICAL();
+        }
         else break;
     }
 
     while (ms_rel_queue.head != ms_rel_queue.tail && USBFS_Endp_Busy[DEF_UEP2] == 0) {
         MS_Rel_Report_t *pkt = &ms_rel_queue.buf[ms_rel_queue.head];
-        if (USBFS_Endp_DataUp(DEF_UEP2, pkt->data, sizeof(pkt->data), DEF_UEP_CPY_LOAD) == READY)
+        if (USBFS_Endp_DataUp(DEF_UEP2, pkt->data, sizeof(pkt->data), DEF_UEP_CPY_LOAD) == READY) {
+            ENTER_CRITICAL();
             ms_rel_queue.head = (ms_rel_queue.head + 1) % MS_REL_QUEUE_SIZE;
+            EXIT_CRITICAL();
+        }
         else break;
     }
 
     while (ms_abs_queue.head != ms_abs_queue.tail && USBFS_Endp_Busy[DEF_UEP3] == 0) {
         MS_Abs_Report_t *pkt = &ms_abs_queue.buf[ms_abs_queue.head];
-        if (USBFS_Endp_DataUp(DEF_UEP3, pkt->data, sizeof(pkt->data), DEF_UEP_CPY_LOAD) == READY)
+        if (USBFS_Endp_DataUp(DEF_UEP3, pkt->data, sizeof(pkt->data), DEF_UEP_CPY_LOAD) == READY) {
+            ENTER_CRITICAL();
             ms_abs_queue.head = (ms_abs_queue.head + 1) % MS_ABS_QUEUE_SIZE;
+            EXIT_CRITICAL();
+        }
         else break;
     }
 
@@ -163,22 +172,33 @@ void USB_SendFromQueues(void) {
         /* Report ID 0x01 = ACPI: 2 bytes (ID + 1 data)
          * Report ID 0x02 = Consumer: 4 bytes (ID + 3 data) */
         uint16_t send_len = (pkt->data[0] == 0x01) ? 2 : 4;
-        if (USBFS_Endp_DataUp(DEF_UEP4, pkt->data, send_len, DEF_UEP_CPY_LOAD) == READY)
+        if (USBFS_Endp_DataUp(DEF_UEP4, pkt->data, send_len, DEF_UEP_CPY_LOAD) == READY) {
+            ENTER_CRITICAL();
             media_queue.head = (media_queue.head + 1) % MEDIA_QUEUE_SIZE;
+            EXIT_CRITICAL();
+        }
         else break;
     }
 
-    if (USB_ModeConfig_ActiveModeHasHostCdcEcm()) {
-        /* In combined ACM+ECM mode, ACM responses still need to be sent via
-         * EP3 (ACM bulk IN). ECM bridge has its own separate response handling
-         * in ecm_bridge.c, so we don't clear the queue here.               */
-    }
-
-    while (resp_queue.head != resp_queue.tail) {
-        Resp_Report_t *pkt = &resp_queue.buf[resp_queue.head];
-        if (USBD_ENDPx_DataUp(ENDP3, pkt->data, pkt->len) == 0)
-            resp_queue.head = (resp_queue.head + 1) % RESP_QUEUE_SIZE;
-        else break;
+    /* Response queue drain — exactly one consumer per USB mode.
+     *
+     * The old code had an empty `if (ActiveModeHasHostCdcEcm()) { }` here whose
+     * comment said the queue must NOT be drained in ECM modes, but the drain
+     * below ran unconditionally anyway. In ECM-bridge / host-CDC-ECM modes the
+     * ECM bridge pops resp_queue itself (ecm_bridge.c Queue_Pop_Response, right
+     * after its own push) and wraps replies in Ethernet; draining here would
+     * race it and inject raw CH9329 bytes into the ECM bulk stream. */
+    if (!USB_ModeConfig_ActiveModeBridgeEcm() &&
+        !USB_ModeConfig_ActiveModeHasHostCdcEcm()) {
+        while (resp_queue.head != resp_queue.tail) {
+            Resp_Report_t *pkt = &resp_queue.buf[resp_queue.head];
+            if (USBD_ENDPx_DataUp(ENDP3, pkt->data, pkt->len) == 0) {
+                ENTER_CRITICAL();
+                resp_queue.head = (resp_queue.head + 1) % RESP_QUEUE_SIZE;
+                EXIT_CRITICAL();
+            }
+            else break;  /* endpoint busy, retry next pass */
+        }
     }
 }
 
