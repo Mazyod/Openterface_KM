@@ -12,6 +12,17 @@
 #define RESP_QUEUE_SIZE    28     // Response packet queue size
 #define MEDIA_QUEUE_SIZE   16     // Media key report queue size
 
+/* Nesting-safe critical-section helpers (CH32V20x RISC-V).
+ *
+ * __enable_irq() unconditionally sets MIE (csrs mstatus, MIE) and is NOT
+ * nesting-safe, so we save/restore MSTATUS instead: an inner EXIT can never
+ * re-enable interrupts that an outer ENTER is still holding.
+ * Requires __get_MSTATUS/__set_MSTATUS/__disable_irq declarations at the
+ * expansion site — every .c that expands these macros includes a chip header
+ * (ch32v20x_usbfs_device.h, which pulls in core_riscv.h) before the use-site. */
+#define ENTER_CRITICAL()  uint32_t _mstatus = __get_MSTATUS(); __disable_irq()
+#define EXIT_CRITICAL()   __set_MSTATUS(_mstatus)
+
 /* Keyboard report structure */
 typedef struct {
     uint8_t data[8];
@@ -112,7 +123,6 @@ bool Queue_Pop_Media(Media_Report_t *out);
 
 /* Send functions */
 void USB_SendFromQueues(void);        // Send keyboard/mouse reports via USBFS
-void USBD_SendFromRespQueue(void);    // Send response packets via USBD (endpoint)
 
 /* USB debug ring buffer — sends debug strings via USBFS EP2 (relative mouse endpoint).
  * Debug reports use mouse HID format with a 0xFF marker byte in data[0].
