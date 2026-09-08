@@ -42,32 +42,53 @@ acknowledgements back to the host.
 
 ### 2.1 Cross-context queue race (primary)
 
-**Evidence**: `Queue_Push_*` is invoked from two contexts:
+**Evidence**: `Queue_Push_*` is invoked from multiple contexts:
+- USB ISR (`EP5_OUT_Callback` in `usb_endp.c` → `CH9329_RxBuffer_Add` → direct
+  push) — USB interrupt context.
 - BLE callback (`ble_usb_ServiceEvt` → `CH9329_DataParser` → direct push) —
-  outside the main loop.
-- Main loop (`USB_DataRx_To_KMHandle` → UART2 path → push).
+  BLE protocol-stack context.
+- Main loop (`USB_DataRx_To_KMHandle` → UART2 path → push; ECM frame handler →
+  push).
 
-`Queue_Pop_*` runs only in the main loop's `USB_SendFromQueues()`. Neither the
-push sequence ("write data → update tail") nor the pop sequence ("read
-head/tail → take data → advance head") is protected by a critical section.
+Queue consumers (`USB_SendFromQueues()` drain, ECM bridge `Queue_Pop_Response`)
+run in the main loop. Neither the push sequence ("write data → update tail")
+nor the consume sequence ("read head/tail → take data → advance head") is
+protected by a critical section.
 
-**Consequences**: during fast operation (high-frequency BLE pushes plus a
-high-frequency main-loop drain), the following can happen:
+**Consequences**: during fast operation (high-frequency pushes from
+interrupts/callbacks plus a high-frequency main-loop drain), the following can
+happen:
 - Pop reads an empty queue before push updates tail → **lost event**.
 - Both advance head/tail concurrently → **ordering corruption / overwrite**.
 - `memcpy` races → **dirty report sent** (target sees wrong keys).
 
-### 2.2 Response queue never serviced (primary)
+Additionally, `CH9329_RxBuffer_Add`'s static buffer (`rx_buf`/`rx_len`,
+`RX_BUF_SIZE` = 2048) is itself shared across USB ISR, BLE callback, ECM frame
+handling, and the main-loop UART2 path — the receive buffer needs the same
+protection.
 
-**Evidence**: `RESP_QUEUE` is pushed by `CH9329_SendResponse()`, but
-`USBD_SendFromRespQueue()` is **never called** in `Main_Circulation()` of
-`peripheral_main.c` to drain the queue.
+### 2.2 Response queue drain logic is broken (primary)
+
+**Evidence (corrected after code verification)**:
+- `USBD_SendFromRespQueue()` is a dead declaration in `km_ring.h:115` — no
+  definition, no caller. The response queue is actually drained at the end of
+  `USB_SendFromQueues()` (`km_ring.c:140-145`) into USBD `ENDP3`.
+- `km_ring.c:134-138` contains an **empty `if`**: its comment says that in ECM
+  mode the queue must NOT be drained here (the ECM bridge pops responses
+  itself), but the `resp_queue` drain below was left **unconditional**.
+- The ECM bridge also consumes the same queue: `ecm_bridge.c:1149`
+  `Queue_Pop_Response(&resp)` wraps the reply into Ethernet/IPv4/TCP back to
+  the host.
 
 **Consequences**:
-- Replies pile up until the queue (28 slots) is full.
-- When full, `head = (head+1) % SIZE` drops the oldest reply.
-- Under stress testing a large share of replies is dropped → **host receives
-  only ~60% of replies**.
+- In ECM-bridge mode the main-loop `USB_SendFromQueues()` (which runs every
+  pass *before* `ECM_Bridge_Poll()`) races the ECM bridge for the same
+  `resp_queue`. Whichever drains first takes the reply; if the main loop
+  wins, the reply is pushed toward USBD `ENDP3` — an endpoint that is not
+  active in ECM mode — and the ECM network reply never goes out.
+- Unprotected head/tail access across the two consumers loses replies even
+  when both paths are active.
+- Net effect under stress: the host sees only ~60% of replies.
 
 ### 2.3 Absolute-mouse queue semantics are wrong
 
@@ -96,12 +117,14 @@ after every data append and after every parsed frame.
 
 ## 3. Design Goals
 
-1. **Eliminate the cross-context race** → protect every queue operation with a
-   short critical section.
+1. **Eliminate the cross-context race** → protect every queue operation and
+   the `CH9329_RxBuffer_Add` static buffer with a short critical section.
 2. **Absolute mouse never backs up** → single-slot mailbox holding only the
    newest state.
-3. **Response queue serviced promptly** → main loop drains `RESP_QUEUE` each
-   pass.
+3. **Response queue served by exactly one consumer** → fix the broken drain
+   logic: the main-loop `USB_SendFromQueues()` drain must be gated so it does
+   not run in ECM-bridge mode (where the ECM bridge is the sole consumer), and
+   remove the dead `USBD_SendFromRespQueue()` declaration.
 4. **Zero `memmove` per parsed frame in the receive path** → consume-offset
    cursor with on-demand compaction.
 5. **No hardware-constraint changes** → no extra RAM budget, no change to the
@@ -147,10 +170,10 @@ static MS_Abs_Mailbox_t ms_abs_mbox;
 **Push (unconditional overwrite with newest)**:
 ```c
 void Queue_Push_MouseAbs(uint8_t *data) {
-    uint8_t sr = __disable_interrupts();
+    ENTER_CRITICAL();                       /* nesting-safe, see §5.2 */
     memcpy(ms_abs_mbox.data, data, ABS_MS_DATA_LEN);
     ms_abs_mbox.valid = 1;
-    __set_interrupts(sr);
+    EXIT_CRITICAL();
 }
 ```
 
@@ -158,13 +181,16 @@ void Queue_Push_MouseAbs(uint8_t *data) {
 ```c
 bool Queue_Pop_MouseAbs(uint8_t *out) {
     if (!ms_abs_mbox.valid) return false;
-    uint8_t sr = __disable_interrupts();
+    ENTER_CRITICAL();
     memcpy(out, ms_abs_mbox.data, ABS_MS_DATA_LEN);
     ms_abs_mbox.valid = 0;
-    __set_interrupts(sr);
+    EXIT_CRITICAL();
     return true;
 }
 ```
+
+> Note: on CH32V20x, `__enable_irq()` unconditionally sets MIE and is **not**
+> nesting-safe. Use the MSTATUS save/restore macros defined in §5.2.
 
 **Benefits**:
 - Memory 168 B → 7 B.
@@ -175,66 +201,90 @@ bool Queue_Pop_MouseAbs(uint8_t *out) {
 
 ### 5.2 Critical-section protection for all queues
 
-Add the shortest possible critical section to every `Queue_Push_*` and
-`Queue_Pop_*` entry:
+Define nesting-safe critical-section macros once (CH32V20x RISC-V). They
+save/restore `MSTATUS` so nested use (e.g. `CH9329_RxBuffer_Add` →
+`Queue_Push_Response`) is correct — an inner restore cannot re-enable
+interrupts that an outer disable is still holding:
+
+```c
+/* km_ring.h — include core_riscv.h (via debug.h) for __get_MSTATUS etc. */
+#define ENTER_CRITICAL()  uint32_t _mstatus = __get_MSTATUS(); __disable_irq()
+#define EXIT_CRITICAL()   __set_MSTATUS(_mstatus)
+```
+
+> Do NOT use `__enable_irq()` to exit a critical section: it unconditionally
+> sets MIE (bit 3 of `mstatus` 0x800 via `csrs`), which would break an outer
+> critical section when nested.
+
+Add the shortest possible critical section to every `Queue_Push_*`,
+`Queue_Pop_*`, and to every read-modify-write of `head`/`tail` in
+`USB_SendFromQueues()` (which manipulates queue indices directly rather than
+calling the `Queue_Pop_*` helpers):
 
 ```c
 void Queue_Push_Keyboard(uint8_t *data) {
-    uint8_t sr = __disable_interrupts();
+    ENTER_CRITICAL();
     int next = (kb_queue.tail + 1) % KB_QUEUE_SIZE;
     if (next == kb_queue.head) kb_queue.head = (kb_queue.head + 1) % KB_QUEUE_SIZE;
     memcpy(kb_queue.buf[kb_queue.tail].data, data, sizeof(kb_queue.buf[0].data));
     kb_queue.tail = next;
-    __set_interrupts(sr);
+    EXIT_CRITICAL();
 }
 ```
 
 **Why this is enough**:
 - The critical section covers only the atomic sequence "read tail → check
   full → write data → update tail".
-- Duration < 100 ns at 144 MHz, far shorter than a BLE interrupt or a USB
-  frame interval.
-- No interrupt loss or scheduling delay.
+- Duration < 100 ns at 144 MHz (plus the data copy — still microseconds at
+  worst), far shorter than a BLE interrupt or a USB frame interval.
+- No interrupt loss or scheduling delay; nesting-safe by MSTATUS save/restore.
 
-### 5.3 Service the response queue from the main loop
+### 5.3 Fix response-queue drain logic (single consumer)
 
-In `Main_Circulation()` of `peripheral_main.c`, right after
-`USB_SendFromQueues()`:
+**Change 1 — gate the main-loop drain so it does not fight the ECM bridge.**
 
-```c
-// Keyboard and mouse control code sending loop
-USB_SendFromQueues();
-
-// ★ NEW: service the response queue (send replies to the host)
-if (USB_ModeConfig_ActiveModeBridgeAcm() ||
-    USB_ModeConfig_ActiveModeBridgeEcm() ||
-    !USB_ModeConfig_ActiveModeHasHostUac()) {
-    USBD_SendFromRespQueue();  /* drain RESP_QUEUE frames via UART2 */
-}
-```
-
-**Why the condition**: when BLE CH9329 response routing is enabled
-(`Peripheral_GetBleCh9329Response()`), replies go straight out as BLE
-notifications. The condition ensures the queue is drained only when the UART2
-path is actually in use, avoiding duplicate sends.
-
-**`USBD_SendFromRespQueue()` implementation** (mirrors
-`USB_SendFromQueues`):
+The `resp_queue` drain at the end of `USB_SendFromQueues()` (`km_ring.c:140-145`)
+must be gated exactly as the empty `if` at `km_ring.c:134-138` intended. When
+the ECM bridge is the active responder, it pops replies itself
+(`ecm_bridge.c:1149`) and wraps them in Ethernet frames; the main-loop drain
+into USBD `ENDP3` must then not run. When no ECM bridge is present, the drain
+sends replies to the host over USBD `ENDP3`.
 
 ```c
-void USBD_SendFromRespQueue(void) {
+/* km_ring.c — inside USB_SendFromQueues(), replacing the empty if + drain */
+if (!USB_ModeConfig_ActiveModeBridgeEcm() &&
+    !USB_ModeConfig_ActiveModeHasHostCdcEcm()) {
     while (resp_queue.head != resp_queue.tail) {
         Resp_Report_t *pkt = &resp_queue.buf[resp_queue.head];
         if (USBD_ENDPx_DataUp(ENDP3, pkt->data, pkt->len) == 0) {
-            uint8_t sr = __disable_interrupts();
+            ENTER_CRITICAL();
             resp_queue.head = (resp_queue.head + 1) % RESP_QUEUE_SIZE;
-            __set_interrupts(sr);
+            EXIT_CRITICAL();
         } else {
             break;  /* endpoint busy, retry next pass */
         }
     }
 }
 ```
+
+**Rationale for the gate**:
+- `ActiveModeBridgeEcm()` → ECM bridge is the sole legitimate consumer of
+  `resp_queue`; main loop must not touch it.
+- `ActiveModeHasHostCdcEcm()` → host-side ECM present; combined-mode comment at
+  `km_ring.c:134-138` already states replies are handled by the ECM bridge's
+  own machinery (`ecm_bridge.c:1468`, `:1600`), not by this drain.
+- Otherwise (plain HID/ACM) → drain into USBD `ENDP3` as today.
+
+**Change 2 — remove the dead declaration.**
+
+Delete `void USBD_SendFromRespQueue(void);` from `km_ring.h:115`. No definition
+or caller exists; leaving it invites a future wrong fix.
+
+**Change 3 — critical-section discipline in both consumers.**
+
+Because pushes may come from USB/BLE interrupt contexts while the main loop
+drains, every read-modify-write of `head`/`tail` inside `USB_SendFromQueues()`
+and the ECM-bridge pop must hold a short critical section (see §5.2).
 
 ### 5.4 CH9329 receive buffer optimization (consume offset + on-demand compaction)
 
@@ -249,12 +299,16 @@ The buffer stays **contiguous**, so `CH9329_DataParser` is reused unchanged
 (no ring-wrap handling needed):
 
 ```c
-#define RX_BUF_SIZE 512
+/* usbd_compostie_km.c — RX_BUF_SIZE stays 2048 (existing value) */
 static uint8_t rx_buf[RX_BUF_SIZE];
 static uint16_t rx_start = 0;  /* offset of first unparsed byte */
 static uint16_t rx_len = 0;    /* valid bytes from rx_start */
 
 void CH9329_RxBuffer_Add(uint8_t *data, uint16_t len) {
+    /* May run in USB ISR context (EP5_OUT_Callback), a BLE callback, the
+       ECM frame handler, or the main-loop UART2 path — protect the shared
+       static buffer with a critical section. */
+    ENTER_CRITICAL();
     /* Compact when the tail cannot hold the new bytes (≤1 memmove per Add) */
     if (rx_start + rx_len + len > RX_BUF_SIZE) {
         if (rx_len + len > RX_BUF_SIZE) {
@@ -268,13 +322,16 @@ void CH9329_RxBuffer_Add(uint8_t *data, uint16_t len) {
     memcpy(rx_buf + rx_start + rx_len, data, len);
     rx_len += len;
 
-    /* Parse frame by frame: only advance rx_start, no shuffling */
+    /* Parse frame by frame: only advance rx_start, no shuffling.
+       Parsing calls CH9329_DispatchCommand → CH9329_SendResponse →
+       Queue_Push_Response, whose own ENTER/EXIT_CRITICAL nest safely. */
     while (rx_len > 0) {
         int consumed = CH9329_DataParser(rx_buf + rx_start, rx_len);
         if (consumed < 0) { rx_start = rx_len = 0; break; }  /* bad frame: flush */
         else if (consumed == 0) break;                        /* incomplete: wait for more */
         else { rx_start += (uint16_t)consumed; rx_len -= (uint16_t)consumed; }
     }
+    EXIT_CRITICAL();
 }
 ```
 
@@ -282,6 +339,8 @@ void CH9329_RxBuffer_Add(uint8_t *data, uint16_t len) {
 - **Zero `memmove` per parsed frame** (O(N²) → amortized O(1)).
 - `CH9329_DataParser` unchanged, still operates on contiguous memory.
 - Clear overflow semantics (drop oldest bytes, keep newest data).
+- Shared static buffer (`rx_buf`/`rx_len`) protected across USB ISR, BLE
+  callback, ECM frame handler and the main-loop UART2 path.
 
 ---
 
@@ -291,16 +350,22 @@ void CH9329_RxBuffer_Add(uint8_t *data, uint16_t len) {
 
 | File | Type of change | Size | Notes |
 |------|----------------|------|-------|
-| `APP/include/km_ring.h` | Refactor | Medium | Redefine queue structs (absolute-mouse mailbox), add critical-section macros, declare `USBD_SendFromRespQueue()` |
-| `APP/km_ring.c` | Refactor | Large | Rewrite all Push/Pop functions (critical sections), implement mailbox model, optimize receive buffer |
-| `APP/peripheral_main.c` | Addition | Small | Add `USBD_SendFromRespQueue()` call (conditional) in the main loop |
-| `APP/usbd_compostie_km.c` | Addition | Small | Implement `USBD_SendFromRespQueue()` (if missing) |
+| `APP/include/km_ring.h` | Refactor | Medium | Add `ENTER_CRITICAL()`/`EXIT_CRITICAL()` macros; redefine the absolute-mouse queue as a mailbox; delete the dead `USBD_SendFromRespQueue()` declaration (line 115); deepen `MS_REL_QUEUE_SIZE` 28 → 64 |
+| `APP/km_ring.c` | Refactor | Large | Protect all Push functions with critical sections; protect every `head`/`tail` read-modify-write in `USB_SendFromQueues()`; fix the `resp_queue` drain gate (empty `if` at lines 134-138); implement the absolute-mouse mailbox; adapt `USB_SendFromQueues()`'s MS_ABS section |
+| `APP/usbd_compostie_km.c` | Refactor | Medium | `CH9329_RxBuffer_Add` (lines 357-397): critical section + consume-offset scheme (drop per-frame `memmove`). Also confirms `RX_BUF_SIZE` stays 2048 |
+| `APP/ecm_bridge.c` | Small fix | Small | The ECM-bridge `Queue_Pop_Response` at line 1149 runs in the main loop alongside `USB_SendFromQueues()` — no new critical section strictly needed (both main-loop), but its read of the queue must tolerate the main-loop drain being gated off in ECM modes (it already pops right after its own push, so it stays the sole consumer there) |
+
+> Note: `peripheral_main.c` needs **no** change — `resp_queue` is drained
+> inside `USB_SendFromQueues()`, which the main loop already calls every pass.
 
 ### 6.2 Implementation order
 
 1. **Phase 1 (stop the bleeding)**:
-   - Add critical sections to every `Queue_Push_*`/`Queue_Pop_*`.
-   - Add the `USBD_SendFromRespQueue()` call to the main loop.
+   - Add critical-section macros + protect every `Queue_Push_*` and the
+     `head`/`tail` read-modify-writes in `USB_SendFromQueues()`.
+   - Fix the `resp_queue` drain gate (single consumer per mode) and delete the
+     dead `USBD_SendFromRespQueue()` declaration.
+   - Protect `CH9329_RxBuffer_Add` with a critical section.
    - Verify: stress-test reply rate should approach 100%.
 
 2. **Phase 2 (core optimization)**:
@@ -373,29 +438,49 @@ void CH9329_RxBuffer_Add(uint8_t *data, uint16_t len) {
 
 ## 11. Open Questions
 
-- [ ] Does `USBD_SendFromRespQueue()` already exist? If not, write it.
-- [ ] Critical-section macros: `__disable_interrupts()`/`__set_interrupts()`
-      vs. `__get_MSTATUS()`/`__restore_mstatus()` — confirm best practice on
-      CH32V20x RISC-V.
+- [x] **Critical-section API on CH32V20x RISC-V** — resolved during design:
+      `__enable_irq()` does an unconditional `csrs mstatus, MIE` and is *not*
+      nesting-safe, so the save/restore pair `__get_MSTATUS()` /
+      `__set_MSTATUS()` is the correct primitive (see §5.2). The obsolete
+      `USBD_SendFromRespQueue()` question is moot — that symbol is a **dead
+      declaration** in `km_ring.h` (no definition, no callers) and is simply
+      deleted.
+- [ ] **ECM bridge pop timing** — §5.3 relies on the observation that the
+      `Queue_Pop_Response` at `ecm_bridge.c:1149` is always preceded, in the
+      same main-loop pass, by a `Queue_Push_Response` (peripheral.c), so the
+      gated drain in `USB_SendFromQueues` cannot starve it. Needs a code
+      walk-through confirmation at implementation time.
 - [ ] Add queue-depth diagnostics for debugging (e.g., print each queue's
-      length via `USB_DEBUG`)?
+      length via `USB_DEBUG`)? — optional, only if stress tests still fail.
 
 ---
 
 ## 12. Implementation Checklist
 
-- [ ] Phase 1: critical sections + response-queue service
-  - [ ] Modify all Push/Pop functions in `km_ring.c`
-  - [ ] Modify the main loop in `peripheral_main.c`
-  - [ ] Implement `USBD_SendFromRespQueue()` (if missing)
-  - [ ] Functional test: stress-test reply rate
+- [ ] Phase 1: cross-context queue integrity (root causes 2.1 + 2.2)
+  - [ ] Add `ENTER_CRITICAL()` / `EXIT_CRITICAL()` macros to `km_ring.h`
+        (MSTATUS save/restore per §5.2)
+  - [ ] Wrap all `Queue_Push_*` / `Queue_Pop_*` tail/head updates in
+        `km_ring.c`
+  - [ ] Fix the `resp_queue` empty-if bug at `km_ring.c:134-138` and gate
+        the drain in `USB_SendFromQueues` per §5.3 (skip when ECM bridge /
+        host CDC-ECM active)
+  - [ ] Wrap the `Queue_Pop_Response` in `ecm_bridge.c` with the same
+        critical section
+  - [ ] Delete the dead `USBD_SendFromRespQueue()` declaration in `km_ring.h`
+  - [ ] Wrap `CH9329_RxBuffer_Add` framing-state access in a critical
+        section (USB ISR vs. main-loop callers)
+  - [ ] Functional test: stress-test reply rate (target > 95% from ~60%)
 - [ ] Phase 2: queue-model optimization
-  - [ ] Redefine `MS_Abs_Queue_t` in `km_ring.h`
-  - [ ] Implement the absolute-mouse mailbox model
+  - [ ] Redefine absolute-mouse queue as a mailbox (`MS_Abs_Mailbox_t`) in
+        `km_ring.h` (newest-wins, per §4.2)
+  - [ ] Implement mailbox push/pop in `km_ring.c` and route
+        `Mouse_HandleAbsoluteData` through it
   - [ ] Deepen relative-mouse queue 28 → 64
   - [ ] Functional test: drag trails, fast typing
 - [ ] Phase 3: receive-buffer optimization
-  - [ ] Convert `CH9329_RxBuffer_Add` to consume-offset scheme
+  - [ ] Convert `CH9329_RxBuffer_Add` to consume-offset scheme (removes the
+        per-byte `memmove`, per §5.4)
   - [ ] Performance test: main-loop load
 - [ ] Final validation
   - [ ] Full-scenario functional test
