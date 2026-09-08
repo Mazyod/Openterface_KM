@@ -360,6 +360,12 @@ static uint16_t rx_len = 0;
 void CH9329_RxBuffer_Add(uint8_t *data, uint16_t len) {
     if (len == 0 || data == NULL) return;
 
+    /* Callers span USB ISR (EP5_OUT_Callback), a BLE callback, the ECM frame
+     * handler and the main-loop UART2 path — protect the shared static buffer.
+     * The parser below may Queue_Push_Response; that nested ENTER_CRITICAL is
+     * safe because the macros save/restore MSTATUS. */
+    ENTER_CRITICAL();
+
     // Prevent buffer overflow; if overflow risk, retain only the latter half
     if (rx_len + len > RX_BUF_SIZE) {
         uint16_t keep = RX_BUF_SIZE / 2;
@@ -376,11 +382,11 @@ void CH9329_RxBuffer_Add(uint8_t *data, uint16_t len) {
     while (rx_len > 0) {
         int consumed = CH9329_DataParser(rx_buf, rx_len);
         if (consumed < 0) {
-            // Parsing error �� clear buffer
+            // Parsing error — clear buffer
             rx_len = 0;
             break;
         } else if (consumed == 0) {
-            // Incomplete frame �� wait for more data
+            // Incomplete frame — wait for more data
             break;
         } else {
             // Remove consumed bytes from buffer
@@ -394,6 +400,8 @@ void CH9329_RxBuffer_Add(uint8_t *data, uint16_t len) {
             }
         }
     }
+
+    EXIT_CRITICAL();
 }
 
 void USB_DataRx_To_KMHandle(void) {
