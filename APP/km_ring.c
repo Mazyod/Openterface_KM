@@ -18,47 +18,59 @@ Media_Queue_t media_queue;
 
 /* Initialize queues */
 void Queue_Init(void) {
+    ENTER_CRITICAL();
     kb_queue.head = kb_queue.tail = 0;
     ms_rel_queue.head = ms_rel_queue.tail = 0;
     ms_abs_queue.head = ms_abs_queue.tail = 0;
     resp_queue.head = resp_queue.tail = 0;
     media_queue.head = media_queue.tail = 0;
+    EXIT_CRITICAL();
 }
 //Keyboard message queue
 void Queue_Push_Keyboard(uint8_t *data) {
+    ENTER_CRITICAL();
     int next = (kb_queue.tail + 1) % KB_QUEUE_SIZE;
     if (next == kb_queue.head) kb_queue.head = (kb_queue.head + 1) % KB_QUEUE_SIZE;
     memcpy(kb_queue.buf[kb_queue.tail].data, data, sizeof(kb_queue.buf[kb_queue.tail].data));
     kb_queue.tail = next;
+    EXIT_CRITICAL();
 }
 //MouseRel message queue
 void Queue_Push_MouseRel(uint8_t *data) {
+    ENTER_CRITICAL();
     int next = (ms_rel_queue.tail + 1) % MS_REL_QUEUE_SIZE;
     if (next == ms_rel_queue.head) ms_rel_queue.head = (ms_rel_queue.head + 1) % MS_REL_QUEUE_SIZE;
     memcpy(ms_rel_queue.buf[ms_rel_queue.tail].data, data, sizeof(ms_rel_queue.buf[ms_rel_queue.tail].data));
     ms_rel_queue.tail = next;
+    EXIT_CRITICAL();
 }
 //MouseAbs message queue
 void Queue_Push_MouseAbs(uint8_t *data) {
+    ENTER_CRITICAL();
     int next = (ms_abs_queue.tail + 1) % MS_ABS_QUEUE_SIZE;
     if (next == ms_abs_queue.head) ms_abs_queue.head = (ms_abs_queue.head + 1) % MS_ABS_QUEUE_SIZE;
     memcpy(ms_abs_queue.buf[ms_abs_queue.tail].data, data, sizeof(ms_abs_queue.buf[ms_abs_queue.tail].data));
     ms_abs_queue.tail = next;
+    EXIT_CRITICAL();
 }
 //Response message queue (Message length varies)
 void Queue_Push_Response(uint8_t *data, uint8_t len) {
+    ENTER_CRITICAL();
     int next = (resp_queue.tail + 1) % RESP_QUEUE_SIZE;
     if (next == resp_queue.head) resp_queue.head = (resp_queue.head + 1) % RESP_QUEUE_SIZE;
     memcpy(resp_queue.buf[resp_queue.tail].data, data, len);
     resp_queue.buf[resp_queue.tail].len = len;
     resp_queue.tail = next;
+    EXIT_CRITICAL();
 }
 //Media key message queue
 void Queue_Push_Media(uint8_t *data) {
+    ENTER_CRITICAL();
     int next = (media_queue.tail + 1) % MEDIA_QUEUE_SIZE;
     if (next == media_queue.head) media_queue.head = (media_queue.head + 1) % MEDIA_QUEUE_SIZE;
     memcpy(media_queue.buf[media_queue.tail].data, data, sizeof(media_queue.buf[media_queue.tail].data));
     media_queue.tail = next;
+    EXIT_CRITICAL();
 }
 
 /* Pop functions */
