@@ -75,39 +75,64 @@ void Queue_Push_Media(uint8_t *data) {
 
 /* Pop functions */
 bool Queue_Pop_Keyboard(KB_Report_t *out) {
-    if (kb_queue.head == kb_queue.tail) return false;
-    memcpy(out->data, kb_queue.buf[kb_queue.head].data, sizeof(out->data));
-    kb_queue.head = (kb_queue.head + 1) % KB_QUEUE_SIZE;
-    return true;
+    bool popped = false;
+    ENTER_CRITICAL();
+    if (kb_queue.head != kb_queue.tail) {
+        memcpy(out->data, kb_queue.buf[kb_queue.head].data, sizeof(out->data));
+        kb_queue.head = (kb_queue.head + 1) % KB_QUEUE_SIZE;
+        popped = true;
+    }
+    EXIT_CRITICAL();
+    return popped;
 }
 
 bool Queue_Pop_MouseRel(MS_Rel_Report_t *out) {
-    if (ms_rel_queue.head == ms_rel_queue.tail) return false;
-    memcpy(out->data, ms_rel_queue.buf[ms_rel_queue.head].data, sizeof(out->data));
-    ms_rel_queue.head = (ms_rel_queue.head + 1) % MS_REL_QUEUE_SIZE;
-    return true;
+    bool popped = false;
+    ENTER_CRITICAL();
+    if (ms_rel_queue.head != ms_rel_queue.tail) {
+        memcpy(out->data, ms_rel_queue.buf[ms_rel_queue.head].data, sizeof(out->data));
+        ms_rel_queue.head = (ms_rel_queue.head + 1) % MS_REL_QUEUE_SIZE;
+        popped = true;
+    }
+    EXIT_CRITICAL();
+    return popped;
 }
 
 bool Queue_Pop_MouseAbs(MS_Abs_Report_t *out) {
-    if (ms_abs_queue.head == ms_abs_queue.tail) return false;
-    memcpy(out->data, ms_abs_queue.buf[ms_abs_queue.head].data, sizeof(out->data));
-    ms_abs_queue.head = (ms_abs_queue.head + 1) % MS_ABS_QUEUE_SIZE;
-    return true;
+    bool popped = false;
+    ENTER_CRITICAL();
+    if (ms_abs_queue.head != ms_abs_queue.tail) {
+        memcpy(out->data, ms_abs_queue.buf[ms_abs_queue.head].data, sizeof(out->data));
+        ms_abs_queue.head = (ms_abs_queue.head + 1) % MS_ABS_QUEUE_SIZE;
+        popped = true;
+    }
+    EXIT_CRITICAL();
+    return popped;
 }
 
 bool Queue_Pop_Response(Resp_Report_t *out) {
-    if (resp_queue.head == resp_queue.tail) return false;
-    memcpy(out->data, resp_queue.buf[resp_queue.head].data, resp_queue.buf[resp_queue.head].len);
-    out->len = resp_queue.buf[resp_queue.head].len;
-    resp_queue.head = (resp_queue.head + 1) % RESP_QUEUE_SIZE;
-    return true;
+    bool popped = false;
+    ENTER_CRITICAL();
+    if (resp_queue.head != resp_queue.tail) {
+        memcpy(out->data, resp_queue.buf[resp_queue.head].data, resp_queue.buf[resp_queue.head].len);
+        out->len = resp_queue.buf[resp_queue.head].len;
+        resp_queue.head = (resp_queue.head + 1) % RESP_QUEUE_SIZE;
+        popped = true;
+    }
+    EXIT_CRITICAL();
+    return popped;
 }
 
 bool Queue_Pop_Media(Media_Report_t *out) {
-    if (media_queue.head == media_queue.tail) return false;
-    memcpy(out->data, media_queue.buf[media_queue.head].data, sizeof(out->data));
-    media_queue.head = (media_queue.head + 1) % MEDIA_QUEUE_SIZE;
-    return true;
+    bool popped = false;
+    ENTER_CRITICAL();
+    if (media_queue.head != media_queue.tail) {
+        memcpy(out->data, media_queue.buf[media_queue.head].data, sizeof(out->data));
+        media_queue.head = (media_queue.head + 1) % MEDIA_QUEUE_SIZE;
+        popped = true;
+    }
+    EXIT_CRITICAL();
+    return popped;
 }
 
 /* Try to send all queued packets until the endpoint is busy or queue is empty */
