@@ -1,119 +1,150 @@
-# HID 队列可靠性与响应路径重新设计
+# HID Queue Reliability & Response Path Redesign
 
-> **状态：设计已批准，待实施**
+> **Status: DESIGN APPROVED — READY FOR IMPLEMENTATION**
 >
-> 本文档替代原有的 `queue-performance-optimization-plan.md`，修正了该文档中关于 CH32V20x USBFS "DMA 模式"的误解，并引入系统性改进以解决双向通信链路的丢事件问题。
+> This document supersedes the earlier `queue-performance-optimization-plan.md`,
+> correcting that document's misunderstanding of the CH32V20x USBFS "DMA mode"
+> and introducing systematic fixes for bidirectional event loss on the
+> keyboard/mouse communication path.
 >
-> 设计基于对 `km_ring.c`、`ch32v20x_usbfs_device.c`、`usbd_compostie_km.c`、`peripheral_main.c` 的完整代码审查，以及用户反馈的"暴力测试下主机串口仅收到约 60% 回复"的实际现象。
+> The design is based on a full code review of `km_ring.c`,
+> `ch32v20x_usbfs_device.c`, `usbd_compostie_km.c` and `peripheral_main.c`,
+> plus the user-observed symptom of "only ~60% of CH9329 command replies
+> arriving at the host serial port under stress testing".
 
 ---
 
-## 1. 背景与问题陈述
+## 1. Background & Problem Statement
 
-Openterface_KM 固件在 CH32V20x 上运行，作为 USB/BLE 设备接收来自主机（KVM 控制器）的 CH9329 指令，将其转换为 HID 键盘/鼠标报告发送到目标机，并将命令应答回传给主机。
+The Openterface_KM firmware runs on a CH32V20x and acts as a USB/BLE device
+that receives CH9329 commands from the host (KVM controller), translates them
+into HID keyboard/mouse reports sent to the target machine, and sends command
+acknowledgements back to the host.
 
-**已观察到的问题**：
+**Observed problems**:
 
-| 症状 | 表现 | 影响 |
-|------|------|------|
-| 快速操作漏键/丢鼠标 | 打字快时漏键、鼠标快速移动轨迹丢段 | 用户体验差 |
-| 回复丢失率高 | 暴力测试下主机仅收到 ~60% 的 CH9329 命令回复 | 主机误以为设备无响应，触发重试或报错 |
-| 绝对鼠标拖动画质差 | 拖动窗口或画图时轨迹跳跃、不连续 | 远程桌面场景不可用 |
+| Symptom | Manifestation | Impact |
+|---------|---------------|--------|
+| Lost keys/mouse on fast operation | Missed keys when typing fast; mouse-trail gaps during fast movement | Poor UX |
+| High reply-loss rate | Only ~60% of CH9329 command replies reach the host under stress testing | Host believes the device is unresponsive; triggers retries or errors |
+| Poor absolute-mouse dragging | Jumpy, non-continuous trails when dragging windows or drawing | Remote-desktop scenarios unusable |
 
-**原有优化计划的问题**：
-- 将 USBFS 的 `DEF_UEP_DMA_LOAD` 误解为"零拷贝 DMA"，实际只是指向内部 RAM 的偏移寄存器
-- 未识别跨上下文队列竞争（BLE 中断 vs 主循环）
-- 未识别响应队列未被主循环服务的问题
-- SoA 布局在 CH32V20x（无数据缓存）上收益存疑
-
----
-
-## 2. 根因分析
-
-### 2.1 跨上下文队列竞争（主因）
-
-**证据**：`Queue_Push_*` 在两个上下文中被调用：
-- BLE 回调（`ble_usb_ServiceEvt` → `CH9329_DataParser` → 直接 push）——不在主循环里
-- 主循环（`USB_DataRx_To_KMHandle` → UART2 路径 → push）
-
-而 `Queue_Pop_*` 只发生在主循环 `USB_SendFromQueues()`。push 的"写数据→更新 tail"和 pop 的"读 head/tail→取数据→推进 head"都没有临界区保护。
-
-**后果**：快速操作时（BLE 高频推送 + 主循环高频 drain），可能发生：
-- pop 在 push 更新 tail 前读到空队列 → **漏事件**
-- 两者同时推进 head/tail → **乱序/覆盖**
-- memcpy 竞争 → **脏报告发出**（目标机看到错误按键）
-
-### 2.2 响应队列未被服务（主因）
-
-**证据**：`RESP_QUEUE` 被 `CH9329_SendResponse()` push，但在 `peripheral_main.c` 的 `Main_Circulation()` 主循环中**从未调用 `USBD_SendFromRespQueue()`** 来排空队列。
-
-**后果**：
-- 响应堆积直到队列满（28 槽）
-- 队列满时 `head = (head+1) % SIZE` 丢弃最旧响应
-- 暴力测试下大量响应被丢弃 → **主机收到 ~60% 回复**
-
-### 2.3 绝对鼠标队列语义错误
-
-**证据**：绝对鼠标报告是状态型（x,y 绝对坐标），但当前按 FIFO 排队。
-
-**后果**：
-- 远程桌面拖动时 host 以几百 Hz 灌坐标帧，而目标机轮询 EP3 可能 4–8ms（drain 率 125–250 帧/s）
-- 队列满时丢弃最旧帧 = **丢中间位置**
-- 绝对坐标只需最新一帧，排队所有中间状态是纯浪费
-
-### 2.4 CH9329 接收缓冲反复 memmove
-
-**证据**：`CH9329_RxBuffer_Add()` 在每次追加数据和每次解析完一帧后都 `memmove` 剩余字节。
-
-**后果**：
-- 高频鼠标帧时白白消耗主循环周期
-- 间接加剧积压
+**Problems with the original optimization plan**:
+- Misread the USBFS `DEF_UEP_DMA_LOAD` as "zero-copy DMA" — it is actually
+  only an offset register pointing into the USBFS internal RAM.
+- Did not identify the cross-context queue race (BLE interrupt vs. main loop).
+- Did not identify that the response queue is never serviced by the main loop.
+- The SoA layout yields dubious benefit on CH32V20x (no data cache).
 
 ---
 
-## 3. 设计目标
+## 2. Root-Cause Analysis
 
-1. **消除跨上下文竞争** → 所有队列操作加短临界区保护
-2. **绝对鼠标永不积压** → 单槽邮箱模型，仅保存最新状态
-3. **响应队列及时服务** → 主循环定时排空 RESP_QUEUE
-4. **接收解析零 memmove** → 环形缓冲 + 读写指针
-5. **在不改变硬件约束下实现** → 不增 RAM，不改变 USB 端点分配
+### 2.1 Cross-context queue race (primary)
+
+**Evidence**: `Queue_Push_*` is invoked from two contexts:
+- BLE callback (`ble_usb_ServiceEvt` → `CH9329_DataParser` → direct push) —
+  outside the main loop.
+- Main loop (`USB_DataRx_To_KMHandle` → UART2 path → push).
+
+`Queue_Pop_*` runs only in the main loop's `USB_SendFromQueues()`. Neither the
+push sequence ("write data → update tail") nor the pop sequence ("read
+head/tail → take data → advance head") is protected by a critical section.
+
+**Consequences**: during fast operation (high-frequency BLE pushes plus a
+high-frequency main-loop drain), the following can happen:
+- Pop reads an empty queue before push updates tail → **lost event**.
+- Both advance head/tail concurrently → **ordering corruption / overwrite**.
+- `memcpy` races → **dirty report sent** (target sees wrong keys).
+
+### 2.2 Response queue never serviced (primary)
+
+**Evidence**: `RESP_QUEUE` is pushed by `CH9329_SendResponse()`, but
+`USBD_SendFromRespQueue()` is **never called** in `Main_Circulation()` of
+`peripheral_main.c` to drain the queue.
+
+**Consequences**:
+- Replies pile up until the queue (28 slots) is full.
+- When full, `head = (head+1) % SIZE` drops the oldest reply.
+- Under stress testing a large share of replies is dropped → **host receives
+  only ~60% of replies**.
+
+### 2.3 Absolute-mouse queue semantics are wrong
+
+**Evidence**: Absolute-mouse reports are stateful (absolute x,y), but are
+currently queued as FIFO.
+
+**Consequences**:
+- During remote-desktop dragging the host floods coordinate frames at several
+  hundred Hz, while the target polls EP3 at maybe 4–8 ms (drain rate 125–250
+  frames/s).
+- When the queue is full the oldest frame is dropped = **missing intermediate
+  positions**.
+- Absolute coordinates only need the newest frame; queuing every intermediate
+  state is pure waste.
+
+### 2.4 CH9329 receive buffer does repeated `memmove`
+
+**Evidence**: `CH9329_RxBuffer_Add()` runs a `memmove` of the remaining bytes
+after every data append and after every parsed frame.
+
+**Consequences**:
+- At high mouse-frame rates the main loop wastes cycles on shuffling.
+- Indirectly worsens backlog.
 
 ---
 
-## 4. 队列语义分层
+## 3. Design Goals
 
-| 队列 | 数据语义 | 新模型 | 溢出策略 | 内存变化 |
-|------|---------|--------|----------|----------|
-| **KB** (键盘) | 状态型（全键状态） | FIFO + 临界区 | 丢最旧 | 不变 |
-| **MS_ABS** (绝对鼠标) | **状态型**（绝对坐标） | **单槽邮箱** | 覆盖旧数据 | 168B → 7B |
-| **MS_REL** (相对鼠标) | 事件型（增量移动） | FIFO 加深 + 临界区 | 丢最旧 | +144B (28→64 槽) |
-| **MEDIA** (媒体键) | 状态型（位图） | FIFO + 临界区 | 丢最旧 | 不变 |
-| **RESP** (响应包) | 状态型（应答帧） | FIFO + 临界区 + **主循环排空** | 丢最旧 | 不变 |
-
-**关键 insight**：
-- 状态型报告（绝对鼠标、媒体键）只需最新一帧 → 邮箱或 FIFO（深度足够即可）
-- 事件型报告（相对鼠标）每帧都是增量 → 必须 FIFO，但可加深防突发
-- 键盘是状态型但去重已做 → FIFO 512 深度足够，无需邮箱化（风险 > 收益）
+1. **Eliminate the cross-context race** → protect every queue operation with a
+   short critical section.
+2. **Absolute mouse never backs up** → single-slot mailbox holding only the
+   newest state.
+3. **Response queue serviced promptly** → main loop drains `RESP_QUEUE` each
+   pass.
+4. **Zero `memmove` per parsed frame in the receive path** → consume-offset
+   cursor with on-demand compaction.
+5. **No hardware-constraint changes** → no extra RAM budget, no change to the
+   USB endpoint allocation.
 
 ---
 
-## 5. 详细设计
+## 4. Queue Semantic Layering
 
-### 5.1 绝对鼠标 → 单槽"邮箱"模型
+| Queue | Data semantics | New model | Overflow policy | Memory delta |
+|-------|----------------|-----------|-----------------|--------------|
+| **KB** (keyboard) | Stateful (full key state) | FIFO + critical section | Drop oldest | none |
+| **MS_ABS** (absolute mouse) | **Stateful** (absolute x,y) | **Single-slot mailbox** | Overwrite old data | 168 B → 7 B |
+| **MS_REL** (relative mouse) | Event (delta movement) | Deeper FIFO + critical section | Drop oldest | +144 B (28→64 slots) |
+| **MEDIA** (media keys) | Stateful (bitmap) | FIFO + critical section | Drop oldest | none |
+| **RESP** (replies) | Stateful (reply frame) | FIFO + critical section + **main-loop drain** | Drop oldest | none |
+
+**Key insight**:
+- Stateful reports (absolute mouse, media keys) only need the newest frame →
+  mailbox, or FIFO deep enough.
+- Event reports (relative mouse) are per-frame deltas → must stay FIFO, but
+  can be deepened against bursts.
+- The keyboard is stateful but already deduplicated → a 512-deep FIFO is
+  sufficient; no mailbox conversion (risk outweighs benefit).
+
+---
+
+## 5. Detailed Design
+
+### 5.1 Absolute mouse → single-slot "mailbox" model
 
 ```c
-/* 绝对鼠标邮箱：只保存"最新未发送"的一帧 */
+/* Absolute-mouse mailbox: holds only the "newest not-yet-sent" frame. */
 typedef struct {
-    uint8_t data[ABS_MS_DATA_LEN];   // 6 or 5 bytes
-    volatile uint8_t valid;          // 0 = 空, 1 = 有待发送数据
+    uint8_t data[ABS_MS_DATA_LEN];   /* 6 or 5 bytes */
+    volatile uint8_t valid;          /* 0 = empty, 1 = data pending */
 } MS_Abs_Mailbox_t;
 
-/* 全局实例 */
+/* Global instance */
 static MS_Abs_Mailbox_t ms_abs_mbox;
 ```
 
-**Push（无条件覆盖最新）**：
+**Push (unconditional overwrite with newest)**:
 ```c
 void Queue_Push_MouseAbs(uint8_t *data) {
     uint8_t sr = __disable_interrupts();
@@ -123,7 +154,7 @@ void Queue_Push_MouseAbs(uint8_t *data) {
 }
 ```
 
-**Pop（取走后清空）**：
+**Pop (take and clear)**:
 ```c
 bool Queue_Pop_MouseAbs(uint8_t *out) {
     if (!ms_abs_mbox.valid) return false;
@@ -135,15 +166,17 @@ bool Queue_Pop_MouseAbs(uint8_t *out) {
 }
 ```
 
-**收益**：
-- 内存 168B → 7B
-- 拖画轨迹完全连续（端点每次空闲发最新位置）
-- 消除"队列满丢中间帧"问题
-- 发送延迟最多 1 帧（1ms 轮询下不可感知）
+**Benefits**:
+- Memory 168 B → 7 B.
+- Dragging trails fully continuous (endpoint sends newest position whenever it
+  is free).
+- Eliminates the whole "queue-full drops intermediate frame" problem class.
+- Send latency of at most one frame (imperceptible under a 1 ms poll).
 
-### 5.2 所有队列加临界区防护
+### 5.2 Critical-section protection for all queues
 
-所有 `Queue_Push_*` 和 `Queue_Pop_*` 操作入口加最短临界区：
+Add the shortest possible critical section to every `Queue_Push_*` and
+`Queue_Pop_*` entry:
 
 ```c
 void Queue_Push_Keyboard(uint8_t *data) {
@@ -156,32 +189,38 @@ void Queue_Push_Keyboard(uint8_t *data) {
 }
 ```
 
-**为什么足够**：
-- 临界区仅覆盖"读尾指针→检查满→写数据→更新尾指针"这一原子序列
-- 持续时间 < 100ns（144MHz 主频下），远短于 BLE 中断或 USB 帧间隔
-- 不会导致中断丢失或任务调度延迟
+**Why this is enough**:
+- The critical section covers only the atomic sequence "read tail → check
+  full → write data → update tail".
+- Duration < 100 ns at 144 MHz, far shorter than a BLE interrupt or a USB
+  frame interval.
+- No interrupt loss or scheduling delay.
 
-### 5.3 主循环添加响应队列服务
+### 5.3 Service the response queue from the main loop
 
-在 `peripheral_main.c` 的 `Main_Circulation()` 中，`USB_SendFromQueues()` 之后添加：
+In `Main_Circulation()` of `peripheral_main.c`, right after
+`USB_SendFromQueues()`:
 
 ```c
 // Keyboard and mouse control code sending loop
 USB_SendFromQueues();
 
-// ★ 新增：服务响应队列（发送回复到主机）
-if (USB_ModeConfig_ActiveModeBridgeAcm() || 
+// ★ NEW: service the response queue (send replies to the host)
+if (USB_ModeConfig_ActiveModeBridgeAcm() ||
     USB_ModeConfig_ActiveModeBridgeEcm() ||
     !USB_ModeConfig_ActiveModeHasHostUac()) {
-    USBD_SendFromRespQueue();  // 将 RESP_QUEUE 中的帧发出 via UART2
+    USBD_SendFromRespQueue();  /* drain RESP_QUEUE frames via UART2 */
 }
 ```
 
-**条件判断理由**：
-- 当 BLE CH9329 响应路由已启用（`Peripheral_GetBleCh9329Response()`）时，响应直接通过 BLE 通知发出
-- 此条件确保仅在需要 UART2 路径时才排空队列，避免重复发送
+**Why the condition**: when BLE CH9329 response routing is enabled
+(`Peripheral_GetBleCh9329Response()`), replies go straight out as BLE
+notifications. The condition ensures the queue is drained only when the UART2
+path is actually in use, avoiding duplicate sends.
 
-**`USBD_SendFromRespQueue()` 实现**（参考 `USB_SendFromQueues`）：
+**`USBD_SendFromRespQueue()` implementation** (mirrors
+`USB_SendFromQueues`):
+
 ```c
 void USBD_SendFromRespQueue(void) {
     while (resp_queue.head != resp_queue.tail) {
@@ -191,29 +230,35 @@ void USBD_SendFromRespQueue(void) {
             resp_queue.head = (resp_queue.head + 1) % RESP_QUEUE_SIZE;
             __set_interrupts(sr);
         } else {
-            break;  // 端点忙，下轮再试
+            break;  /* endpoint busy, retry next pass */
         }
     }
 }
 ```
 
-### 5.4 CH9329 接收缓冲优化（消费偏移 + 按需 compact）
+### 5.4 CH9329 receive buffer optimization (consume offset + on-demand compaction)
 
-**现状问题**：`CH9329_RxBuffer_Add()` 在**每解析完一帧后**都 `memmove` 剩余字节。一次批量到达 N 帧时，产生 O(N²) 搬移。
+**Current problem**: `CH9329_RxBuffer_Add()` runs a `memmove` of the remaining
+bytes after **every parsed frame**. When N frames arrive in a batch, this is
+O(N²) shuffling.
 
-**设计**：引入"已消费偏移"游标，逐帧解析只推进游标、不搬移；仅在尾部空间不足时 compact 一次（每次 Add 至多一次 memmove，摊还 O(1)）。保持缓冲**连续**，`CH9329_DataParser` 原样复用（无需处理环回绕写）：
+**Design**: introduce a "consumed offset" cursor; per-frame parsing only
+advances the cursor and does not shuffle. Compaction happens only when the
+tail has insufficient room (at most one `memmove` per `Add`, amortized O(1)).
+The buffer stays **contiguous**, so `CH9329_DataParser` is reused unchanged
+(no ring-wrap handling needed):
 
 ```c
 #define RX_BUF_SIZE 512
 static uint8_t rx_buf[RX_BUF_SIZE];
-static uint16_t rx_start = 0;  /* 第一个未解析字节的偏移 */
-static uint16_t rx_len = 0;    /* 自 rx_start 起的有效字节数 */
+static uint16_t rx_start = 0;  /* offset of first unparsed byte */
+static uint16_t rx_len = 0;    /* valid bytes from rx_start */
 
 void CH9329_RxBuffer_Add(uint8_t *data, uint16_t len) {
-    /* 尾部空间不足时 compact（每次 Add 至多一次 memmove） */
+    /* Compact when the tail cannot hold the new bytes (≤1 memmove per Add) */
     if (rx_start + rx_len + len > RX_BUF_SIZE) {
         if (rx_len + len > RX_BUF_SIZE) {
-            /* 仍然放不下：丢最旧，为最新数据腾位 */
+            /* Still too big: drop oldest bytes to make room for newest */
             uint16_t drop = (uint16_t)(rx_len + len - RX_BUF_SIZE);
             rx_start += drop; rx_len -= drop;
         }
@@ -223,150 +268,154 @@ void CH9329_RxBuffer_Add(uint8_t *data, uint16_t len) {
     memcpy(rx_buf + rx_start + rx_len, data, len);
     rx_len += len;
 
-    /* 逐帧解析：只推进 rx_start，不搬移 */
+    /* Parse frame by frame: only advance rx_start, no shuffling */
     while (rx_len > 0) {
         int consumed = CH9329_DataParser(rx_buf + rx_start, rx_len);
-        if (consumed < 0) { rx_start = rx_len = 0; break; }  /* 坏帧：清空 */
-        else if (consumed == 0) break;                        /* 帧不完整：等更多数据 */
+        if (consumed < 0) { rx_start = rx_len = 0; break; }  /* bad frame: flush */
+        else if (consumed == 0) break;                        /* incomplete: wait for more */
         else { rx_start += (uint16_t)consumed; rx_len -= (uint16_t)consumed; }
     }
 }
 ```
 
-**收益**：
-- 逐帧解析**零 memmove**（从 O(N²) 降为摊还 O(1)）
-- `CH9329_DataParser` 不改动，仍操作连续内存
-- 溢出语义清晰（丢最旧字节，保最新数据）
+**Benefits**:
+- **Zero `memmove` per parsed frame** (O(N²) → amortized O(1)).
+- `CH9329_DataParser` unchanged, still operates on contiguous memory.
+- Clear overflow semantics (drop oldest bytes, keep newest data).
 
 ---
 
-## 6. 实现计划
+## 6. Implementation Plan
 
-### 6.1 文件修改清单
+### 6.1 Files to change
 
-| 文件 | 改动类型 | 改动量 | 说明 |
-|------|---------|--------|------|
-| `APP/include/km_ring.h` | 重构 | 中 | 重定义队列结构（绝对鼠标邮箱化），添加临界区宏，声明 `USBD_SendFromRespQueue()` |
-| `APP/km_ring.c` | 重构 | 大 | 重写所有 Push/Pop 函数（加临界区），实现邮箱模型，优化接收缓冲 |
-| `APP/peripheral_main.c` | 添加 | 小 | 在主循环中添加 `USBD_SendFromRespQueue()` 调用（带条件判断） |
-| `APP/usbd_compostie_km.c` | 添加 | 小 | 实现 `USBD_SendFromRespQueue()`（若缺失） |
+| File | Type of change | Size | Notes |
+|------|----------------|------|-------|
+| `APP/include/km_ring.h` | Refactor | Medium | Redefine queue structs (absolute-mouse mailbox), add critical-section macros, declare `USBD_SendFromRespQueue()` |
+| `APP/km_ring.c` | Refactor | Large | Rewrite all Push/Pop functions (critical sections), implement mailbox model, optimize receive buffer |
+| `APP/peripheral_main.c` | Addition | Small | Add `USBD_SendFromRespQueue()` call (conditional) in the main loop |
+| `APP/usbd_compostie_km.c` | Addition | Small | Implement `USBD_SendFromRespQueue()` (if missing) |
 
-### 6.2 实施顺序
+### 6.2 Implementation order
 
-1. **Phase 1（止血）**：
-   - 给所有 Queue_Push/Pop 加临界区
-   - 主循环添加 `USBD_SendFromRespQueue()` 调用
-   - 验证：暴力测试下回复率应接近 100%
+1. **Phase 1 (stop the bleeding)**:
+   - Add critical sections to every `Queue_Push_*`/`Queue_Pop_*`.
+   - Add the `USBD_SendFromRespQueue()` call to the main loop.
+   - Verify: stress-test reply rate should approach 100%.
 
-2. **Phase 2（核心优化）**：
-   - 绝对鼠标改为邮箱模型
-   - 相对鼠标队列 28→64
-   - 验证：快速拖画轨迹连续
+2. **Phase 2 (core optimization)**:
+   - Convert absolute mouse to the mailbox model.
+   - Deepen the relative-mouse queue 28 → 64.
+   - Verify: fast-drag trails are continuous.
 
-3. **Phase 3（性能优化）**：
-   - CH9329 接收缓冲改为环形
-   - 验证：主循环负载降低 15-25%
-
----
-
-## 7. 验证与基准测试
-
-### 7.1 功能验证
-
-| 场景 | 验证方法 | 通过标准 |
-|------|---------|----------|
-| 暴力测试回复率 | 主机连续发送 100 条 CH9329 命令 | 回复率 ≥ 99% |
-| 快速打字 | 连续快速按键（>20 键/秒） | 无漏键 |
-| 快速鼠标移动 | 快速拖动窗口/画图 | 轨迹连续，无跳跃 |
-| BLE 与 UART2 并发 | 同时从 BLE 和 UART2 发送命令 | 无死锁、无丢包 |
-
-### 7.2 性能基准
-
-| 指标 | 测量方法 | 预期值 |
-|------|---------|--------|
-| 主循环平均负载 | GPIO 翻转 + 示波器 | 降低 15-25% |
-| 队列操作延迟 | 临界区时长（逻辑分析仪） | < 100ns |
-| 绝对鼠标发送延迟 | USB 抓包 | ≤ 1 帧（1-2ms） |
+3. **Phase 3 (performance)**:
+   - Convert `CH9329_RxBuffer_Add` to the consume-offset scheme.
+   - Verify: main-loop load drops 15–25%.
 
 ---
 
-## 8. 预期收益
+## 7. Validation & Benchmarks
 
-| 指标 | 现状 | 新设计 | 改善幅度 |
-|------|------|--------|----------|
-| 输入事件丢失率（快速操作） | 高（竞争+溢出） | 极低（临界区+状态分层） | >90% 降低 |
-| 响应丢失率（暴力测试） | ~40% | ~0%（主循环定时服务） | 消失 |
-| 绝对鼠标轨迹完整性 | 有丢段 | 完全连续 | 100% 可用 |
-| 主循环平均负载 | 中等 | 降低（减少 memmove+事件驱动） | 15-25% 降低 |
-| RAM 占用 | ~1.2KB | 净变化 ~−20B（MS_ABS 邮箱省 161B，MS_REL 加深 +144B） | 基本持平 |
+### 7.1 Functional validation
 
----
+| Scenario | Method | Pass criteria |
+|----------|--------|---------------|
+| Stress-test reply rate | Host sends 100 consecutive CH9329 commands | Reply rate ≥ 99% |
+| Fast typing | Sustained fast key presses (> 20 keys/s) | No lost keys |
+| Fast mouse movement | Fast window drag / drawing | Continuous trail, no jumps |
+| BLE + UART2 concurrency | Send commands from BLE and UART2 simultaneously | No deadlock, no loss |
 
-## 9. 风险与缓解
+### 7.2 Performance benchmarks
 
-| 风险 | 可能性 | 影响 | 缓解措施 |
-|------|--------|------|----------|
-| 临界区过长导致中断丢失 | 低 | 中 | 仅在关键指令序列加临界区（< 100ns） |
-| 邮箱模型导致旧坐标丢失 | 中 | 低 | 这是预期行为（绝对鼠标只需最新状态） |
-| 环形缓冲溢出 | 低 | 低 | 丢最旧字节，保证最新数据优先 |
-| 响应队列排空不及时 | 低 | 中 | 主循环每轮都检查，响应帧小（< 64B），可快速发出 |
+| Metric | Method | Expected |
+|--------|--------|----------|
+| Main-loop average load | GPIO toggle + oscilloscope | Down 15–25% |
+| Queue-operation latency | Critical-section width (logic analyzer) | < 100 ns |
+| Absolute-mouse send latency | USB capture | ≤ 1 frame (1–2 ms) |
 
 ---
 
-## 10. 与原有计划的对比
+## 8. Expected Benefits
 
-| 项目 | 原计划 | 新设计 |
-|------|--------|--------|
-| DMA 零拷贝 | ❌ 误解 USBFS DMA 模式 | ✅ 识别为指向内部 RAM 偏移，非真正零拷贝 |
-| SoA 布局 | ❌ 假设 cache 收益（实际无 cache） | ✅ 移除，改为语义分层 |
-| 队列竞争 | ❌ 未识别 | ✅ 所有操作加临界区 |
-| 响应路径 | ❌ 未涉及 | ✅ 主循环添加排空调度 |
-| 绝对鼠标 | ❌ 保持 FIFO | ✅ 改为单槽邮箱 |
-| 预期收益 | 40% 性能提升（未验证） | 解决丢事件问题（已验证根因） |
-
----
-
-## 11. 开放问题
-
-- [ ] `USBD_SendFromRespQueue()` 是否已实现？若未实现需补写
-- [ ] 临界区宏使用 `__disable_interrupts()`/`__set_interrupts()` 还是 `__get_MSTATUS()`/`__restore_mstatus()`？需确认 CH32V20x RISC-V 最佳实践
-- [ ] 是否需要为调试目的添加队列深度监控（如通过 `USB_DEBUG` 输出当前各队列长度）？
+| Metric | Before | After | Improvement |
+|--------|--------|-------|-------------|
+| Input-event loss (fast operation) | High (race + overflow) | Very low (critical section + state layering) | >90% reduction |
+| Reply-loss rate (stress test) | ~40% | ~0% (main-loop drain) | Eliminated |
+| Absolute-mouse trail integrity | Gaps | Fully continuous | 100% usable |
+| Main-loop average load | Medium | Lower (less `memmove`, event-driven) | 15–25% reduction |
+| RAM usage | ~1.2 KB | Net ~−20 B (mailbox saves 161 B, MS_REL deepening +144 B) | Roughly flat |
 
 ---
 
-## 12. 实施检查清单
+## 9. Risks & Mitigations
 
-- [ ] Phase 1：临界区 + 响应队列服务
-  - [ ] 修改 `km_ring.c` 所有 Push/Pop 函数
-  - [ ] 修改 `peripheral_main.c` 主循环
-  - [ ] 实现 `USBD_SendFromRespQueue()`（若缺失）
-  - [ ] 功能测试：暴力测试回复率
-- [ ] Phase 2：队列模型优化
-  - [ ] 修改 `km_ring.h` 重定义 `MS_Abs_Queue_t`
-  - [ ] 实现绝对鼠标邮箱模型
-  - [ ] 修改相对鼠标队列深度 28→64
-  - [ ] 功能测试：拖画轨迹、快速打字
-- [ ] Phase 3：接收缓冲优化
-  - [ ] 修改 `CH9329_RxBuffer_Add` 为环形缓冲
-  - [ ] 性能测试：主循环负载
-- [ ] 最终验证
-  - [ ] 全场景功能测试
-  - [ ] 性能基准测试
-  - [ ] 代码审查
-  - [ ] 提交 PR
+| Risk | Likelihood | Impact | Mitigation |
+|------|------------|--------|------------|
+| Over-long critical section drops interrupts | Low | Medium | Only wrap the essential instruction sequence (< 100 ns) |
+| Mailbox drops intermediate coordinates | Medium | Low | Expected behavior (absolute mouse only needs newest state) |
+| Consume-offset buffer overflow | Low | Low | Drop oldest bytes; newest data prioritized |
+| Response queue drained too late | Low | Medium | Checked every main-loop pass; reply frames are small (< 64 B) and drain fast |
 
 ---
 
-## 13. 状态跟踪
+## 10. Comparison with the Original Plan
 
-| 阶段 | 状态 | 完成日期 |
-|------|------|----------|
-| 设计 | ✅ 已完成 | 2026-09-08 |
-| Phase 1 实施 | ⬜ 待开始 | — |
-| Phase 2 实施 | ⬜ 待开始 | — |
-| Phase 3 实施 | ⬜ 待开始 | — |
-| 验证 | ⬜ 待开始 | — |
+| Item | Original plan | New design |
+|------|---------------|------------|
+| DMA zero-copy | ❌ Misread USBFS DMA mode | ✅ Recognized as an offset into internal RAM, not true zero-copy |
+| SoA layout | ❌ Assumed cache gains (no cache exists) | ✅ Dropped; replaced with semantic layering |
+| Queue race | ❌ Not identified | ✅ Critical sections on all operations |
+| Response path | ❌ Not addressed | ✅ Main-loop drain added |
+| Absolute mouse | ❌ Kept FIFO | ✅ Single-slot mailbox |
+| Expected gain | 40% perf (unverified) | Fixes event loss (root causes verified) |
 
 ---
 
-**文档维护**：本文档随实施进展更新。重大设计变更需重新审批。
+## 11. Open Questions
+
+- [ ] Does `USBD_SendFromRespQueue()` already exist? If not, write it.
+- [ ] Critical-section macros: `__disable_interrupts()`/`__set_interrupts()`
+      vs. `__get_MSTATUS()`/`__restore_mstatus()` — confirm best practice on
+      CH32V20x RISC-V.
+- [ ] Add queue-depth diagnostics for debugging (e.g., print each queue's
+      length via `USB_DEBUG`)?
+
+---
+
+## 12. Implementation Checklist
+
+- [ ] Phase 1: critical sections + response-queue service
+  - [ ] Modify all Push/Pop functions in `km_ring.c`
+  - [ ] Modify the main loop in `peripheral_main.c`
+  - [ ] Implement `USBD_SendFromRespQueue()` (if missing)
+  - [ ] Functional test: stress-test reply rate
+- [ ] Phase 2: queue-model optimization
+  - [ ] Redefine `MS_Abs_Queue_t` in `km_ring.h`
+  - [ ] Implement the absolute-mouse mailbox model
+  - [ ] Deepen relative-mouse queue 28 → 64
+  - [ ] Functional test: drag trails, fast typing
+- [ ] Phase 3: receive-buffer optimization
+  - [ ] Convert `CH9329_RxBuffer_Add` to consume-offset scheme
+  - [ ] Performance test: main-loop load
+- [ ] Final validation
+  - [ ] Full-scenario functional test
+  - [ ] Performance benchmark
+  - [ ] Code review
+  - [ ] Submit PR
+
+---
+
+## 13. Status Tracking
+
+| Stage | Status | Date |
+|-------|--------|------|
+| Design | ✅ Complete | 2026-09-08 |
+| Phase 1 implementation | ⬜ Pending | — |
+| Phase 2 implementation | ⬜ Pending | — |
+| Phase 3 implementation | ⬜ Pending | — |
+| Validation | ⬜ Pending | — |
+
+---
+
+**Document maintenance**: this document is updated as implementation
+progresses. Significant design changes require re-approval.
