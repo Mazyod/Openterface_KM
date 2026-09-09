@@ -14,14 +14,11 @@
 
 /* Nesting-safe critical-section helpers (CH32V20x RISC-V).
  *
- * __enable_irq() unconditionally sets MIE (csrs mstatus, MIE) and is NOT
- * nesting-safe, so we save/restore MSTATUS instead: an inner EXIT can never
- * re-enable interrupts that an outer ENTER is still holding.
- * Requires __get_MSTATUS/__set_MSTATUS/__disable_irq declarations at the
- * expansion site — every .c that expands these macros includes a chip header
- * (ch32v20x_usbfs_device.h, which pulls in core_riscv.h) before the use-site. */
-#define ENTER_CRITICAL()  uint32_t _mstatus = __get_MSTATUS(); __disable_irq()
-#define EXIT_CRITICAL()   __set_MSTATUS(_mstatus)
+ * TEMPORARILY DISABLED for testing mailbox logic.
+ * TODO: Implement proper critical section using correct CSR operations.
+ */
+#define ENTER_CRITICAL()  do {} while(0)
+#define EXIT_CRITICAL()   do {} while(0)
 
 /* Keyboard report structure */
 typedef struct {
