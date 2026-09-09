@@ -83,12 +83,13 @@ typedef struct {
     volatile int tail;
 } MS_Rel_Queue_t;
 
-/* Mouse absolute queue structure */
+/* Mouse absolute report — single-slot mailbox (newest wins).
+ * Absolute coordinates are stateful: only the newest not-yet-sent frame
+ * matters, so a FIFO only ever stores stale positions (spec §4, §5.1). */
 typedef struct {
-    MS_Abs_Report_t buf[MS_ABS_QUEUE_SIZE];
-    volatile int head;
-    volatile int tail;
-} MS_Abs_Queue_t;
+    MS_Abs_Report_t slot;       /* newest pending absolute report */
+    volatile uint8_t valid;     /* 1 = slot holds an unsent report */
+} MS_Abs_Mailbox_t;
 
 /* Response packet queue structure */
 typedef struct {
@@ -100,7 +101,7 @@ typedef struct {
 /* Global queue declarations */
 extern KB_Queue_t kb_queue;
 extern MS_Rel_Queue_t ms_rel_queue;
-extern MS_Abs_Queue_t ms_abs_queue;
+extern MS_Abs_Mailbox_t ms_abs_mbox;
 extern Resp_Queue_t resp_queue;
 extern Media_Queue_t media_queue;
 

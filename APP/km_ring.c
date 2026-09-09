@@ -12,7 +12,7 @@
 /* Global queues */
 KB_Queue_t kb_queue;
 MS_Rel_Queue_t ms_rel_queue;
-MS_Abs_Queue_t ms_abs_queue;
+MS_Abs_Mailbox_t ms_abs_mbox;
 Resp_Queue_t resp_queue;
 Media_Queue_t media_queue;
 
@@ -21,7 +21,7 @@ void Queue_Init(void) {
     ENTER_CRITICAL();
     kb_queue.head = kb_queue.tail = 0;
     ms_rel_queue.head = ms_rel_queue.tail = 0;
-    ms_abs_queue.head = ms_abs_queue.tail = 0;
+    ms_abs_mbox.valid = 0;
     resp_queue.head = resp_queue.tail = 0;
     media_queue.head = media_queue.tail = 0;
     EXIT_CRITICAL();
@@ -44,13 +44,11 @@ void Queue_Push_MouseRel(uint8_t *data) {
     ms_rel_queue.tail = next;
     EXIT_CRITICAL();
 }
-//MouseAbs message queue
+//MouseAbs message queue — mailbox: unconditionally overwrite with the newest state
 void Queue_Push_MouseAbs(uint8_t *data) {
     ENTER_CRITICAL();
-    int next = (ms_abs_queue.tail + 1) % MS_ABS_QUEUE_SIZE;
-    if (next == ms_abs_queue.head) ms_abs_queue.head = (ms_abs_queue.head + 1) % MS_ABS_QUEUE_SIZE;
-    memcpy(ms_abs_queue.buf[ms_abs_queue.tail].data, data, sizeof(ms_abs_queue.buf[ms_abs_queue.tail].data));
-    ms_abs_queue.tail = next;
+    memcpy(ms_abs_mbox.slot.data, data, sizeof(ms_abs_mbox.slot.data));
+    ms_abs_mbox.valid = 1;
     EXIT_CRITICAL();
 }
 //Response message queue (Message length varies)
@@ -101,9 +99,9 @@ bool Queue_Pop_MouseRel(MS_Rel_Report_t *out) {
 bool Queue_Pop_MouseAbs(MS_Abs_Report_t *out) {
     bool popped = false;
     ENTER_CRITICAL();
-    if (ms_abs_queue.head != ms_abs_queue.tail) {
-        memcpy(out->data, ms_abs_queue.buf[ms_abs_queue.head].data, sizeof(out->data));
-        ms_abs_queue.head = (ms_abs_queue.head + 1) % MS_ABS_QUEUE_SIZE;
+    if (ms_abs_mbox.valid) {
+        memcpy(out->data, ms_abs_mbox.slot.data, sizeof(out->data));
+        ms_abs_mbox.valid = 0;
         popped = true;
     }
     EXIT_CRITICAL();
@@ -157,14 +155,30 @@ void USB_SendFromQueues(void) {
         else break;
     }
 
-    while (ms_abs_queue.head != ms_abs_queue.tail && USBFS_Endp_Busy[DEF_UEP3] == 0) {
-        MS_Abs_Report_t *pkt = &ms_abs_queue.buf[ms_abs_queue.head];
-        if (USBFS_Endp_DataUp(DEF_UEP3, pkt->data, sizeof(pkt->data), DEF_UEP_CPY_LOAD) == READY) {
+    /* Absolute mouse: mailbox — send the newest pending report whenever the
+     * endpoint is free. Copy under the critical section so a concurrent push
+     * cannot tear the bytes the USB controller is about to read, and clear
+     * valid before DataUp: a push during the copy simply marks valid again and
+     * the newest state goes out next pass (no loss, at most one stale frame). */
+    if (USBFS_Endp_Busy[DEF_UEP3] == 0) {
+        uint8_t abs_report[MS_ABS_DATA_LEN];
+        uint8_t have = 0;
+        ENTER_CRITICAL();
+        if (ms_abs_mbox.valid) {
+            memcpy(abs_report, ms_abs_mbox.slot.data, sizeof(abs_report));
+            ms_abs_mbox.valid = 0;
+            have = 1;
+        }
+        EXIT_CRITICAL();
+        if (have &&
+            USBFS_Endp_DataUp(DEF_UEP3, abs_report, sizeof(abs_report), DEF_UEP_CPY_LOAD) != READY) {
+            /* Endpoint became busy between check and arm (should not happen:
+             * only this drain arms EP3). Restore so the report is not lost. */
             ENTER_CRITICAL();
-            ms_abs_queue.head = (ms_abs_queue.head + 1) % MS_ABS_QUEUE_SIZE;
+            memcpy(ms_abs_mbox.slot.data, abs_report, sizeof(abs_report));
+            ms_abs_mbox.valid = 1;
             EXIT_CRITICAL();
         }
-        else break;
     }
 
     while (media_queue.head != media_queue.tail && USBFS_Endp_Busy[DEF_UEP4] == 0) {
