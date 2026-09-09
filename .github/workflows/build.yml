@@ -3,7 +3,7 @@ name: Build Openterface Keyboard and Mouse emulator firmware
 on:
   push:
     branches:
-      - main
+      - main feature/*
   workflow_call:
     inputs:
       enable_ble:
