@@ -318,21 +318,34 @@ void CH9329_DispatchCommand(uint8_t addr, uint8_t cmd_code, uint8_t* pdata, uint
 
 int CH9329_DataParser(uint8_t* buf, uint16_t len)
 {
-    // Check that buffer is at least long enough for header + minimal fields
+    /* Check that buffer is at least long enough for header + minimal fields */
     if (len < 6) return 0;
 
-    // Verify frame header
+    /* Verify frame header */
     if (buf[0] != CH9329_FRAME_HEAD1 || buf[1] != CH9329_FRAME_HEAD2) {
-        // Not a valid frame header �� skip one byte and try again
+        /* Not a valid frame header -- skip one byte and try to resync */
         return 1;
     }
 
     uint8_t addr     = buf[2];
     uint8_t cmd_code = buf[3];
     uint8_t data_len = buf[4];
+
+    /* Bounds check: protocol max payload is CH9329_MAX_DATA_LEN (100).
+     * Reject oversized payloads early to prevent out-of-bounds reads
+     * in the checksum loop and buf[5 + data_len] access below. */
+    if (data_len > CH9329_MAX_DATA_LEN) {
+        return 1;  /* invalid payload length -- skip header byte and resync */
+    }
+
     uint16_t frame_total_len = 2 + 1 + 1 + 1 + (uint16_t)data_len + 1;
 
-    // Wait until the full frame is received
+    /* Sanity: frame must fit in the receive buffer */
+    if (frame_total_len > RX_BUF_SIZE) {
+        return 1;  /* corrupted length field -- skip header byte and resync */
+    }
+
+    /* Wait until the full frame is received */
     if (len < frame_total_len) return 0;
 
     uint8_t *pdata = &buf[5];

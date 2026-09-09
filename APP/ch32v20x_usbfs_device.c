@@ -25,6 +25,7 @@
 #include "include/ecm_bridge.h"
 #include "include/ble_eth_protocol.h"
 #include "include/usb_mode_config.h"
+#include "km_ring.h"
 /*******************************************************************************/
 /* Variable Definition */
 
@@ -805,11 +806,16 @@ void USBFS_IRQHandler( void )
                         else
 #endif
                         {
-                        /* Diagnostic: capture EP6 OUT interrupt state for main-loop LED display */
+                        /* Diagnostic: capture EP6 OUT interrupt state for main-loop LED display.
+                         * Use ENTER_CRITICAL/EXIT_CRITICAL to ensure the writes are atomic
+                         * with respect to main-loop reads — prevents the main loop from
+                         * observing a partially-updated snapshot of these related variables. */
+                        ENTER_CRITICAL();
                         g_usbfs_ep6_int_flag = 1;
                         g_usbfs_ep6_tog_ok = (intst & USBFS_UIS_TOG_OK) ? 1 : 0;
                         g_usbfs_ep6_rx_len = USBFSD->RX_LEN;
                         g_usbfs_ep6_rx_count++;  /* count every OUT interrupt */
+                        EXIT_CRITICAL();
 
                         if( intst & USBFS_UIS_TOG_OK )
                         {
