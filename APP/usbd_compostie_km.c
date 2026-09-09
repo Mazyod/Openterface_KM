@@ -355,7 +355,8 @@ int CH9329_DataParser(uint8_t* buf, uint16_t len)
 }
 
 static uint8_t rx_buf[RX_BUF_SIZE];
-static uint16_t rx_len = 0;
+static uint16_t rx_start = 0;  /* offset of the first unparsed byte */
+static uint16_t rx_len = 0;    /* number of valid bytes from rx_start */
 
 void CH9329_RxBuffer_Add(uint8_t *data, uint16_t len) {
     if (len == 0 || data == NULL) return;
@@ -366,38 +367,43 @@ void CH9329_RxBuffer_Add(uint8_t *data, uint16_t len) {
      * safe because the macros save/restore MSTATUS. */
     ENTER_CRITICAL();
 
-    // Prevent buffer overflow; if overflow risk, retain only the latter half
-    if (rx_len + len > RX_BUF_SIZE) {
-        uint16_t keep = RX_BUF_SIZE / 2;
-        if (keep > rx_len) keep = rx_len;
-        memmove(rx_buf, rx_buf + (rx_len - keep), keep);
-        rx_len = keep;
+    /* Reset the cursor whenever the buffer empties so rx_start cannot drift to
+     * the end of the array across many small frames. */
+    if (rx_len == 0) rx_start = 0;
+
+    /* Compact only when the tail cannot hold the new bytes:
+     * at most one memmove per Add (amortized O(1)). */
+    if ((uint32_t)rx_start + rx_len + len > RX_BUF_SIZE) {
+        if ((uint32_t)rx_len + len > RX_BUF_SIZE) {
+            /* Still too big even after compaction: drop the oldest bytes so the
+             * newest data survives. */
+            uint16_t drop = (uint16_t)((uint32_t)rx_len + len - RX_BUF_SIZE);
+            rx_start += drop;
+            rx_len -= drop;
+        }
+        if (rx_len > 0) memmove(rx_buf, rx_buf + rx_start, rx_len);
+        rx_start = 0;
     }
 
-    // Append new data
-    memcpy(rx_buf + rx_len, data, len);
+    /* Append new data */
+    memcpy(rx_buf + rx_start + rx_len, data, len);
     rx_len += len;
 
-    // Try parsing frames as long as data exists
+    /* Parse frame by frame: a consumed frame only advances rx_start — no
+     * shuffling. CH9329_DataParser runs on contiguous memory and is unchanged. */
     while (rx_len > 0) {
-        int consumed = CH9329_DataParser(rx_buf, rx_len);
+        int consumed = CH9329_DataParser(rx_buf + rx_start, rx_len);
         if (consumed < 0) {
-            // Parsing error — clear buffer
+            /* Parsing error — clear buffer */
+            rx_start = 0;
             rx_len = 0;
             break;
         } else if (consumed == 0) {
-            // Incomplete frame — wait for more data
+            /* Incomplete frame — wait for more data */
             break;
         } else {
-            // Remove consumed bytes from buffer
-            if ((uint16_t)consumed < rx_len) {
-                memmove(rx_buf, rx_buf + consumed, rx_len - consumed);
-                rx_len -= (uint16_t)consumed;
-            } else {
-                // Exactly consumed all data
-                rx_len = 0;
-                break;
-            }
+            rx_start += (uint16_t)consumed;
+            rx_len -= (uint16_t)consumed;
         }
     }
 
