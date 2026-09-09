@@ -14,11 +14,18 @@
 
 /* Nesting-safe critical-section helpers (CH32V20x RISC-V).
  *
- * TEMPORARILY DISABLED for testing mailbox logic.
- * TODO: Implement proper critical section using correct CSR operations.
+ * Only save/restore the MIE (Machine Interrupt Enable) bit from CSR 0x800,
+ * not the entire mstatus register. The mstatus register contains bits that
+ * should not be blindly restored (MPP, MPIE, etc.), and __enable_irq()/
+ * __disable_irq() operate on WCH-specific CSR 0x800, not standard mstatus.
+ *
+ * MIE is bit 3 of CSR 0x800.
  */
-#define ENTER_CRITICAL()  do {} while(0)
-#define EXIT_CRITICAL()   do {} while(0)
+#define ENTER_CRITICAL()  uint32_t _mie_saved; \
+                          __asm volatile("csrr %0, 0x800" : "=r"(_mie_saved)); \
+                          __disable_irq(); \
+                          _mie_saved = (_mie_saved >> 3) & 0x1
+#define EXIT_CRITICAL()   do { if (_mie_saved) __enable_irq(); } while(0)
 
 /* Keyboard report structure */
 typedef struct {
