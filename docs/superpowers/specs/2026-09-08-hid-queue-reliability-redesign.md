@@ -457,29 +457,29 @@ void CH9329_RxBuffer_Add(uint8_t *data, uint16_t len) {
 
 ## 12. Implementation Checklist
 
-- [ ] Phase 1: cross-context queue integrity (root causes 2.1 + 2.2)
-  - [ ] Add `ENTER_CRITICAL()` / `EXIT_CRITICAL()` macros to `km_ring.h`
+- [x] Phase 1: cross-context queue integrity (root causes 2.1 + 2.2)
+  - [x] Add `ENTER_CRITICAL()` / `EXIT_CRITICAL()` macros to `km_ring.h`
         (MSTATUS save/restore per §5.2)
-  - [ ] Wrap all `Queue_Push_*` / `Queue_Pop_*` tail/head updates in
+  - [x] Wrap all `Queue_Push_*` / `Queue_Pop_*` tail/head updates in
         `km_ring.c`
-  - [ ] Fix the `resp_queue` empty-if bug at `km_ring.c:134-138` and gate
+  - [x] Fix the `resp_queue` empty-if bug at `km_ring.c:134-138` and gate
         the drain in `USB_SendFromQueues` per §5.3 (skip when ECM bridge /
         host CDC-ECM active)
-  - [ ] Wrap the `Queue_Pop_Response` in `ecm_bridge.c` with the same
-        critical section
-  - [ ] Delete the dead `USBD_SendFromRespQueue()` declaration in `km_ring.h`
-  - [ ] Wrap `CH9329_RxBuffer_Add` framing-state access in a critical
+  - [x] Wrap the `Queue_Pop_Response` in `ecm_bridge.c` with the same
+        critical section (done inside `Queue_Pop_Response` itself)
+  - [x] Delete the dead `USBD_SendFromRespQueue()` declaration in `km_ring.h`
+  - [x] Wrap `CH9329_RxBuffer_Add` framing-state access in a critical
         section (USB ISR vs. main-loop callers)
   - [ ] Functional test: stress-test reply rate (target > 95% from ~60%)
-- [ ] Phase 2: queue-model optimization
-  - [ ] Redefine absolute-mouse queue as a mailbox (`MS_Abs_Mailbox_t`) in
+- [x] Phase 2: queue-model optimization
+  - [x] Redefine absolute-mouse queue as a mailbox (`MS_Abs_Mailbox_t`) in
         `km_ring.h` (newest-wins, per §4.2)
-  - [ ] Implement mailbox push/pop in `km_ring.c` and route
+  - [x] Implement mailbox push/pop in `km_ring.c` and route
         `Mouse_HandleAbsoluteData` through it
-  - [ ] Deepen relative-mouse queue 28 → 64
+  - [x] Deepen relative-mouse queue 28 → 64
   - [ ] Functional test: drag trails, fast typing
-- [ ] Phase 3: receive-buffer optimization
-  - [ ] Convert `CH9329_RxBuffer_Add` to consume-offset scheme (removes the
+- [x] Phase 3: receive-buffer optimization
+  - [x] Convert `CH9329_RxBuffer_Add` to consume-offset scheme (removes the
         per-byte `memmove`, per §5.4)
   - [ ] Performance test: main-loop load
 - [ ] Final validation
@@ -495,10 +495,10 @@ void CH9329_RxBuffer_Add(uint8_t *data, uint16_t len) {
 | Stage | Status | Date |
 |-------|--------|------|
 | Design | ✅ Complete | 2026-09-08 |
-| Phase 1 implementation | ⬜ Pending | — |
-| Phase 2 implementation | ⬜ Pending | — |
-| Phase 3 implementation | ⬜ Pending | — |
-| Validation | ⬜ Pending | — |
+| Phase 1 implementation | ✅ Complete | 2026-09-09 |
+| Phase 2 implementation | ✅ Complete | 2026-09-09 |
+| Phase 3 implementation | ✅ Complete | 2026-09-09 |
+| Validation | ⏳ Pending (needs hardware) | — |
 
 ---
 
