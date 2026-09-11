@@ -14,8 +14,12 @@
 #include "usb_pwr.h"
 #include "hw_config.h"
 
-__IO uint32_t bDeviceState = UNCONNECTED; 
-__IO bool fSuspendEnabled = TRUE;  
+/* External reference to ESOF counter in usb_istr.c.
+ * Reset to 0 during suspend to prevent false ESOF triggers on resume. */
+extern __IO uint32_t esof_counter;
+
+__IO uint32_t bDeviceState = UNCONNECTED;
+__IO bool fSuspendEnabled = TRUE;
 __IO uint32_t EP[8];
 
 struct
@@ -74,34 +78,29 @@ RESULT PowerOff()
  */
 void Suspend(void)
 {
-	uint32_t i =0;
-	uint16_t wCNTR; 
+	uint16_t wCNTR;
 
-	wCNTR = _GetCNTR();  
-  for (i=0;i<8;i++) EP[i] = _GetENDPOINT(i);
-	
-	wCNTR|=CNTR_RESETM;
-	_SetCNTR(wCNTR);
-	
-	wCNTR|=CNTR_FRES;
-	_SetCNTR(wCNTR);
-	
-	wCNTR&=~CNTR_FRES;
-	_SetCNTR(wCNTR);
+	/* Save endpoint state (not strictly needed without forced reset,
+	 * but kept for safety) */
+	{
+		uint32_t i;
+		for (i=0;i<8;i++) EP[i] = _GetENDPOINT(i);
+	}
 
-	while((_GetISTR()&ISTR_RESET) == 0);
-	
-	_SetISTR((uint16_t)CLR_RESET);
-	
-	for (i=0;i<8;i++)
-	_SetENDPOINT(i, EP[i]);
-	
+	/* Standard USB suspend: just set FSUSP and LPMODE.
+	 * Do NOT force a USB reset here - that would put the controller
+	 * in a "just reset" state expecting re-enumeration, which breaks
+	 * the resume flow when Target wakes up. */
+	wCNTR = _GetCNTR();
 	wCNTR |= CNTR_FSUSP;
 	_SetCNTR(wCNTR);
-	
+
 	wCNTR = _GetCNTR();
 	wCNTR |= CNTR_LPMODE;
 	_SetCNTR(wCNTR);
+
+	/* Reset ESOF counter to prevent false triggers on resume */
+	esof_counter = 0;
 
 	Enter_LowPowerMode();
 }
@@ -116,12 +115,38 @@ void Suspend(void)
 void Resume_Init(void)
 {
   uint16_t wCNTR;
-  
+  uint32_t i;
+
+  /* Exit low power mode first */
   wCNTR = _GetCNTR();
   wCNTR &= (~CNTR_LPMODE);
-  _SetCNTR(wCNTR);      
+  _SetCNTR(wCNTR);
+
+  /* Clear FSUSP bit to fully resume USB transceiver.
+   * This is critical - without clearing FSUSP, the USB transceiver
+   * remains in suspended state and won't respond to Host requests. */
+  wCNTR = _GetCNTR();
+  wCNTR &= (~CNTR_FSUSP);
+  _SetCNTR(wCNTR);
+
+  /* Restore endpoint state that was saved before suspend */
+  for (i=0;i<8;i++)
+    _SetENDPOINT(i, EP[i]);
+
   Leave_LowPowerMode();
+
+  /* Re-enable USB interrupts with full mask.
+   * This ensures RESET, SUSPEND, WKUP interrupts are all enabled
+   * for proper USB operation after resume. */
   _SetCNTR(IMR_MSK);
+
+  /* Small delay to allow USB transceiver to stabilize after resume.
+   * This prevents race conditions where Host sends requests before
+   * device is fully ready. */
+  {
+    volatile uint32_t delay;
+    for(delay = 0; delay < 10000; delay++);
+  }
 }
 
 /*******************************************************************************

@@ -1050,6 +1050,7 @@ static void ble_eth_event_handler(ble_eth_evt_t *evt)
     }
 }
 
+#if USB_WORK_MODE_BRIDGE_ECM
 /*********************************************************************
  * @fn      BLE_Eth_PushFromBridge
  *
@@ -1069,6 +1070,7 @@ void BLE_Eth_PushFromBridge(uint8_t conn_id, const uint8_t *data, uint16_t len)
         tmos_set_event(Peripheral_TaskID, SBP_PROCESS_BLEETH_TX_EVT);
     }
 }
+#endif /* USB_WORK_MODE_BRIDGE_ECM */
 
 /*********************************************************************
  * @fn      app_usb_notify

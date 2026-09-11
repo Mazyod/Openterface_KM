@@ -25,6 +25,7 @@
 #include "include/ecm_bridge.h"
 #include "include/ble_eth_protocol.h"
 #include "include/usb_mode_config.h"
+#include "km_ring.h"
 /*******************************************************************************/
 /* Variable Definition */
 
@@ -114,6 +115,7 @@ static void USBFS_ModeHid_FillReport(uint8_t *report)
 
     /* Append-only diagnostics (do not change existing offsets above). */
     report[USBFS_MODE_HID_DIAG_VERSION_OFFSET] = 0x01u;
+#if USB_WORK_MODE_BRIDGE_ECM
     report[USBFS_MODE_HID_DIAG_FLAGS_OFFSET] = 0x01u; /* bit0: BLE-Eth stats present */
 
     ble_eth_reliability_stats_t st;
@@ -125,6 +127,9 @@ static void USBFS_ModeHid_FillReport(uint8_t *report)
     USBFS_ModeHid_WriteU32LE(report, USBFS_MODE_HID_DIAG_BLE_ETH_STATS_OFFSET + 16u, st.tx_queue_full_drop);
     USBFS_ModeHid_WriteU32LE(report, USBFS_MODE_HID_DIAG_BLE_ETH_STATS_OFFSET + 20u, st.frame_rx_len_err);
     USBFS_ModeHid_WriteU32LE(report, USBFS_MODE_HID_DIAG_BLE_ETH_STATS_OFFSET + 24u, st.frame_rx_checksum_err);
+#else
+    report[USBFS_MODE_HID_DIAG_FLAGS_OFFSET] = 0x00u; /* bit0: no BLE-Eth stats */
+#endif
 }
 
 static void USBFS_ModeHid_HandleSetReport(uint8_t *report, uint16_t report_len)
@@ -203,6 +208,23 @@ __attribute__ ((aligned(4))) uint8_t USBFS_EP6_Buf[ UAC_ISO_PACKET_SIZE ];     /
 
 /* USB IN Endpoint Busy Flag */
 volatile uint8_t  USBFS_Endp_Busy[ DEF_UEP_NUM ];
+
+/* USB Endpoint Busy Timeout Recovery
+ *
+ * If a USB transfer completion interrupt is lost (due to EMI, clock jitter,
+ * etc.), the busy flag can remain set forever, causing the endpoint to stop
+ * sending data. This mechanism records when each endpoint became busy and
+ * provides a recovery function that can be called from the main loop to
+ * detect and recover from stuck endpoints.
+ *
+ * Zero overhead in normal path: only compares when busy flag is set.
+ */
+#define USB_ENDPOINT_BUSY_TIMEOUT_MS  20  /* 20ms timeout (>> normal <1ms transfer) */
+static uint32_t USBFS_Endp_Busy_StartTime[ DEF_UEP_NUM ];
+volatile uint32_t USBFS_Endp_Timeout_Count[ DEF_UEP_NUM ];  /* Error counters for diagnostics */
+
+/* External systick_ms from RGB.c (1ms timer tick) */
+extern volatile uint32_t systick_ms;
 
 /* EP6 OUT diagnostic — set in USBFS_IRQHandler, read by main loop */
 volatile uint8_t  g_usbfs_ep6_int_flag = 0;  /* 1 = EP6 OUT interrupt fired */
@@ -456,6 +478,10 @@ void USBFS_Device_Init( FunctionalState sta )
         /* Initialize USB device configuration */
         USBFS_Device_Endp_Init( );
         USBFSD->INT_EN = USBFS_UIE_SUSPEND | USBFS_UIE_BUS_RST | USBFS_UIE_TRANSFER;
+
+        /* Wait for power stability before enabling D+ pull-up */
+        Delay_Ms( 100 );
+
         USBFSD->BASE_CTRL = USBFS_UC_DEV_PU_EN | USBFS_UC_INT_BUSY | USBFS_UC_DMA_EN;
         USBFSD->UDEV_CTRL = USBFS_UD_PD_DIS | USBFS_UD_PORT_EN;
         NVIC_EnableIRQ( USBFS_IRQn );
@@ -577,6 +603,8 @@ uint8_t USBFS_Endp_DataUp(uint8_t endp, uint8_t *pbuf, uint16_t len, uint8_t mod
                 }
                 /* Set end-point busy */
                 USBFS_Endp_Busy[ endp ] = 0x01;
+                /* Record time when busy flag was set for timeout detection */
+                USBFS_Endp_Busy_StartTime[ endp ] = systick_ms;
                 /* tx length */
                 USBFSD_UEP_TLEN( endp ) = len;
                 /* response ack */
@@ -797,11 +825,16 @@ void USBFS_IRQHandler( void )
                         else
 #endif
                         {
-                        /* Diagnostic: capture EP6 OUT interrupt state for main-loop LED display */
+                        /* Diagnostic: capture EP6 OUT interrupt state for main-loop LED display.
+                         * Use ENTER_CRITICAL/EXIT_CRITICAL to ensure the writes are atomic
+                         * with respect to main-loop reads — prevents the main loop from
+                         * observing a partially-updated snapshot of these related variables. */
+                        ENTER_CRITICAL();
                         g_usbfs_ep6_int_flag = 1;
                         g_usbfs_ep6_tog_ok = (intst & USBFS_UIS_TOG_OK) ? 1 : 0;
                         g_usbfs_ep6_rx_len = USBFSD->RX_LEN;
                         g_usbfs_ep6_rx_count++;  /* count every OUT interrupt */
+                        EXIT_CRITICAL();
 
                         if( intst & USBFS_UIS_TOG_OK )
                         {
@@ -1640,6 +1673,12 @@ void USBFS_IRQHandler( void )
 
         USBFSD->DEV_ADDR = 0;
         USBFS_Device_Endp_Init( );
+
+        /* Restore critical control registers (consistent with USBFS_Device_Init) */
+        USBFSD->INT_EN    = USBFS_UIE_SUSPEND | USBFS_UIE_BUS_RST | USBFS_UIE_TRANSFER;
+        USBFSD->BASE_CTRL = USBFS_UC_DEV_PU_EN | USBFS_UC_INT_BUSY | USBFS_UC_DMA_EN;
+        USBFSD->UDEV_CTRL = USBFS_UD_PD_DIS | USBFS_UD_PORT_EN;
+
         if (USB_ModeConfig_ActiveModeBridgeAcm()) {
             ACM_Bridge_Init();
         }
@@ -1656,11 +1695,14 @@ void USBFS_IRQHandler( void )
         if( USBFSD->MIS_ST & USBFS_UMS_SUSPEND )
         {
             USBFS_DevSleepStatus |= 0x02;
-            if( USBFS_DevSleepStatus == 0x03 )
-            {
-                /* Handling usb sleep here */
-                MCU_Sleep_Wakeup_Operate( );
-            }
+            /* Do NOT enter STOP mode here. STOP mode stops the entire MCU,
+             * making it unable to respond to Host USB requests, which causes
+             * the Host to disconnect the device (error -71 on reconnect).
+             *
+             * Instead, just reset the sleep status to keep USBFS in a
+             * responsive state. The device will remain active and able to
+             * handle USB requests even when the bus is idle/suspended. */
+            USBFS_DevSleepStatus = 0;
         }
         else
         {
@@ -1724,4 +1766,41 @@ uint8_t USBSendData(void)
 #else
     return 0x01;
 #endif
+}
+
+/*********************************************************************
+ * @fn      USBFS_CheckEndpointBusyTimeout
+ *
+ * @brief   Check all USB endpoints for busy-flag timeout and recover.
+ *
+ *          If a USB transfer completion interrupt is lost (due to EMI,
+ *          clock jitter, etc.), the USBFS_Endp_Busy flag can remain set
+ *          forever, causing the endpoint to permanently stop sending data.
+ *
+ *          This function detects endpoints stuck in busy state for longer
+ *          than USB_ENDPOINT_BUSY_TIMEOUT_MS and force-clears the busy flag.
+ *
+ *          Call this from the main loop (Main_Circulation) every iteration.
+ *          Zero overhead in normal path: only compares when busy flag is set.
+ *
+ * @return  Total number of recovered endpoints (0 = no stuck endpoints)
+ */
+uint32_t USBFS_CheckEndpointBusyTimeout( void )
+{
+    uint32_t now = systick_ms;
+    uint32_t recovered = 0;
+
+    for( uint8_t ep = DEF_UEP1; ep < DEF_UEP_NUM; ep++ )
+    {
+        if( USBFS_Endp_Busy[ ep ] )
+        {
+            if( now - USBFS_Endp_Busy_StartTime[ ep ] > USB_ENDPOINT_BUSY_TIMEOUT_MS )
+            {
+                USBFS_Endp_Busy[ ep ] = 0;
+                USBFS_Endp_Timeout_Count[ ep ]++;
+                recovered++;
+            }
+        }
+    }
+    return recovered;
 }

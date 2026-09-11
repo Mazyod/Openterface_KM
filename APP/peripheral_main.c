@@ -70,6 +70,13 @@ void Main_Circulation(void)
 
     while(1)
     {
+        /* USB Endpoint Busy Timeout Recovery
+         * Check if any USB endpoint is stuck in busy state and recover.
+         * This prevents permanent endpoint lockup if transfer completion
+         * interrupt is lost due to EMI or other issues.
+         */
+        USBFS_CheckEndpointBusyTimeout();
+
         /* Simple LED for DHCP debug: ON = g_dhcp_led_mode active, OFF = idle */
         uint32_t now = systick_ms;
         uint16_t tx_now = g_ecm_tx_count;
@@ -266,10 +273,8 @@ int main(void) {
         Delay_Ms(100);
     }
 #elif version == 1
-    /* KVM-Go: magenta flash then white flash */
-    RGB_SetColor(1, 0, 1); Delay_Ms(300);
-    RGB_SetColor(1, 1, 1); Delay_Ms(300);
-    RGB_SetColor(0, 0, 0); Delay_Ms(200);
+    /* KVM-Go: RGB three-color flash */
+    RGB_FlashVersionVerify();
 #else
     (void)0;
 #endif

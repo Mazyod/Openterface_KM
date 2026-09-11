@@ -73,19 +73,17 @@ Your KeyMod is now ready for firmware flashing.
 
 # Step 2 — Open the Flash Tool
 
-Launch the appropriate application.
+Launch the appropriate application and open **Preferences**.
 
-### Openterface KVM (Windows/Linux)
+### Openterface QT (Windows/Linux)
 
 Open:
 
-**Menu → Advanced → WCH ISP Flash**
+**Menu → Preferences → Control Chip Firmware**
 
-![Openterface KVM (Windows) – Main window with menu](images/openterface-kvm-qt.jpg)
+![Openterface QT – Preferences: Control Chip Firmware](images/openterface-qt-preference-select.PNG)
 
-From the menu, navigate to **Advanced → WCH ISP Flash** to open the flash tool.
-
-![Openterface KVM (Windows) – Advanced menu → WCH ISP Flash](images/openterface-kvm-qt-setting.png)
+This opens the **Control Chip Firmware** page where you can scan, connect, choose firmware, and flash.
 
 ### Openterface KVM (MacOS)
 
@@ -101,18 +99,31 @@ This opens the **WCH Firmware Flash** panel where you can scan, connect, choose 
 
 # Step 3 — Connect to Your KeyMod
 
-### Openterface KVM (Windows/Linux)
+### Openterface QT (Windows/Linux)
 
-1. Click **Scan**.
-2. Wait for your KeyMod to appear.
+1. Click **Scan Devices**.
+2. Wait for your KeyMod to appear in the device dropdown.
 3. Select it.
 4. Click **Connect**.
 
-![Openterface KVM (Windows) – Click Scan to detect devices](images/openterface-kvm-qt-scan.png)
+![Openterface QT – Control Chip Firmware page](images/openterface-qt-scan.PNG)
 
-After scanning, select your KeyMod from the device list and click **Connect**.
+After scanning, your KeyMod will appear in the device dropdown.
 
-![Openterface KVM (Windows) – Connect to KeyMod](images/openterface-kvm-qt-connect.png)
+![Openterface QT – Device found after scan](images/openterface-qt-after-scan.PNG)
+
+Select your KeyMod from the device list and click **Connect**.
+
+![Openterface QT – Connect to KeyMod](images/openterface-qt-connect.PNG)
+
+After connecting, the **Chip Information** section will show your KeyMod's details:
+
+* Chip model (e.g. CH32V208GB)
+* Bootloader version (e.g. BTVER: 02.80)
+* Device UID
+* Flash protection status
+
+![Openterface QT – Device connected successfully](images/openterface-qt-after-connect.PNG)
 
 ### Openterface KVM (MacOS)
 
@@ -137,13 +148,15 @@ If no device appears, return to **Step 1** and enter Update Mode again.
 
 # Step 4 — Choose the Firmware
 
-### Openterface KVM (Windows/Linux)
+### Openterface QT (Windows/Linux)
 
-Click **Browse**.
+Click **Browse...** to open the file picker.
+
+![Openterface QT – Browse for firmware file](images/openterface-qt-browse.PNG)
 
 Select the firmware file you downloaded.
 
-![Openterface KVM (Windows) – Browse to choose firmware file](images/openterface-kvm-qt-choose.png)
+![Openterface QT – Select WCH Firmware file picker](images/openterface-qt-after-browse.PNG)
 
 ### Openterface KVM (MacOS)
 
@@ -168,7 +181,15 @@ Click:
 
 **Flash, Verify & Reset**
 
-Confirm the update when prompted.
+![Openterface QT – Flash, Verify & Reset button](images/openterface-qt-flash-click.PNG)
+
+A confirmation dialog will appear:
+
+> **This will erase and overwrite the firmware on the connected WCH device.**
+
+Click **Yes** to proceed.
+
+![Openterface QT – Confirm Flash dialog](images/openterface-qt-after-flash-click.PNG)
 
 The application will automatically:
 
@@ -181,6 +202,8 @@ The application will automatically:
 When finished, you'll see:
 
 > **Firmware flashed and verified successfully. Please reconnect the device.**
+
+![Openterface QT – Flash Complete](images/openterface-qt-success-flash.PNG)
 
 > **Important**
 >

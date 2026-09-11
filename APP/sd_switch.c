@@ -96,6 +96,9 @@ void SD_Switch_StateMachine(void)
 #endif  // SD_SWITCH_VERSION == 1
 #if version == 2
 
+static uint8_t prev_pa4_state = 0;
+static uint8_t firstDetect_v2 = 1;
+
 void SD_Switch_Init(void)
 {
     GPIO_InitTypeDef GPIO_InitStructure = {0};
@@ -130,17 +133,29 @@ void HOST_SD_Switch(void)
 
 void SD_Switch_StateMachine(void)
 {
-    uint8_t pa4 = GPIO_ReadInputDataBit(GPIOA, GPIO_Pin_4);
+    uint8_t curr_pa4 = GPIO_ReadInputDataBit(GPIOA, GPIO_Pin_4);
 
-    if (pa4 == Bit_SET)
+    /* On first call, set initial channel based on PA4 level (boot detection).
+     * After that, only act on PA4 edges — this prevents the state machine
+     * from continuously overriding software-initiated SD card switches. */
+    if (firstDetect_v2)
     {
-        if (sd_card_channel_state != 0)
+        if (curr_pa4 == Bit_SET)
             TARGET_SD_Switch();
-    }
-    else
-    {
-        if (sd_card_channel_state != 1)
+        else
             HOST_SD_Switch();
+
+        prev_pa4_state = curr_pa4;
+        firstDetect_v2 = 0;
+    }
+    else if (prev_pa4_state != curr_pa4)
+    {
+        if (curr_pa4 == Bit_SET)
+            TARGET_SD_Switch();
+        else
+            HOST_SD_Switch();
+
+        prev_pa4_state = curr_pa4;
     }
 }
 
