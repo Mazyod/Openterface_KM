@@ -88,6 +88,12 @@ void Peripheral_SetBleCh9329Response(uint8_t enable);
  */
 uint8_t Peripheral_GetBleCh9329Response(void);
 
+/*
+ * Handle BLE security commands (pairing, bonding, etc.)
+ * Called from CH9329 command dispatcher for CMD_BLE_SECURITY (0x22)
+ */
+void Peripheral_SecurityCommand(uint8_t addr, uint8_t cmd_code, uint8_t *pdata, uint8_t data_len);
+
 #endif /* ENABLE_BLE */
 
 /*********************************************************************

@@ -1122,6 +1122,61 @@ int RingMem_Protection(uint8_t enable)
     }
 }
 
+/*********************************************************************
+ * @fn      Peripheral_SecurityCommand
+ *
+ * @brief   Handle BLE security commands (pairing, bonding, etc.)
+ *          Called from CH9329 command dispatcher for CMD_BLE_SECURITY (0x22)
+ *
+ * @param   addr     - Device address
+ * @param   cmd_code - Command code (0x22)
+ * @param   pdata    - Pointer to command data (sub-command byte)
+ * @param   data_len - Length of command data
+ *
+ * @return  none
+ */
+void Peripheral_SecurityCommand(uint8_t addr, uint8_t cmd_code, uint8_t *pdata, uint8_t data_len)
+{
+    uint8_t response[8];
+    uint8_t status = STATUS_SUCCESS;
+
+    if (data_len < 1) {
+        status = STATUS_ERR_PARAM;
+        CH9329_SendResponse(addr, cmd_code, &status, 1, 0);
+        return;
+    }
+
+    uint8_t sub_cmd = pdata[0];
+
+    switch (sub_cmd) {
+        case 0x01:  // Open pairing window
+            // TODO: Implement pairing window opening
+            response[0] = STATUS_SUCCESS;
+            response[1] = 0x00;  // Remaining seconds (u16 LE)
+            response[2] = 0x00;
+            CH9329_SendResponse(addr, cmd_code, response, 3, 1);
+            break;
+
+        case 0x02:  // Erase all bonds
+            // TODO: Implement bond erasure
+            response[0] = STATUS_SUCCESS;
+            CH9329_SendResponse(addr, cmd_code, response, 1, 1);
+            break;
+
+        case 0x03:  // Bond count
+            // TODO: Implement bond count query
+            response[0] = STATUS_SUCCESS;
+            response[1] = 0x00;  // Number of stored bonds
+            CH9329_SendResponse(addr, cmd_code, response, 2, 1);
+            break;
+
+        default:
+            status = STATUS_ERR_PARAM;
+            CH9329_SendResponse(addr, cmd_code, &status, 1, 0);
+            break;
+    }
+}
+
 #endif /* ENABLE_BLE */
 
 /*********************************************************************
