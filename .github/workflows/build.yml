@@ -37,13 +37,13 @@ jobs:
 
     steps:
     - name: Checkout code
-      uses: actions/checkout@v2
+      uses: actions/checkout@v4
 
     - name: Create output directory
       run: New-Item -ItemType Directory -Path "${{ env.OUTPUT_DIR }}" -Force
 
     - name: Cache chocolatey packages
-      uses: actions/cache@v3
+      uses: actions/cache@v4
       with:
         path: C:\ProgramData\chocolatey\lib
         key: ${{ runner.os }}-choco-${{ hashFiles('**/build.yml') }}
@@ -56,7 +56,7 @@ jobs:
         echo "C:\\ProgramData\\chocolatey\\bin" >> $GITHUB_PATH
 
     - name: Cache RISC-V compiler
-      uses: actions/cache@v3
+      uses: actions/cache@v4
       id: cache-risc-compiler
       with:
         path: C:\tools\risc-none-embed-gcc
