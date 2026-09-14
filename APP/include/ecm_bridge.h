@@ -50,6 +50,10 @@ extern volatile uint8_t g_ecm_led_override;
    0=no DHCP activity, 9=host_control entered, 10=port 67 hit,
    11=msg type parsed, 12=ACK queued. */
 extern volatile uint8_t g_dhcp_led_mode;
+/* Flag indicating ECM bridge is currently processing a CH9329 command via TCP frame.
+ * Set to 1 when about to call CH9329_RxBuffer_Add, cleared after response is handled.
+ * Used to prevent race conditions with USB queue processing of CH9329 responses. */
+extern volatile uint8_t g_ecm_bridge_processing_ch9329;
 
 /* EP6 OUT diagnostic — defined in ch32v20x_usbfs_device.c */
 extern volatile uint8_t  g_usbfs_ep6_int_flag;  /* 1 = EP6 OUT interrupt fired */

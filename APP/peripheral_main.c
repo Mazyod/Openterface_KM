@@ -27,6 +27,7 @@
 #include "include/usb_mode_config.h"
 #include "include/default_target_config.h"
 #include "include/pwm_led.h"
+#include "usb_pwr.h"
 
 /*********************************************************************
  * GLOBAL TYPEDEFS
@@ -70,13 +71,6 @@ void Main_Circulation(void)
 
     while(1)
     {
-        /* USB Endpoint Busy Timeout Recovery
-         * Check if any USB endpoint is stuck in busy state and recover.
-         * This prevents permanent endpoint lockup if transfer completion
-         * interrupt is lost due to EMI or other issues.
-         */
-        USBFS_CheckEndpointBusyTimeout();
-
         /* Simple LED for DHCP debug: ON = g_dhcp_led_mode active, OFF = idle */
         uint32_t now = systick_ms;
         uint16_t tx_now = g_ecm_tx_count;
@@ -131,6 +125,8 @@ void Main_Circulation(void)
         USB_DataRx_To_KMHandle();
         //Keyboard and mouse control code sending loop
         USB_SendFromQueues();
+        //USB debug output (sends debug strings via EP2)
+        USB_DEBUG_Poll();
         /* PC7 LED debug for DHCP:
          * 55 = handler entered, 60 = MAC match, 61 = MAC unknown,
          * 62 = bad cookie, 63 = chaddr mismatch, 11/12 = msg parsed/queued
@@ -249,6 +245,25 @@ int main(void) {
 #endif
     //km_ring
     Queue_Init();
+
+    /* Test: Send debug message at startup to confirm firmware is running */
+    USB_DEBUG("=== Firmware started ===\n");
+    USB_DEBUG("USB_WORK_MODE=%d\n", USB_WORK_MODE);
+    USB_DEBUG("HasHostCdcAcm=%d\n", USB_ModeConfig_ActiveModeHasHostCdcAcm());
+
+    /* Wait for USB to be fully enumerated before sending startup response */
+    USB_DEBUG("Waiting for USB enumeration...\n");
+    for (int i = 0; i < 50; i++) {  /* Wait up to 5 seconds */
+        if (bDeviceState == CONFIGURED) {
+            USB_DEBUG("USB configured after %d ms\n", i * 100);
+            break;
+        }
+        Delay_Ms(100);
+    }
+    if (bDeviceState != CONFIGURED) {
+        USB_DEBUG("USB not configured after 5 seconds\n");
+    }
+
     //SDcontrol_init
     SD_Switch_Init();
     //temp_init

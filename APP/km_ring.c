@@ -4,6 +4,7 @@
 #include "usb_desc.h"
 #include "usb_prop.h"
 #include "usb_mode_config.h"
+#include "include/ecm_bridge.h"
 
 #include <string.h>
 #include <stdarg.h>
@@ -15,6 +16,9 @@ MS_Rel_Queue_t ms_rel_queue;
 MS_Abs_Mailbox_t ms_abs_mbox;
 Resp_Queue_t resp_queue;
 Media_Queue_t media_queue;
+
+/* Extern variables */
+extern uint8_t USBD_Endp3_Busy;
 
 /* Initialize queues */
 void Queue_Init(void) {
@@ -53,6 +57,7 @@ void Queue_Push_MouseAbs(uint8_t *data) {
 }
 //Response message queue (Message length varies)
 void Queue_Push_Response(uint8_t *data, uint8_t len) {
+    USB_DEBUG("QueueResp: len=%d head=%d tail=%d\n", len, resp_queue.head, resp_queue.tail);
     ENTER_CRITICAL();
     int next = (resp_queue.tail + 1) % RESP_QUEUE_SIZE;
     if (next == resp_queue.head) resp_queue.head = (resp_queue.head + 1) % RESP_QUEUE_SIZE;
@@ -194,22 +199,53 @@ void USB_SendFromQueues(void) {
         else break;
     }
 
-    /* Response queue drain — exactly one consumer per USB mode.
+    /* Response queue drain — send CH9329 responses via EP3 (ACM bulk IN).
      *
-     * The old code had an empty `if (ActiveModeHasHostCdcEcm()) { }` here whose
-     * comment said the queue must NOT be drained in ECM modes, but the drain
-     * below ran unconditionally anyway. In ECM-bridge / host-CDC-ECM modes the
-     * ECM bridge pops resp_queue itself (ecm_bridge.c Queue_Pop_Response, right
-     * after its own push) and wraps replies in Ethernet; draining here would
-     * race it and inject raw CH9329 bytes into the ECM bulk stream. */
-    if (!USB_ModeConfig_ActiveModeBridgeEcm() &&
-        !USB_ModeConfig_ActiveModeHasHostCdcEcm()) {
+     * In all modes with host CDC ACM (including ACM+ECM combined mode),
+     * responses must be sent via EP3. The ECM bridge has its own separate
+     * response handling for TCP-based CH9329 commands, but USB serial
+     * commands still need this path.
+     *
+     * IMPORTANT: CH9329 responses go through the USBD library (USB 1.1 FS
+     * controller at 0x40005C00), NOT the USBFS library (USB 2.0 OTG at
+     * 0x50000000). The USBD library handles CDC ACM, while USBFS handles
+     * HID endpoints. Both controllers share the same physical USB port
+     * via a multiplexer.
+     */
+    if (USB_ModeConfig_ActiveModeHasHostCdcAcm() ||
+        (!USB_ModeConfig_ActiveModeBridgeEcm() && !USB_ModeConfig_ActiveModeHasHostCdcEcm())) {
+
+        /* Check if EP3 IN endpoint is enabled */
+        uint16_t ep3_status = _GetEPTxStatus(ENDP3);
+        USB_DEBUG("EP3 status: 0x%x\n", ep3_status);
+        if (ep3_status == EP_TX_DIS) {
+            /* EP3 not enabled, try to enable it */
+            USB_DEBUG("EP3 is disabled, enabling\n");
+            if (USB_ModeConfig_ActiveModeHasHostCdcAcm()) {
+                _ClearDTOG_TX(ENDP3);
+                SetEPTxStatus(ENDP3, EP_TX_NAK);
+                USB_DEBUG("EP3 enabled to NAK\n");
+            }
+            /* Don't return - continue to process the queue after enabling */
+        }
+
         while (resp_queue.head != resp_queue.tail) {
             Resp_Report_t *pkt = &resp_queue.buf[resp_queue.head];
-            if (USBD_ENDPx_DataUp(ENDP3, pkt->data, pkt->len) == 0) {
+
+            /* Check if endpoint is busy */
+            if (USBD_Endp3_Busy) {
+                USB_DEBUG("EP3 busy, breaking\n");
+                break;  /* endpoint busy, retry next pass */
+            }
+
+            USB_DEBUG("DrainQ: head=%d tail=%d len=%d\n", resp_queue.head, resp_queue.tail, pkt->len);
+            int result = USBD_ENDPx_DataUp(ENDP3, pkt->data, pkt->len);
+            USB_DEBUG("USBD_ENDPx_DataUp result: %d\n", result);
+            if (result == 0) {
                 ENTER_CRITICAL();
                 resp_queue.head = (resp_queue.head + 1) % RESP_QUEUE_SIZE;
                 EXIT_CRITICAL();
+                USB_DEBUG("DrainQ: sent\n");
             }
             else break;  /* endpoint busy, retry next pass */
         }
@@ -236,29 +272,46 @@ static void debug_ring_push_str(const char *s) {
     }
 }
 
-/* Call USB_DEBUG(fmt, ...) to send debug strings over USBFS EP2.
+/* Call USB_DEBUG(fmt, ...) to send debug strings over USBFS EP2 and USART1.
  * Each call pushes a null-terminated string into a ring buffer.
- * USB_DEBUG_Poll() in the main loop drains 2 chars at a time via EP2. */
+ * USB_DEBUG_Poll() in the main loop drains 2 chars at a time via EP2.
+ * Also outputs via USART1 (PA9) for easy reading with USB-to-serial adapter. */
 void USB_DEBUG(const char *fmt, ...) {
     va_list ap;
     char numbuf[32];
+    char uart_buf[256];
+    int uart_len = 0;
 
     va_start(ap, fmt);
     while (*fmt) {
         if (*fmt != '%') {
             debug_ring_push_str(fmt);
+            /* Also add to UART buffer */
+            if (uart_len < sizeof(uart_buf) - 1) {
+                uart_buf[uart_len++] = *fmt;
+            }
             fmt++;
             continue;
         }
         fmt++;
         switch (*fmt) {
-        case 's': debug_ring_push_str(va_arg(ap, const char *)); break;
+        case 's': {
+            const char *s = va_arg(ap, const char *);
+            debug_ring_push_str(s);
+            while (*s && uart_len < sizeof(uart_buf) - 1) {
+                uart_buf[uart_len++] = *s++;
+            }
+            break;
+        }
         case 'd': {
             int v = va_arg(ap, int);
-            if (v < 0) { debug_ring_push_str("-"); v = -v; }
+            if (v < 0) { debug_ring_push_str("-"); if (uart_len < sizeof(uart_buf) - 1) uart_buf[uart_len++] = '-'; v = -v; }
             char *p = numbuf + sizeof(numbuf) - 1; *p = 0;
             do { p--; *p = (char)('0' + (v % 10)); v /= 10; } while (v > 0);
             debug_ring_push_str(p);
+            while (*p && uart_len < sizeof(uart_buf) - 1) {
+                uart_buf[uart_len++] = *p++;
+            }
             break;
         }
         case 'u': {
@@ -266,6 +319,9 @@ void USB_DEBUG(const char *fmt, ...) {
             char *p = numbuf + sizeof(numbuf) - 1; *p = 0;
             do { p--; *p = (char)('0' + (v % 10)); v /= 10; } while (v > 0);
             debug_ring_push_str(p);
+            while (*p && uart_len < sizeof(uart_buf) - 1) {
+                uart_buf[uart_len++] = *p++;
+            }
             break;
         }
         case 'x': case 'X': {
@@ -273,6 +329,9 @@ void USB_DEBUG(const char *fmt, ...) {
             char *p = numbuf + sizeof(numbuf) - 1; *p = 0;
             do { p--; *p = "0123456789abcdef"[v & 0xf]; v >>= 4; } while (v > 0);
             debug_ring_push_str(p);
+            while (*p && uart_len < sizeof(uart_buf) - 1) {
+                uart_buf[uart_len++] = *p++;
+            }
             break;
         }
         case 'l': fmt++; if (*fmt == 'x' || *fmt == 'X') {
@@ -280,21 +339,37 @@ void USB_DEBUG(const char *fmt, ...) {
             char *p = numbuf + sizeof(numbuf) - 1; *p = 0;
             do { p--; *p = "0123456789abcdef"[v & 0xf]; v >>= 4; } while (v > 0);
             debug_ring_push_str(p);
+            while (*p && uart_len < sizeof(uart_buf) - 1) {
+                uart_buf[uart_len++] = *p++;
+            }
         } break;
         case 'p': {
             unsigned long v = va_arg(ap, unsigned long);
             debug_ring_push_str("0x");
+            if (uart_len < sizeof(uart_buf) - 2) {
+                uart_buf[uart_len++] = '0';
+                uart_buf[uart_len++] = 'x';
+            }
             char *p = numbuf + sizeof(numbuf) - 1; *p = 0;
             do { p--; *p = "0123456789abcdef"[v & 0xf]; v >>= 4; } while (v > 0);
             debug_ring_push_str(p);
+            while (*p && uart_len < sizeof(uart_buf) - 1) {
+                uart_buf[uart_len++] = *p++;
+            }
             break;
         }
-        case '%': debug_ring_push_str("%"); break;
+        case '%': debug_ring_push_str("%"); if (uart_len < sizeof(uart_buf) - 1) uart_buf[uart_len++] = '%'; break;
         default: break;
         }
         if (*fmt) fmt++;
     }
     va_end(ap);
+
+    /* Output via USART1 serial port */
+    if (uart_len > 0) {
+        uart_buf[uart_len] = '\0';
+        iprintf("%s", uart_buf);
+    }
 }
 
 /* Drain the debug ring buffer — sends 2 chars per packet via EP2

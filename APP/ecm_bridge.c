@@ -1140,7 +1140,12 @@ static uint8_t handle_host_control_frame(const uint8_t *frame, uint16_t frame_le
         return 0;
     }
 
+    /* Set flag to indicate we're processing CH9329 commands via ECM bridge.
+     * This prevents CH9329_RxBuffer_Add from pushing responses to the USB queue,
+     * since we'll handle them here by wrapping in Ethernet frames. */
+    g_ecm_bridge_processing_ch9329 = 1;
     CH9329_RxBuffer_Add((uint8_t *)payload, payload_len);
+    g_ecm_bridge_processing_ch9329 = 0;
 
     /* Pop the CH9329 response (generated synchronously by the parser) and
      * wrap it in Ethernet/IPv4/TCP so it comes back to the host through
@@ -1765,3 +1770,7 @@ volatile uint8_t g_dhcp_led_mode = 0;
 volatile uint8_t g_host_garp_sent = 0;
 volatile uint8_t g_target_garp_sent = 0;
 volatile uint8_t g_ecm_tx_state = 0;
+/* Flag indicating ECM bridge is currently processing a CH9329 command via TCP frame.
+ * Set to 1 when about to call CH9329_RxBuffer_Add, cleared after response is handled.
+ * Used to prevent race conditions with USB queue processing of CH9329 responses. */
+volatile uint8_t g_ecm_bridge_processing_ch9329 = 0;

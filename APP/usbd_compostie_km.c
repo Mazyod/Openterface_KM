@@ -104,6 +104,8 @@ void CH9329_SendResponse(uint8_t addr, uint8_t cmd_code, uint8_t* pdata,
     for (uint8_t i = 0; i < index; i++) checksum += packet[i];
     packet[index++] = checksum;
 
+    USB_DEBUG("SendResp: cmd=%02X plen=%d\n", cmd_code, index);
+
 #ifdef ENABLE_BLE
     /* If response is for a BLE CH9329 command, send via BLE notification */
     if (Peripheral_GetBleCh9329Response())
@@ -119,6 +121,8 @@ void CH9329_SendResponse(uint8_t addr, uint8_t cmd_code, uint8_t* pdata,
 void CH9329_Cmd_GetInfo_Reply(uint8_t addr)
 {
     uint8_t data[8] = {0};
+
+    USB_DEBUG("GetInfo: addr=%d\n", addr);
 
     /* Protocol requires a fixed 8-byte payload */
 
@@ -138,6 +142,7 @@ void CH9329_Cmd_GetInfo_Reply(uint8_t addr)
     data[6] = 0x00; // reserved
     data[7] = 0x00; // reserved
     CH9329_SendResponse(addr, CMD_GET_INFO , data, 8, 1);
+    USB_DEBUG("GetInfo: response queued\n");
 }
 
 static void CH9329_Cmd_USBWorkMode(uint8_t addr, uint8_t cmd_code, uint8_t *pdata, uint8_t data_len)
@@ -213,6 +218,7 @@ static void CH9329_Cmd_USBWorkMode(uint8_t addr, uint8_t cmd_code, uint8_t *pdat
  */
 void CH9329_DispatchCommand(uint8_t addr, uint8_t cmd_code, uint8_t* pdata, uint8_t data_len)
 {
+    USB_DEBUG("Dispatch: cmd=%02X addr=%02X dlen=%d\n", cmd_code, addr, data_len);
     switch (cmd_code)
     {   
         //cmd=01,Obtain information such as chip version
@@ -332,15 +338,20 @@ int CH9329_DataParser(uint8_t* buf, uint16_t len)
     /* Check that buffer is at least long enough for header + minimal fields */
     if (len < 6) return 0;
 
+    USB_DEBUG("DataParser: len=%d buf[0]=%02X buf[1]=%02X\n", len, buf[0], buf[1]);
+
     /* Verify frame header */
     if (buf[0] != CH9329_FRAME_HEAD1 || buf[1] != CH9329_FRAME_HEAD2) {
         /* Not a valid frame header -- skip one byte and try to resync */
+        USB_DEBUG("DataParser: bad header\n");
         return 1;
     }
 
     uint8_t addr     = buf[2];
     uint8_t cmd_code = buf[3];
     uint8_t data_len = buf[4];
+
+    USB_DEBUG("DataParser: addr=%02X cmd=%02X len=%d\n", addr, cmd_code, data_len);
 
     /* Bounds check: protocol max payload is CH9329_MAX_DATA_LEN (100).
      * Reject oversized payloads early to prevent out-of-bounds reads
@@ -370,10 +381,12 @@ int CH9329_DataParser(uint8_t* buf, uint16_t len)
 
     if (sum != recv_sum) {
         // Checksum mismatch �� treat as invalid frame, skip full length
+        USB_DEBUG("DataParser: bad checksum sum=%02X recv=%02X\n", sum, recv_sum);
         return frame_total_len;
     }
 
     // Valid frame �� dispatch command
+    USB_DEBUG("DataParser: dispatching cmd=%02X\n", cmd_code);
     CH9329_DispatchCommand(addr, cmd_code, pdata, data_len);
     return frame_total_len;
 }
@@ -462,6 +475,7 @@ void USB_DataRx_To_KMHandle(void) {
             temp[i] = UART2_Tx_Buf[Uart.Tx_CurPackPtr++];
         }
 
+        USB_DEBUG("DataRx: UART2 len=%d b0=%02X b1=%02X\n", copy_len, temp[0], temp[1]);
         CH9329_RxBuffer_Add(temp, copy_len);
 
         Uart.Tx_CurPackLen -= copy_len;

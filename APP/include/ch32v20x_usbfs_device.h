@@ -173,9 +173,6 @@ extern __attribute__ ((aligned(4))) uint8_t USBFS_EP6_Buf[ UAC_ISO_PACKET_SIZE ]
 /* USB IN Endpoint Busy Flag */
 extern volatile uint8_t  USBFS_Endp_Busy[ DEF_UEP_NUM ];
 
-/* USB Endpoint Busy Timeout Recovery - Error counters for diagnostics */
-extern volatile uint32_t USBFS_Endp_Timeout_Count[ DEF_UEP_NUM ];
-
 /******************************************************************************/
 /* Function Declaration */
 extern void USBFS_Device_Init( FunctionalState sta );
@@ -184,7 +181,6 @@ extern void USBFS_RCC_Init( void );
 extern uint8_t USBFS_Endp_DataUp( uint8_t endp, uint8_t *pbuf, uint16_t len, uint8_t mod );
 extern void USBFS_Send_Resume( void );
 extern uint8_t USBSendData(void);
-extern uint32_t USBFS_CheckEndpointBusyTimeout( void );
 
 #endif /* __CH32V20x_USBFS_DEVICE_H_ */
 
