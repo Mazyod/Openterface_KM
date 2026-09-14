@@ -437,6 +437,18 @@ static void peripheralInitConnItem(peripheralConnItem_t *peripheralConnList)
 }
 
 /*********************************************************************
+ * @fn      Peripheral_GetConnHandle
+ *
+ * @brief   Get the current BLE connection handle
+ *
+ * @return  Connection handle, or GAP_CONNHANDLE_INIT if not connected
+ */
+uint16_t Peripheral_GetConnHandle(void)
+{
+    return peripheralConnList.connHandle;
+}
+
+/*********************************************************************
  * @fn      Peripheral_ProcessEvent
  *
  * @brief   Peripheral Application Task event processor.  This function
@@ -1240,6 +1252,13 @@ void Peripheral_BleAdvParamCommand(uint8_t addr, uint8_t cmd_code, uint8_t *pdat
                 return;
             }
 
+            // Check if already connected - cannot change adv params while connected
+            if (Peripheral_GetConnHandle() != GAP_CONNHANDLE_INIT) {
+                status = STATUS_ERR_FRAME;  // Device is connected, cannot change adv params
+                CH9329_SendResponse(addr, cmd_code, &status, 1, 0);
+                return;
+            }
+
             uint8_t new_channel_map = pdata[2] & 0x07;  // Only use lower 3 bits
             // Ensure at least one channel is enabled
             if (new_channel_map == 0) {
@@ -1250,8 +1269,14 @@ void Peripheral_BleAdvParamCommand(uint8_t addr, uint8_t cmd_code, uint8_t *pdat
             uint8_t adv_enable = FALSE;
             GAPRole_SetParameter(GAPROLE_ADVERT_ENABLED, sizeof(uint8_t), &adv_enable);
 
+            // Wait for advertising to stop (BLE stack needs time to process)
+            for (volatile uint32_t i = 0; i < 10000; i++);
+
             // Set new channel map
             GAPRole_SetParameter(GAPROLE_ADV_CHANNEL_MAP, sizeof(uint8_t), &new_channel_map);
+
+            // Wait for parameter to take effect
+            for (volatile uint32_t i = 0; i < 10000; i++);
 
             // Restart advertising
             adv_enable = TRUE;

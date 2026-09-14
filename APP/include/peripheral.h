@@ -100,6 +100,12 @@ void Peripheral_SecurityCommand(uint8_t addr, uint8_t cmd_code, uint8_t *pdata, 
  */
 void Peripheral_BleAdvParamCommand(uint8_t addr, uint8_t cmd_code, uint8_t *pdata, uint8_t data_len);
 
+/*
+ * Get the current BLE connection handle
+ * Returns GAP_CONNHANDLE_INIT (0xFFFF) if not connected
+ */
+uint16_t Peripheral_GetConnHandle(void);
+
 #endif /* ENABLE_BLE */
 
 /*********************************************************************
