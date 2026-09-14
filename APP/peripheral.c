@@ -1269,14 +1269,8 @@ void Peripheral_BleAdvParamCommand(uint8_t addr, uint8_t cmd_code, uint8_t *pdat
             uint8_t adv_enable = FALSE;
             GAPRole_SetParameter(GAPROLE_ADVERT_ENABLED, sizeof(uint8_t), &adv_enable);
 
-            // Wait for advertising to stop (BLE stack needs time to process)
-            for (volatile uint32_t i = 0; i < 10000; i++);
-
-            // Set new channel map
+            // Set new channel map (BLE stack handles timing internally)
             GAPRole_SetParameter(GAPROLE_ADV_CHANNEL_MAP, sizeof(uint8_t), &new_channel_map);
-
-            // Wait for parameter to take effect
-            for (volatile uint32_t i = 0; i < 10000; i++);
 
             // Restart advertising
             adv_enable = TRUE;
