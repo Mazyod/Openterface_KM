@@ -304,6 +304,17 @@ void CH9329_DispatchCommand(uint8_t addr, uint8_t cmd_code, uint8_t* pdata, uint
         }
 #endif
             break;
+        //cmd=0x19,BLE advertising parameter control (get/set channel map)
+        case CMD_BLE_ADV_PARAM:
+#ifdef ENABLE_BLE
+            Peripheral_BleAdvParamCommand(addr, cmd_code, pdata, data_len);
+#else
+        {
+            uint8_t err = STATUS_ERR_CMD;
+            CH9329_SendResponse(addr, cmd_code, &err, 1, 0);
+        }
+#endif
+            break;
         //cmd=08,Get parameter configuration(Only used for matching with ch9329)
         case CMD_GET_PARA_CFG:
         {

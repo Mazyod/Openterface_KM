@@ -205,6 +205,7 @@ uint8_t Peripheral_IsCh9329CommandByte(uint8_t cmd)
         case CMD_GET_PARA_CFG:       // 0x08
         case CMD_SD_SWITCH:          // 0x17
         case CMD_DS18B20_GET_TEMP:   // 0x18
+        case CMD_BLE_ADV_PARAM:      // 0x19
         case CMD_USB_WORK_MODE:      // 0x30
             return 1;
         default:
@@ -1169,6 +1170,98 @@ void Peripheral_SecurityCommand(uint8_t addr, uint8_t cmd_code, uint8_t *pdata, 
             response[1] = 0x00;  // Number of stored bonds
             CH9329_SendResponse(addr, cmd_code, response, 2, 1);
             break;
+
+        default:
+            status = STATUS_ERR_PARAM;
+            CH9329_SendResponse(addr, cmd_code, &status, 1, 0);
+            break;
+    }
+}
+
+/*********************************************************************
+ * @fn      Peripheral_BleAdvParamCommand
+ *
+ * @brief   Handle BLE advertising parameter commands (get/set channel map)
+ *          Called from CH9329 command dispatcher for CMD_BLE_ADV_PARAM (0x19)
+ *
+ * @param   addr     - Device address
+ * @param   cmd_code - Command code (0x19)
+ * @param   pdata    - Pointer to command data
+ * @param   data_len - Length of command data
+ *
+ * @return  none
+ *
+ * Command format:
+ *   pdata[0] = sub-command: 0x00=get, 0x01=set
+ *   pdata[1] = param type: 0x01=channel map
+ *   pdata[2] = value (set only): bit0=CH37, bit1=CH38, bit2=CH39
+ *
+ * Response format:
+ *   Success: [param_type, current_value]
+ *   Error:   [error_code]
+ */
+void Peripheral_BleAdvParamCommand(uint8_t addr, uint8_t cmd_code, uint8_t *pdata, uint8_t data_len)
+{
+    uint8_t response[4];
+    uint8_t status = STATUS_SUCCESS;
+
+    if (data_len < 2) {
+        status = STATUS_ERR_PARAM;
+        CH9329_SendResponse(addr, cmd_code, &status, 1, 0);
+        return;
+    }
+
+    uint8_t sub_cmd = pdata[0];
+    uint8_t param_type = pdata[1];
+
+    if (param_type != 0x01) {
+        // Only channel map (0x01) is supported
+        status = STATUS_ERR_PARAM;
+        CH9329_SendResponse(addr, cmd_code, &status, 1, 0);
+        return;
+    }
+
+    switch (sub_cmd) {
+        case 0x00:  // Get current channel map
+        {
+            uint8_t channel_map = 0;
+            GAPRole_GetParameter(GAPROLE_ADV_CHANNEL_MAP, &channel_map);
+            response[0] = param_type;      // param type
+            response[1] = channel_map & 0x07;  // current value (3 bits)
+            CH9329_SendResponse(addr, cmd_code, response, 2, 1);
+            break;
+        }
+
+        case 0x01:  // Set channel map
+        {
+            if (data_len < 3) {
+                status = STATUS_ERR_PARAM;
+                CH9329_SendResponse(addr, cmd_code, &status, 1, 0);
+                return;
+            }
+
+            uint8_t new_channel_map = pdata[2] & 0x07;  // Only use lower 3 bits
+            // Ensure at least one channel is enabled
+            if (new_channel_map == 0) {
+                new_channel_map = 0x07;  // Default to all channels
+            }
+
+            // Stop advertising first
+            uint8_t adv_enable = FALSE;
+            GAPRole_SetParameter(GAPROLE_ADVERT_ENABLED, sizeof(uint8_t), &adv_enable);
+
+            // Set new channel map
+            GAPRole_SetParameter(GAPROLE_ADV_CHANNEL_MAP, sizeof(uint8_t), &new_channel_map);
+
+            // Restart advertising
+            adv_enable = TRUE;
+            GAPRole_SetParameter(GAPROLE_ADVERT_ENABLED, sizeof(uint8_t), &adv_enable);
+
+            response[0] = param_type;      // param type
+            response[1] = new_channel_map; // new value
+            CH9329_SendResponse(addr, cmd_code, response, 2, 1);
+            break;
+        }
 
         default:
             status = STATUS_ERR_PARAM;

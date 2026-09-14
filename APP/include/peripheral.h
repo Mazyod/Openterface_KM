@@ -94,6 +94,12 @@ uint8_t Peripheral_GetBleCh9329Response(void);
  */
 void Peripheral_SecurityCommand(uint8_t addr, uint8_t cmd_code, uint8_t *pdata, uint8_t data_len);
 
+/*
+ * Handle BLE advertising parameter commands (get/set channel map, etc.)
+ * Called from CH9329 command dispatcher for CMD_BLE_ADV_PARAM (0x19)
+ */
+void Peripheral_BleAdvParamCommand(uint8_t addr, uint8_t cmd_code, uint8_t *pdata, uint8_t data_len);
+
 #endif /* ENABLE_BLE */
 
 /*********************************************************************
