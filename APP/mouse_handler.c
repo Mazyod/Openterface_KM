@@ -42,13 +42,22 @@ void Mouse_Init(void) {
  *
  * @brief   Map CH9329 coordinate to HID coordinate range
  *
- * @param   ch9329_coord - Input coordinate from CH9329
+ * @param   ch9329_coord - Input coordinate from CH9329 (0-65535)
  * @param   scale_factor - Scaling factor for mapping (bit shift)
+ *                         Positive = left shift (multiply), Negative = right shift (divide)
  *
  * @return  Mapped HID coordinate
+ *
+ * @note    CH9329 uses 16-bit coordinates (0-65535)
+ *          HID absolute mouse uses 15-bit coordinates (0-32767)
+ *          Scale factor should be -1 (right shift 1 = divide by 2)
  */
-static uint16_t Mouse_ProcessCoordinateMapping(uint16_t ch9329_coord, uint8_t scale_factor) {
-    return ch9329_coord << scale_factor;  // Shift for efficient scaling
+static uint16_t Mouse_ProcessCoordinateMapping(uint16_t ch9329_coord, int8_t scale_factor) {
+    if (scale_factor >= 0) {
+        return ch9329_coord << scale_factor;  // Left shift for scaling up
+    } else {
+        return ch9329_coord >> (-scale_factor);  // Right shift for scaling down
+    }
 }
 
 /*********************************************************************
@@ -117,8 +126,8 @@ void Mouse_HandleAbsoluteData(uint8_t addr, uint8_t cmd_code, uint8_t* data, uin
 
     uint8_t report[ABS_MS_REPORT_LEN];
 
-    uint16_t x_hid = Mouse_ProcessCoordinateMapping((data[3] << 8) | data[2], 3);
-    uint16_t y_hid = Mouse_ProcessCoordinateMapping((data[5] << 8) | data[4], 3);
+    uint16_t x_hid = Mouse_ProcessCoordinateMapping((data[3] << 8) | data[2], -1);
+    uint16_t y_hid = Mouse_ProcessCoordinateMapping((data[5] << 8) | data[4], -1);
 
 #ifdef EP3_USE_STYLUS
     /* 5-byte Digitizer Pen/Stylus report */
