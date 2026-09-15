@@ -86,6 +86,17 @@ void Main_Circulation(void)
             g_usbfs_ep6_int_flag = 0;  /* clear for next cycle */
         }
 
+        /* Poll EP5 OUT debug counters */
+        extern volatile uint32_t g_ep5_out_call_count;
+        extern volatile uint32_t g_ep5_out_total_bytes;
+        static uint32_t last_ep5_count = 0;
+        if (g_ep5_out_call_count != last_ep5_count) {
+            last_ep5_count = g_ep5_out_call_count;
+            /* Blink LED when EP5 receives data */
+            extern void HalLedBlink(uint8_t leds, uint8_t numBlinks, uint8_t percent, uint16_t period);
+            HalLedBlink(1, 1, 50, 100);
+        }
+
         /* Auto-reset DHCP diagnostic every 3 seconds */
         if (now - last_dhcp_reset >= 3000) {
             g_dhcp_led_mode = 0;
@@ -273,6 +284,13 @@ int main(void) {
 #endif
 
     Delay_Ms(1000);
+
+    /* Debug: Print active USB mode */
+    extern uint8_t USB_ModeConfig_GetActiveMode(void);
+    uint8_t active_mode = USB_ModeConfig_GetActiveMode();
+    printf("DEBUG: Active USB mode = %d\r\n", active_mode);
+    printf("DEBUG: Compiled USB mode = %d\r\n", USB_WORK_MODE);
+
     IWDG_Auto_Init(IWDG_Prescaler_32, 4000);
     Main_Circulation();
 }

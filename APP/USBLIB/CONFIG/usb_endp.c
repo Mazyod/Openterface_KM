@@ -28,7 +28,11 @@ uint8_t USBD_Endp1_Busy;
 uint8_t USBD_Endp3_Busy;
 uint8_t USBD_Endp2_Busy;  /* ECM INT busy (also used in ACM+ECM combined mode) */
 uint8_t USBD_Endp4_Busy;  /* ECM BULK IN busy (also used in ACM+ECM combined mode) */
-uint16_t USB_Rx_Cnt=0; 
+uint16_t USB_Rx_Cnt=0;
+
+/* Debug counters for EP5_OUT_Callback */
+volatile uint32_t g_ep5_out_call_count = 0;
+volatile uint32_t g_ep5_out_total_bytes = 0; 
 
 #if USB_WORK_MODE_COMPILES_BRIDGE_ACM || USB_WORK_MODE_COMPILES_BRIDGE_ECM || USB_WORK_MODE_HAS_HOST_ACM_AND_ECM
 /* CH9329 command frame validator - checks for any valid CH9329 command frame
@@ -187,6 +191,11 @@ void EP5_OUT_Callback(void)
         len = sizeof(buf);
     }
     PMAToUserBufferCopy( buf, GetEPRxAddr( ENDP5 ), len );
+
+    // Debug: Increment counter
+    g_ep5_out_call_count++;
+    g_ep5_out_total_bytes += len;
+
     if (USB_ModeConfig_ActiveModeBridgeAcm())
     {
         if (USBD_IsCh9329ModeCommandFrame( buf, (uint16_t)len )) {

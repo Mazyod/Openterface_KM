@@ -300,8 +300,10 @@ void USBD_SetInterface_Impl(void)
 
 #if USB_WORK_MODE_COMPILES_BRIDGE_ECM
     /* IF1 = CDC-ECM Data interface. alt=0: endpoints disabled;
-     * alt=1: enable EP3 (bulk IN) and EP5 (bulk OUT). */
-    if (USB_ModeConfig_ActiveModeBridgeEcm() && iface == 1) {
+     * alt=1: enable EP3 (bulk IN) and EP5 (bulk OUT).
+     * NOTE: In combined ACM+ECM mode (mode 6), IF1 is ACM data interface,
+     * not ECM. This code should only run in pure ECM bridge mode (mode 4). */
+    if (USB_ModeConfig_ActiveModeBridgeEcm() && !USB_ModeConfig_ActiveModeHasHostCdcAcm() && iface == 1) {
         if (alt == 1) {
             /* Clear data toggle for fresh endpoint */
             _ClearDTOG_TX(ENDP3);
