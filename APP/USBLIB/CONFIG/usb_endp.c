@@ -28,10 +28,9 @@ uint8_t USBD_Endp1_Busy;
 uint8_t USBD_Endp3_Busy;
 uint8_t USBD_Endp2_Busy;  /* ECM INT busy (also used in ACM+ECM combined mode) */
 uint8_t USBD_Endp4_Busy;  /* ECM BULK IN busy (also used in ACM+ECM combined mode) */
-uint16_t USB_Rx_Cnt=0;
+uint16_t USB_Rx_Cnt=0; 
 
-/* CH9329 command frame validator - checks for any valid CH9329 command frame
- * Not limited to USB work mode command (0x30), accepts all CH9329 commands */
+#if USB_WORK_MODE_COMPILES_BRIDGE_ACM || USB_WORK_MODE_COMPILES_BRIDGE_ECM || USB_WORK_MODE_HAS_HOST_ACM_AND_ECM
 static uint8_t USBD_IsCh9329ModeCommandFrame(const uint8_t *buf, uint16_t len)
 {
     uint16_t frame_len;
@@ -41,8 +40,7 @@ static uint8_t USBD_IsCh9329ModeCommandFrame(const uint8_t *buf, uint16_t len)
     if (buf == 0 || len < 6) {
         return 0;
     }
-    // Check header only (0x57 0xAB), accept any command
-    if (buf[0] != CH9329_FRAME_HEAD1 || buf[1] != CH9329_FRAME_HEAD2) {
+    if (buf[0] != CH9329_FRAME_HEAD1 || buf[1] != CH9329_FRAME_HEAD2 || buf[3] != CMD_USB_WORK_MODE) {
         return 0;
     }
 
@@ -51,12 +49,12 @@ static uint8_t USBD_IsCh9329ModeCommandFrame(const uint8_t *buf, uint16_t len)
         return 0;
     }
 
-    // Verify checksum
     for (i = 0; i < (uint16_t)(frame_len - 1u); i++) {
         sum = (uint8_t)(sum + buf[i]);
     }
     return (sum == buf[frame_len - 1u]) ? 1u : 0u;
 }
+#endif
 
 /*********************************************************************
  * @fn      EP2_IN_Callback
@@ -205,9 +203,8 @@ void EP5_OUT_Callback(void)
     SetEPRxCount( ENDP5, USB_ModeConfig_ActiveModeBridgeEcm() ? 64 : DEF_USBD_MAX_PACK_SIZE );
     SetEPRxValid( ENDP5 );
 #else
-    uint32_t len;
+	uint32_t len;
     len = GetEPRxCount( ENDP5 );
-    USB_DEBUG("EP5#else: len=%d\n", len);
     PMAToUserBufferCopy( &UART2_Tx_Buf[ ( Uart.Tx_LoadNum * DEF_USB_FS_PACK_LEN ) ], GetEPRxAddr( ENDP5 ), len );
     Uart.Tx_PackLen[ Uart.Tx_LoadNum ] = len;
     Uart.Tx_LoadNum++;
@@ -216,7 +213,6 @@ void EP5_OUT_Callback(void)
         Uart.Tx_LoadNum = 0x00;
     }
     Uart.Tx_RemainNum++;
-    USB_DEBUG("EP5#else: TxRemain=%d\n", Uart.Tx_RemainNum);
 
 	if( Uart.Tx_RemainNum >= ( DEF_UARTx_TX_BUF_NUM_MAX - 2 ) )
     {

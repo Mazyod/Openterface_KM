@@ -132,11 +132,11 @@ void CH9329_Cmd_GetInfo_Reply(uint8_t addr)
         data[1] = 0x00;   // Not connected
     }
     data[2] = Keyboard_GetLEDStatus() & 0x07; // bit2-bit0: LED status
-    data[3] = 0x06; // firmware version number
-    data[4] = 0x00; // reserved
-    data[5] = 0x00; // reserved
-    data[6] = 0x00; // reserved
-    data[7] = 0x00; // reserved
+    data[3] = 0x06; // bit6 placeholder
+    data[4] = 0x00; // bit5 placeholder
+    data[5] = 0x00; // bit4 placeholder
+    data[6] = 0x00; // bit3 placeholder
+    data[7] = 0x00; // bit3 placeholder
     CH9329_SendResponse(addr, CMD_GET_INFO , data, 8, 1);
 }
 
@@ -340,34 +340,21 @@ void CH9329_DispatchCommand(uint8_t addr, uint8_t cmd_code, uint8_t* pdata, uint
 
 int CH9329_DataParser(uint8_t* buf, uint16_t len)
 {
-    /* Check that buffer is at least long enough for header + minimal fields */
+    // Check that buffer is at least long enough for header + minimal fields
     if (len < 6) return 0;
 
-    /* Verify frame header */
+    // Verify frame header
     if (buf[0] != CH9329_FRAME_HEAD1 || buf[1] != CH9329_FRAME_HEAD2) {
-        /* Not a valid frame header -- skip one byte and try to resync */
+        // Not a valid frame header �� skip one byte and try again
         return 1;
     }
 
     uint8_t addr     = buf[2];
     uint8_t cmd_code = buf[3];
     uint8_t data_len = buf[4];
-
-    /* Bounds check: protocol max payload is CH9329_MAX_DATA_LEN (100).
-     * Reject oversized payloads early to prevent out-of-bounds reads
-     * in the checksum loop and buf[5 + data_len] access below. */
-    if (data_len > CH9329_MAX_DATA_LEN) {
-        return 1;  /* invalid payload length -- skip header byte and resync */
-    }
-
     uint16_t frame_total_len = 2 + 1 + 1 + 1 + (uint16_t)data_len + 1;
 
-    /* Sanity: frame must fit in the receive buffer */
-    if (frame_total_len > RX_BUF_SIZE) {
-        return 1;  /* corrupted length field -- skip header byte and resync */
-    }
-
-    /* Wait until the full frame is received */
+    // Wait until the full frame is received
     if (len < frame_total_len) return 0;
 
     uint8_t *pdata = &buf[5];
@@ -384,65 +371,51 @@ int CH9329_DataParser(uint8_t* buf, uint16_t len)
         return frame_total_len;
     }
 
-    // Valid frame → dispatch command
+    // Valid frame �� dispatch command
     CH9329_DispatchCommand(addr, cmd_code, pdata, data_len);
     return frame_total_len;
 }
 
 static uint8_t rx_buf[RX_BUF_SIZE];
-static uint16_t rx_start = 0;  /* offset of the first unparsed byte */
-static uint16_t rx_len = 0;    /* number of valid bytes from rx_start */
+static uint16_t rx_len = 0;
 
 void CH9329_RxBuffer_Add(uint8_t *data, uint16_t len) {
     if (len == 0 || data == NULL) return;
 
-    /* Callers span USB ISR (EP5_OUT_Callback), a BLE callback, the ECM frame
-     * handler and the main-loop UART2 path — protect the shared static buffer.
-     * The parser below may Queue_Push_Response; that nested ENTER_CRITICAL is
-     * safe because the macros save/restore MSTATUS. */
-    ENTER_CRITICAL();
-
-    /* Reset the cursor whenever the buffer empties so rx_start cannot drift to
-     * the end of the array across many small frames. */
-    if (rx_len == 0) rx_start = 0;
-
-    /* Compact only when the tail cannot hold the new bytes:
-     * at most one memmove per Add (amortized O(1)). */
-    if ((uint32_t)rx_start + rx_len + len > RX_BUF_SIZE) {
-        if ((uint32_t)rx_len + len > RX_BUF_SIZE) {
-            /* Still too big even after compaction: drop the oldest bytes so the
-             * newest data survives. */
-            uint16_t drop = (uint16_t)((uint32_t)rx_len + len - RX_BUF_SIZE);
-            rx_start += drop;
-            rx_len -= drop;
-        }
-        if (rx_len > 0) memmove(rx_buf, rx_buf + rx_start, rx_len);
-        rx_start = 0;
+    // Prevent buffer overflow; if overflow risk, retain only the latter half
+    if (rx_len + len > RX_BUF_SIZE) {
+        uint16_t keep = RX_BUF_SIZE / 2;
+        if (keep > rx_len) keep = rx_len;
+        memmove(rx_buf, rx_buf + (rx_len - keep), keep);
+        rx_len = keep;
     }
 
-    /* Append new data */
-    memcpy(rx_buf + rx_start + rx_len, data, len);
+    // Append new data
+    memcpy(rx_buf + rx_len, data, len);
     rx_len += len;
 
-    /* Parse frame by frame: a consumed frame only advances rx_start — no
-     * shuffling. CH9329_DataParser runs on contiguous memory and is unchanged. */
+    // Try parsing frames as long as data exists
     while (rx_len > 0) {
-        int consumed = CH9329_DataParser(rx_buf + rx_start, rx_len);
+        int consumed = CH9329_DataParser(rx_buf, rx_len);
         if (consumed < 0) {
-            /* Parsing error — clear buffer */
-            rx_start = 0;
+            // Parsing error �� clear buffer
             rx_len = 0;
             break;
         } else if (consumed == 0) {
-            /* Incomplete frame — wait for more data */
+            // Incomplete frame �� wait for more data
             break;
         } else {
-            rx_start += (uint16_t)consumed;
-            rx_len -= (uint16_t)consumed;
+            // Remove consumed bytes from buffer
+            if ((uint16_t)consumed < rx_len) {
+                memmove(rx_buf, rx_buf + consumed, rx_len - consumed);
+                rx_len -= (uint16_t)consumed;
+            } else {
+                // Exactly consumed all data
+                rx_len = 0;
+                break;
+            }
         }
     }
-
-    EXIT_CRITICAL();
 }
 
 void USB_DataRx_To_KMHandle(void) {
