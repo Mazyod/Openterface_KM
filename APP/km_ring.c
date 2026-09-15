@@ -16,6 +16,9 @@ MS_Abs_Queue_t ms_abs_queue;
 Resp_Queue_t resp_queue;
 Media_Queue_t media_queue;
 
+/* Extern variables */
+extern uint8_t USBD_Endp3_Busy;
+
 /* Initialize queues */
 void Queue_Init(void) {
     kb_queue.head = kb_queue.tail = 0;
@@ -131,17 +134,47 @@ void USB_SendFromQueues(void) {
         else break;
     }
 
-    if (USB_ModeConfig_ActiveModeHasHostCdcEcm()) {
-        /* In combined ACM+ECM mode, ACM responses still need to be sent via
-         * EP3 (ACM bulk IN). ECM bridge has its own separate response handling
-         * in ecm_bridge.c, so we don't clear the queue here.               */
-    }
+    /* Response queue drain — send CH9329 responses via EP3 (ACM bulk IN).
+     *
+     * In all modes with host CDC ACM (including ACM+ECM combined mode),
+     * responses must be sent via EP3. The ECM bridge has its own separate
+     * response handling for TCP-based CH9329 commands, but USB serial
+     * commands still need this path.
+     *
+     * IMPORTANT: CH9329 responses go through the USBD library (USB 1.1 FS
+     * controller at 0x40005C00), NOT the USBFS library (USB 2.0 OTG at
+     * 0x50000000). The USBD library handles CDC ACM, while USBFS handles
+     * HID endpoints. Both controllers share the same physical USB port
+     * via a multiplexer.
+     */
+    if (USB_ModeConfig_ActiveModeHasHostCdcAcm() ||
+        (!USB_ModeConfig_ActiveModeBridgeEcm() && !USB_ModeConfig_ActiveModeHasHostCdcEcm())) {
 
-    while (resp_queue.head != resp_queue.tail) {
-        Resp_Report_t *pkt = &resp_queue.buf[resp_queue.head];
-        if (USBD_ENDPx_DataUp(ENDP3, pkt->data, pkt->len) == 0)
-            resp_queue.head = (resp_queue.head + 1) % RESP_QUEUE_SIZE;
-        else break;
+        /* Check if EP3 IN endpoint is enabled */
+        uint16_t ep3_status = _GetEPTxStatus(ENDP3);
+        if (ep3_status == EP_TX_DIS) {
+            /* EP3 not enabled, try to enable it */
+            if (USB_ModeConfig_ActiveModeHasHostCdcAcm()) {
+                _ClearDTOG_TX(ENDP3);
+                SetEPTxStatus(ENDP3, EP_TX_NAK);
+            }
+            /* Don't return - continue to process the queue after enabling */
+        }
+
+        while (resp_queue.head != resp_queue.tail) {
+            Resp_Report_t *pkt = &resp_queue.buf[resp_queue.head];
+
+            /* Check if endpoint is busy */
+            if (USBD_Endp3_Busy) {
+                break;  /* endpoint busy, retry next pass */
+            }
+
+            int result = USBD_ENDPx_DataUp(ENDP3, pkt->data, pkt->len);
+            if (result == 0) {
+                resp_queue.head = (resp_queue.head + 1) % RESP_QUEUE_SIZE;
+            }
+            else break;  /* endpoint busy, retry next pass */
+        }
     }
 }
 
