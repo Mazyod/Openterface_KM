@@ -196,34 +196,7 @@ void EP5_OUT_Callback(void)
     }
     else if (USB_ModeConfig_ActiveModeHasHostCdcAcm())
     {
-        // Check if this is a CH9329 command frame
-        if (USBD_IsCh9329ModeCommandFrame( buf, (uint16_t)len )) {
-            // Process as CH9329 command
-            USB_DEBUG("EP5:CH9329 cmd len=%d\n", len);
-            CH9329_RxBuffer_Add( buf, (uint16_t)len );
-            // Re-enable EP5 OUT for next packet
-            SetEPRxValid( ENDP5 );
-        }
-        else {
-            // Forward to UART2 (normal USB-to-UART bridging)
-            PMAToUserBufferCopy( &UART2_Tx_Buf[ ( Uart.Tx_LoadNum * DEF_USB_FS_PACK_LEN ) ], buf, len );
-            Uart.Tx_PackLen[ Uart.Tx_LoadNum ] = len;
-            Uart.Tx_LoadNum++;
-            if( Uart.Tx_LoadNum >= DEF_UARTx_TX_BUF_NUM_MAX )
-            {
-                Uart.Tx_LoadNum = 0x00;
-            }
-            Uart.Tx_RemainNum++;
-
-            if( Uart.Tx_RemainNum >= ( DEF_UARTx_TX_BUF_NUM_MAX - 2 ) )
-            {
-                Uart.USB_Down_StopFlag = 0x01;
-            }
-            else
-            {
-                SetEPRxValid( ENDP5 );
-            }
-        }
+        CH9329_RxBuffer_Add( buf, (uint16_t)len );
     }
     else if (USB_ModeConfig_ActiveModeBridgeEcm())
     {

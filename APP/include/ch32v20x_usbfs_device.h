@@ -181,6 +181,7 @@ extern void USBFS_RCC_Init( void );
 extern uint8_t USBFS_Endp_DataUp( uint8_t endp, uint8_t *pbuf, uint16_t len, uint8_t mod );
 extern void USBFS_Send_Resume( void );
 extern uint8_t USBSendData(void);
+extern uint32_t USBFS_CheckEndpointBusyTimeout( void );
 
 #endif /* __CH32V20x_USBFS_DEVICE_H_ */
 
