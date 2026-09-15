@@ -31,6 +31,8 @@ uint8_t USBD_Endp4_Busy;  /* ECM BULK IN busy (also used in ACM+ECM combined mod
 uint16_t USB_Rx_Cnt=0; 
 
 #if USB_WORK_MODE_COMPILES_BRIDGE_ACM || USB_WORK_MODE_COMPILES_BRIDGE_ECM || USB_WORK_MODE_HAS_HOST_ACM_AND_ECM
+/* CH9329 command frame validator - checks for any valid CH9329 command frame
+ * Not limited to USB work mode command (0x30), accepts all CH9329 commands */
 static uint8_t USBD_IsCh9329ModeCommandFrame(const uint8_t *buf, uint16_t len)
 {
     uint16_t frame_len;
@@ -40,7 +42,8 @@ static uint8_t USBD_IsCh9329ModeCommandFrame(const uint8_t *buf, uint16_t len)
     if (buf == 0 || len < 6) {
         return 0;
     }
-    if (buf[0] != CH9329_FRAME_HEAD1 || buf[1] != CH9329_FRAME_HEAD2 || buf[3] != CMD_USB_WORK_MODE) {
+    // Check header only (0x57 0xAB), accept any command
+    if (buf[0] != CH9329_FRAME_HEAD1 || buf[1] != CH9329_FRAME_HEAD2) {
         return 0;
     }
 
@@ -49,6 +52,7 @@ static uint8_t USBD_IsCh9329ModeCommandFrame(const uint8_t *buf, uint16_t len)
         return 0;
     }
 
+    // Verify checksum
     for (i = 0; i < (uint16_t)(frame_len - 1u); i++) {
         sum = (uint8_t)(sum + buf[i]);
     }
