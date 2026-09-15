@@ -114,16 +114,6 @@ void USBD_SetConfiguration(void)
   if (pInfo->Current_Configuration != 0)
   {
     bDeviceState = CONFIGURED;
-
-    /* Enable EP3 IN endpoint immediately after configuration.
-     * This ensures CH9329 responses can be sent without waiting for
-     * CDC_SET_LINE_CODING request from the host. */
-    if (USB_ModeConfig_ActiveModeHasHostCdcAcm())
-    {
-        _ClearDTOG_TX(ENDP3);
-        SetEPTxStatus(ENDP3, EP_TX_NAK);
-        USB_DEBUG("USBD_SetConfiguration: EP3 enabled to NAK\n");
-    }
   }
 }
 
@@ -190,15 +180,10 @@ void USBD_Status_In(void)
             }
             /* Enable ACM data IN endpoint (EP3) after line coding is set.
              * EP3 starts as EP_TX_DIS in USBD_Reset(); it must be enabled
-             * so the host COM-port driver can read data.
-             *
-             * IMPORTANT: Do NOT reset data toggle bits here. The data toggle
-             * (DATA0/DATA1) is managed by the USB protocol and should only be
-             * reset during USB bus reset or SET_CONFIGURATION. Resetting it
-             * here causes synchronization issues when the serial port is
-             * closed and reopened. */
+             * so the host COM-port driver can read data.                    */
             if (USB_ModeConfig_ActiveModeHasHostCdcAcm())
             {
+                _ClearDTOG_TX(ENDP3);
                 SetEPTxStatus(ENDP3, EP_TX_NAK);
             }
         }

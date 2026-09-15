@@ -7,25 +7,10 @@
 
 /* Queue size definitions */
 #define KB_QUEUE_SIZE      512    // Keyboard report queue size
-#define MS_REL_QUEUE_SIZE  64     // Relative mouse report queue size
+#define MS_REL_QUEUE_SIZE  28     // Relative mouse report queue size
 #define MS_ABS_QUEUE_SIZE  28     // Absolute mouse report queue size
 #define RESP_QUEUE_SIZE    28     // Response packet queue size
 #define MEDIA_QUEUE_SIZE   16     // Media key report queue size
-
-/* Nesting-safe critical-section helpers (CH32V20x RISC-V).
- *
- * Only save/restore the MIE (Machine Interrupt Enable) bit from CSR 0x800,
- * not the entire mstatus register. The mstatus register contains bits that
- * should not be blindly restored (MPP, MPIE, etc.), and __enable_irq()/
- * __disable_irq() operate on WCH-specific CSR 0x800, not standard mstatus.
- *
- * MIE is bit 3 of CSR 0x800.
- */
-#define ENTER_CRITICAL()  uint32_t _mie_saved; \
-                          __asm volatile("csrr %0, 0x800" : "=r"(_mie_saved)); \
-                          __disable_irq(); \
-                          _mie_saved = (_mie_saved >> 3) & 0x1
-#define EXIT_CRITICAL()   do { if (_mie_saved) __enable_irq(); } while(0)
 
 /* Keyboard report structure */
 typedef struct {
@@ -87,13 +72,12 @@ typedef struct {
     volatile int tail;
 } MS_Rel_Queue_t;
 
-/* Mouse absolute report — single-slot mailbox (newest wins).
- * Absolute coordinates are stateful: only the newest not-yet-sent frame
- * matters, so a FIFO only ever stores stale positions (spec §4, §5.1). */
+/* Mouse absolute queue structure */
 typedef struct {
-    MS_Abs_Report_t slot;       /* newest pending absolute report */
-    volatile uint8_t valid;     /* 1 = slot holds an unsent report */
-} MS_Abs_Mailbox_t;
+    MS_Abs_Report_t buf[MS_ABS_QUEUE_SIZE];
+    volatile int head;
+    volatile int tail;
+} MS_Abs_Queue_t;
 
 /* Response packet queue structure */
 typedef struct {
@@ -105,7 +89,7 @@ typedef struct {
 /* Global queue declarations */
 extern KB_Queue_t kb_queue;
 extern MS_Rel_Queue_t ms_rel_queue;
-extern MS_Abs_Mailbox_t ms_abs_mbox;
+extern MS_Abs_Queue_t ms_abs_queue;
 extern Resp_Queue_t resp_queue;
 extern Media_Queue_t media_queue;
 
@@ -128,6 +112,7 @@ bool Queue_Pop_Media(Media_Report_t *out);
 
 /* Send functions */
 void USB_SendFromQueues(void);        // Send keyboard/mouse reports via USBFS
+void USBD_SendFromRespQueue(void);    // Send response packets via USBD (endpoint)
 
 /* USB debug ring buffer — sends debug strings via USBFS EP2 (relative mouse endpoint).
  * Debug reports use mouse HID format with a 0xFF marker byte in data[0].
