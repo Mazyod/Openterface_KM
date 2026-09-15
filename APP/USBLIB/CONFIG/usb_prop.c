@@ -114,6 +114,15 @@ void USBD_SetConfiguration(void)
   if (pInfo->Current_Configuration != 0)
   {
     bDeviceState = CONFIGURED;
+
+    /* Enable EP3 IN endpoint immediately after configuration.
+     * This ensures CH9329 responses can be sent without waiting for
+     * CDC_SET_LINE_CODING request from the host. */
+    if (USB_ModeConfig_ActiveModeHasHostCdcAcm())
+    {
+        _ClearDTOG_TX(ENDP3);
+        SetEPTxStatus(ENDP3, EP_TX_NAK);
+    }
   }
 }
 
