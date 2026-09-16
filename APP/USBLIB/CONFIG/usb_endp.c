@@ -34,7 +34,7 @@ uint16_t USB_Rx_Cnt=0;
 volatile uint32_t g_ep5_out_call_count = 0;
 volatile uint32_t g_ep5_out_total_bytes = 0; 
 
-#if USB_WORK_MODE_COMPILES_BRIDGE_ACM || USB_WORK_MODE_COMPILES_BRIDGE_ECM || USB_WORK_MODE_HAS_HOST_ACM_AND_ECM
+#if USB_WORK_MODE_COMPILES_BRIDGE_ACM || USB_WORK_MODE_COMPILES_BRIDGE_ECM || USB_WORK_MODE_HAS_HOST_ACM_AND_ECM || USB_WORK_MODE_HAS_HOST_CDC_ACM
 /* CH9329 command frame validator - checks for any valid CH9329 command frame
  * Not limited to USB work mode command (0x30), accepts all CH9329 commands */
 static uint8_t USBD_IsCh9329ModeCommandFrame(const uint8_t *buf, uint16_t len)
@@ -182,9 +182,12 @@ void EP4_OUT_Callback(void)
 
 void EP5_OUT_Callback(void)
 {
-#if USB_WORK_MODE_COMPILES_BRIDGE_ACM || USB_WORK_MODE_COMPILES_BRIDGE_ECM || USB_WORK_MODE_HAS_HOST_ACM_AND_ECM
-	uint8_t buf[64];
-	uint32_t len;
+#if USB_WORK_MODE_COMPILES_BRIDGE_ACM || USB_WORK_MODE_COMPILES_BRIDGE_ECM || USB_WORK_MODE_HAS_HOST_ACM_AND_ECM || USB_WORK_MODE_HAS_HOST_CDC_ACM
+    volatile static uint32_t debug_counter = 0;
+    debug_counter++;
+
+    uint8_t buf[64];
+    uint32_t len;
     len = GetEPRxCount( ENDP5 );
     if( len > sizeof(buf) )
     {
