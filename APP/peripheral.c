@@ -1369,19 +1369,21 @@ void Peripheral_BleAdvParamCommand(uint8_t addr, uint8_t cmd_code, uint8_t *pdat
             break;
         }
 
-        case 0x03:  // BLE Test Mode (continuous TX via ultra-short interval)
+        case 0x03:  // BLE Test Mode (using LL Test API)
         {
             switch (sub_cmd) {
-                case 0x00:  // Start test mode - fixed at 2402 MHz (Channel 37), max power, ultra-short interval
+                case 0x00:  // Start test mode - continuous TX at 2402 MHz
                 {
+                    bStatus_t ret;
+
                     // Check if already connected
                     if (Peripheral_GetConnHandle() != GAP_CONNHANDLE_INIT) {
-                        status = STATUS_ERR_FRAME;  // Device is connected, cannot enter test mode
+                        status = STATUS_ERR_FRAME;
                         CH9329_SendResponse(addr, cmd_code, &status, 1, 0);
                         return;
                     }
 
-                    // Step 1: Stop advertising first
+                    // Step 1: Stop advertising
                     uint8_t adv_enable = FALSE;
                     GAPRole_SetParameter(GAPROLE_ADVERT_ENABLED, sizeof(uint8_t), &adv_enable);
 
@@ -1389,58 +1391,58 @@ void Peripheral_BleAdvParamCommand(uint8_t addr, uint8_t cmd_code, uint8_t *pdat
                     LL_SetTxPowerLevel(LL_TX_POWEER_7_DBM);
                     g_current_tx_power = LL_TX_POWEER_7_DBM;
 
-                    // Step 3: Set to single channel (CH37 = 2402 MHz)
-                    uint8_t channel_map = GAP_ADVCHAN_37;  // Only Channel 37 (2402 MHz)
-                    GAPRole_SetParameter(GAPROLE_ADV_CHANNEL_MAP, sizeof(uint8_t), &channel_map);
+                    // Step 3: Start transmitter test
+                    // Using BLE 5.x test command (opcode 0x2034)
+                    // Parameters: TX_Channel, Test_Data_Length, Packet_Payload, PHY
+                    uint8_t test_params[4];
+                    test_params[0] = 0;    // TX_Channel: 0 = 2402 MHz
+                    test_params[1] = 37;   // Test_Data_Length: 37 bytes
+                    test_params[2] = 0;    // Packet_Payload: 0 = PRBS9
+                    test_params[3] = 1;    // PHY: 1 = LE 1M PHY
 
-                    // Step 4: Set ultra-short advertising interval (20ms = 32 * 625us)
-                    // Minimum allowed interval is 20ms
-                    uint16_t advInt = 32;  // 32 * 625us = 20ms
-                    GAP_SetParamValue(TGAP_DISC_ADV_INT_MIN, advInt);
-                    GAP_SetParamValue(TGAP_DISC_ADV_INT_MAX, advInt);
+                    ret = API_LE_TransmitterTestCmd(test_params, 0x2034);
 
-                    // Step 5: Restart advertising with new parameters
-                    adv_enable = TRUE;
-                    GAPRole_SetParameter(GAPROLE_ADVERT_ENABLED, sizeof(uint8_t), &adv_enable);
+                    if (ret != 0) {
+                        // BLE 5.x command failed, try BLE 4.x command (opcode 0x201E)
+                        uint8_t test_params_v4[3];
+                        test_params_v4[0] = 0;    // TX_Channel: 0 = 2402 MHz
+                        test_params_v4[1] = 37;   // Test_Data_Length: 37 bytes
+                        test_params_v4[2] = 0;    // Packet_Payload: 0 = PRBS9
+                        ret = API_LE_TransmitterTestCmd(test_params_v4, 0x201E);
+                    }
 
-                    // Step 6: Set test mode flag
+                    // Set test mode flag
                     g_test_mode_active = 1;
 
-                    response[0] = param_type;      // param type
-                    response[1] = 0x01;            // test mode active
-                    CH9329_SendResponse(addr, cmd_code, response, 2, 1);
+                    response[0] = param_type;
+                    response[1] = (ret == 0) ? 0x01 : 0x02;  // 0x01=success, 0x02=test started with fallback
+                    response[2] = ret;  // Return status code
+                    CH9329_SendResponse(addr, cmd_code, response, 3, 1);
                     break;
                 }
 
-                case 0x01:  // Stop test mode (restore normal advertising)
+                case 0x01:  // Stop test mode
                 {
-                    // Step 1: Stop advertising first
-                    uint8_t adv_enable = FALSE;
-                    GAPRole_SetParameter(GAPROLE_ADVERT_ENABLED, sizeof(uint8_t), &adv_enable);
+                    bStatus_t ret;
 
-                    // Step 2: Restore default advertising interval
-                    uint16_t advInt = DEFAULT_ADVERTISING_INTERVAL;  // 50ms
-                    GAP_SetParamValue(TGAP_DISC_ADV_INT_MIN, advInt);
-                    GAP_SetParamValue(TGAP_DISC_ADV_INT_MAX, advInt);
+                    // Step 1: End transmitter test
+                    ret = API_LE_TestEndCmd();
 
-                    // Step 3: Restore default TX power
+                    // Step 2: Restore default TX power
                     LL_SetTxPowerLevel(BLE_TX_POWER);
                     g_current_tx_power = BLE_TX_POWER;
 
-                    // Step 4: Restore all channels (default)
-                    uint8_t channel_map = GAP_ADVCHAN_ALL;  // All channels (37,38,39)
-                    GAPRole_SetParameter(GAPROLE_ADV_CHANNEL_MAP, sizeof(uint8_t), &channel_map);
-
-                    // Step 5: Restart advertising with default parameters
-                    adv_enable = TRUE;
+                    // Step 3: Restart advertising
+                    uint8_t adv_enable = TRUE;
                     GAPRole_SetParameter(GAPROLE_ADVERT_ENABLED, sizeof(uint8_t), &adv_enable);
 
-                    // Step 6: Clear test mode flag
+                    // Step 4: Clear test mode flag
                     g_test_mode_active = 0;
 
-                    response[0] = param_type;      // param type
-                    response[1] = 0x00;            // test mode inactive
-                    CH9329_SendResponse(addr, cmd_code, response, 2, 1);
+                    response[0] = param_type;
+                    response[1] = 0x00;  // test stopped
+                    response[2] = ret;   // Return status code
+                    CH9329_SendResponse(addr, cmd_code, response, 3, 1);
                     break;
                 }
 
