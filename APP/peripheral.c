@@ -1383,7 +1383,7 @@ void Peripheral_BleAdvParamCommand(uint8_t addr, uint8_t cmd_code, uint8_t *pdat
                         return;
                     }
 
-                    // Step 1: Stop advertising
+                    // Step 1: Stop advertising and wait for it to fully stop
                     uint8_t adv_enable = FALSE;
                     GAPRole_SetParameter(GAPROLE_ADVERT_ENABLED, sizeof(uint8_t), &adv_enable);
 
@@ -1391,23 +1391,24 @@ void Peripheral_BleAdvParamCommand(uint8_t addr, uint8_t cmd_code, uint8_t *pdat
                     LL_SetTxPowerLevel(LL_TX_POWEER_7_DBM);
                     g_current_tx_power = LL_TX_POWEER_7_DBM;
 
-                    // Step 3: Start transmitter test
+                    // Step 3: Start transmitter test with optimized parameters
                     // Using BLE 5.x test command (opcode 0x2034)
                     // Parameters: TX_Channel, Test_Data_Length, Packet_Payload, PHY
                     uint8_t test_params[4];
                     test_params[0] = 0;    // TX_Channel: 0 = 2402 MHz
-                    test_params[1] = 37;   // Test_Data_Length: 37 bytes
-                    test_params[2] = 0;    // Packet_Payload: 0 = PRBS9
+                    test_params[1] = 255;  // Test_Data_Length: 255 bytes (max for BLE 5.x)
+                    test_params[2] = 4;    // Packet_Payload: 4 = 11111111 (continuous carrier)
                     test_params[3] = 1;    // PHY: 1 = LE 1M PHY
 
                     ret = API_LE_TransmitterTestCmd(test_params, 0x2034);
 
                     if (ret != 0) {
                         // BLE 5.x command failed, try BLE 4.x command (opcode 0x201E)
+                        // For BLE 4.x, max length is 37 bytes
                         uint8_t test_params_v4[3];
                         test_params_v4[0] = 0;    // TX_Channel: 0 = 2402 MHz
-                        test_params_v4[1] = 37;   // Test_Data_Length: 37 bytes
-                        test_params_v4[2] = 0;    // Packet_Payload: 0 = PRBS9
+                        test_params_v4[1] = 37;   // Test_Data_Length: 37 bytes (max for BLE 4.x)
+                        test_params_v4[2] = 4;    // Packet_Payload: 4 = 11111111 (continuous carrier)
                         ret = API_LE_TransmitterTestCmd(test_params_v4, 0x201E);
                     }
 
