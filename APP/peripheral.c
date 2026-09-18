@@ -105,6 +105,9 @@ static uint8_t scanRspData[31] = {0};
 
 // Current TX power level (tracked at runtime)
 static uint8_t g_current_tx_power = BLE_TX_POWER;
+
+// Test mode flag (1 = test mode active, 0 = normal mode)
+static uint8_t g_test_mode_active = 0;
 static uint8_t scanRspDataLen = 0;
 
 // GAP - Advertisement data (max size = 31 bytes, though this is
@@ -1366,10 +1369,10 @@ void Peripheral_BleAdvParamCommand(uint8_t addr, uint8_t cmd_code, uint8_t *pdat
             break;
         }
 
-        case 0x03:  // BLE Test Mode (continuous TX)
+        case 0x03:  // BLE Test Mode (continuous TX via ultra-short interval)
         {
             switch (sub_cmd) {
-                case 0x00:  // Start test mode - fixed at 2402 MHz (Channel 0), max power
+                case 0x00:  // Start test mode - fixed at 2402 MHz (Channel 37), max power, ultra-short interval
                 {
                     // Check if already connected
                     if (Peripheral_GetConnHandle() != GAP_CONNHANDLE_INIT) {
@@ -1378,44 +1381,65 @@ void Peripheral_BleAdvParamCommand(uint8_t addr, uint8_t cmd_code, uint8_t *pdat
                         return;
                     }
 
-                    // Stop advertising first
+                    // Step 1: Stop advertising first
                     uint8_t adv_enable = FALSE;
                     GAPRole_SetParameter(GAPROLE_ADVERT_ENABLED, sizeof(uint8_t), &adv_enable);
 
-                    // Set max TX power (7 dBm)
+                    // Step 2: Set max TX power (7 dBm)
                     LL_SetTxPowerLevel(LL_TX_POWEER_7_DBM);
                     g_current_tx_power = LL_TX_POWEER_7_DBM;
 
-                    // Start transmitter test on Channel 0 (2402 MHz)
-                    // Parameters for API_LE_TransmitterTestCmd (opcode 0x201E):
-                    // pParm[0] = TX_Channel (0 = 2402 MHz)
-                    // pParm[1] = Test_Data_Length (37 bytes)
-                    // pParm[2] = Packet_Payload (0 = PRBS9)
-                    uint8_t test_params[3] = {0, 37, 0};  // Channel 0, 37 bytes, PRBS9
-                    API_LE_TransmitterTestCmd(test_params, 0x201E);
+                    // Step 3: Set to single channel (CH37 = 2402 MHz)
+                    uint8_t channel_map = GAP_ADVCHAN_37;  // Only Channel 37 (2402 MHz)
+                    GAPRole_SetParameter(GAPROLE_ADV_CHANNEL_MAP, sizeof(uint8_t), &channel_map);
+
+                    // Step 4: Set ultra-short advertising interval (20ms = 32 * 625us)
+                    // Minimum allowed interval is 20ms
+                    uint16_t advInt = 32;  // 32 * 625us = 20ms
+                    GAP_SetParamValue(TGAP_DISC_ADV_INT_MIN, advInt);
+                    GAP_SetParamValue(TGAP_DISC_ADV_INT_MAX, advInt);
+
+                    // Step 5: Restart advertising with new parameters
+                    adv_enable = TRUE;
+                    GAPRole_SetParameter(GAPROLE_ADVERT_ENABLED, sizeof(uint8_t), &adv_enable);
+
+                    // Step 6: Set test mode flag
+                    g_test_mode_active = 1;
 
                     response[0] = param_type;      // param type
-                    response[1] = 0x01;            // test running
+                    response[1] = 0x01;            // test mode active
                     CH9329_SendResponse(addr, cmd_code, response, 2, 1);
                     break;
                 }
 
-                case 0x01:  // Stop test mode
+                case 0x01:  // Stop test mode (restore normal advertising)
                 {
-                    // End transmitter test
-                    uint8_t pkt_num = 0;
-                    LL_TestEnd(&pkt_num);
+                    // Step 1: Stop advertising first
+                    uint8_t adv_enable = FALSE;
+                    GAPRole_SetParameter(GAPROLE_ADVERT_ENABLED, sizeof(uint8_t), &adv_enable);
 
-                    // Restore default TX power
+                    // Step 2: Restore default advertising interval
+                    uint16_t advInt = DEFAULT_ADVERTISING_INTERVAL;  // 50ms
+                    GAP_SetParamValue(TGAP_DISC_ADV_INT_MIN, advInt);
+                    GAP_SetParamValue(TGAP_DISC_ADV_INT_MAX, advInt);
+
+                    // Step 3: Restore default TX power
                     LL_SetTxPowerLevel(BLE_TX_POWER);
                     g_current_tx_power = BLE_TX_POWER;
 
-                    // Restart advertising
-                    uint8_t adv_enable = TRUE;
+                    // Step 4: Restore all channels (default)
+                    uint8_t channel_map = GAP_ADVCHAN_ALL;  // All channels (37,38,39)
+                    GAPRole_SetParameter(GAPROLE_ADV_CHANNEL_MAP, sizeof(uint8_t), &channel_map);
+
+                    // Step 5: Restart advertising with default parameters
+                    adv_enable = TRUE;
                     GAPRole_SetParameter(GAPROLE_ADVERT_ENABLED, sizeof(uint8_t), &adv_enable);
 
+                    // Step 6: Clear test mode flag
+                    g_test_mode_active = 0;
+
                     response[0] = param_type;      // param type
-                    response[1] = 0x00;            // test stopped
+                    response[1] = 0x00;            // test mode inactive
                     CH9329_SendResponse(addr, cmd_code, response, 2, 1);
                     break;
                 }
