@@ -102,6 +102,9 @@ uint8_t Peripheral_TaskID = INVALID_TASK_ID; // Task ID for internal task/event 
 
 // GAP - SCAN RSP data (max size = 31 bytes)
 static uint8_t scanRspData[31] = {0};
+
+// Current TX power level (tracked at runtime)
+static uint8_t g_current_tx_power = BLE_TX_POWER;
 static uint8_t scanRspDataLen = 0;
 
 // GAP - Advertisement data (max size = 31 bytes, though this is
@@ -1293,10 +1296,9 @@ void Peripheral_BleAdvParamCommand(uint8_t addr, uint8_t cmd_code, uint8_t *pdat
             switch (sub_cmd) {
                 case 0x00:  // Get current TX power
                 {
-                    // Return the configured TX power value
-                    uint8_t current_power = BLE_TX_POWER;
+                    // Return the current TX power value (tracked at runtime)
                     response[0] = param_type;      // param type
-                    response[1] = current_power;   // current value
+                    response[1] = g_current_tx_power;   // current value
                     CH9329_SendResponse(addr, cmd_code, response, 2, 1);
                     break;
                 }
@@ -1348,6 +1350,7 @@ void Peripheral_BleAdvParamCommand(uint8_t addr, uint8_t cmd_code, uint8_t *pdat
 
                     // Set new TX power level
                     LL_SetTxPowerLevel(new_power);
+                    g_current_tx_power = new_power;  // Track the current value
 
                     response[0] = param_type;      // param type
                     response[1] = new_power;       // new value
