@@ -1366,6 +1366,68 @@ void Peripheral_BleAdvParamCommand(uint8_t addr, uint8_t cmd_code, uint8_t *pdat
             break;
         }
 
+        case 0x03:  // BLE Test Mode (continuous TX)
+        {
+            switch (sub_cmd) {
+                case 0x00:  // Start test mode - fixed at 2402 MHz (Channel 0), max power
+                {
+                    // Check if already connected
+                    if (Peripheral_GetConnHandle() != GAP_CONNHANDLE_INIT) {
+                        status = STATUS_ERR_FRAME;  // Device is connected, cannot enter test mode
+                        CH9329_SendResponse(addr, cmd_code, &status, 1, 0);
+                        return;
+                    }
+
+                    // Stop advertising first
+                    uint8_t adv_enable = FALSE;
+                    GAPRole_SetParameter(GAPROLE_ADVERT_ENABLED, sizeof(uint8_t), &adv_enable);
+
+                    // Set max TX power (7 dBm)
+                    LL_SetTxPowerLevel(LL_TX_POWEER_7_DBM);
+                    g_current_tx_power = LL_TX_POWEER_7_DBM;
+
+                    // Start transmitter test on Channel 0 (2402 MHz)
+                    // Parameters for API_LE_TransmitterTestCmd (opcode 0x201E):
+                    // pParm[0] = TX_Channel (0 = 2402 MHz)
+                    // pParm[1] = Test_Data_Length (37 bytes)
+                    // pParm[2] = Packet_Payload (0 = PRBS9)
+                    uint8_t test_params[3] = {0, 37, 0};  // Channel 0, 37 bytes, PRBS9
+                    API_LE_TransmitterTestCmd(test_params, 0x201E);
+
+                    response[0] = param_type;      // param type
+                    response[1] = 0x01;            // test running
+                    CH9329_SendResponse(addr, cmd_code, response, 2, 1);
+                    break;
+                }
+
+                case 0x01:  // Stop test mode
+                {
+                    // End transmitter test
+                    uint8_t pkt_num = 0;
+                    LL_TestEnd(&pkt_num);
+
+                    // Restore default TX power
+                    LL_SetTxPowerLevel(BLE_TX_POWER);
+                    g_current_tx_power = BLE_TX_POWER;
+
+                    // Restart advertising
+                    uint8_t adv_enable = TRUE;
+                    GAPRole_SetParameter(GAPROLE_ADVERT_ENABLED, sizeof(uint8_t), &adv_enable);
+
+                    response[0] = param_type;      // param type
+                    response[1] = 0x00;            // test stopped
+                    CH9329_SendResponse(addr, cmd_code, response, 2, 1);
+                    break;
+                }
+
+                default:
+                    status = STATUS_ERR_PARAM;
+                    CH9329_SendResponse(addr, cmd_code, &status, 1, 0);
+                    break;
+            }
+            break;
+        }
+
         default:
             status = STATUS_ERR_PARAM;
             CH9329_SendResponse(addr, cmd_code, &status, 1, 0);
