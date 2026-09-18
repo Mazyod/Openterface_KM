@@ -1193,7 +1193,7 @@ void Peripheral_SecurityCommand(uint8_t addr, uint8_t cmd_code, uint8_t *pdata, 
 /*********************************************************************
  * @fn      Peripheral_BleAdvParamCommand
  *
- * @brief   Handle BLE advertising parameter commands (get/set channel map)
+ * @brief   Handle BLE advertising parameter commands
  *          Called from CH9329 command dispatcher for CMD_BLE_ADV_PARAM (0x19)
  *
  * @param   addr     - Device address
@@ -1205,8 +1205,10 @@ void Peripheral_SecurityCommand(uint8_t addr, uint8_t cmd_code, uint8_t *pdata, 
  *
  * Command format:
  *   pdata[0] = sub-command: 0x00=get, 0x01=set
- *   pdata[1] = param type: 0x01=channel map
- *   pdata[2] = value (set only): bit0=CH37, bit1=CH38, bit2=CH39
+ *   pdata[1] = param type:
+ *              0x01 = channel map (bit0=CH37, bit1=CH38, bit2=CH39)
+ *              0x02 = TX power (LL_TX_POWER_xxx values)
+ *   pdata[2] = value (set only)
  *
  * Response format:
  *   Success: [param_type, current_value]
@@ -1226,59 +1228,138 @@ void Peripheral_BleAdvParamCommand(uint8_t addr, uint8_t cmd_code, uint8_t *pdat
     uint8_t sub_cmd = pdata[0];
     uint8_t param_type = pdata[1];
 
-    if (param_type != 0x01) {
-        // Only channel map (0x01) is supported
-        status = STATUS_ERR_PARAM;
-        CH9329_SendResponse(addr, cmd_code, &status, 1, 0);
-        return;
-    }
-
-    switch (sub_cmd) {
-        case 0x00:  // Get current channel map
+    switch (param_type) {
+        case 0x01:  // Channel map control
         {
-            uint8_t channel_map = 0;
-            GAPRole_GetParameter(GAPROLE_ADV_CHANNEL_MAP, &channel_map);
-            response[0] = param_type;      // param type
-            response[1] = channel_map & 0x07;  // current value (3 bits)
-            CH9329_SendResponse(addr, cmd_code, response, 2, 1);
+            switch (sub_cmd) {
+                case 0x00:  // Get current channel map
+                {
+                    uint8_t channel_map = 0;
+                    GAPRole_GetParameter(GAPROLE_ADV_CHANNEL_MAP, &channel_map);
+                    response[0] = param_type;      // param type
+                    response[1] = channel_map & 0x07;  // current value (3 bits)
+                    CH9329_SendResponse(addr, cmd_code, response, 2, 1);
+                    break;
+                }
+
+                case 0x01:  // Set channel map
+                {
+                    if (data_len < 3) {
+                        status = STATUS_ERR_PARAM;
+                        CH9329_SendResponse(addr, cmd_code, &status, 1, 0);
+                        return;
+                    }
+
+                    // Check if already connected - cannot change adv params while connected
+                    if (Peripheral_GetConnHandle() != GAP_CONNHANDLE_INIT) {
+                        status = STATUS_ERR_FRAME;  // Device is connected, cannot change adv params
+                        CH9329_SendResponse(addr, cmd_code, &status, 1, 0);
+                        return;
+                    }
+
+                    uint8_t new_channel_map = pdata[2] & 0x07;  // Only use lower 3 bits
+                    // Ensure at least one channel is enabled
+                    if (new_channel_map == 0) {
+                        new_channel_map = 0x07;  // Default to all channels
+                    }
+
+                    // Stop advertising first
+                    uint8_t adv_enable = FALSE;
+                    GAPRole_SetParameter(GAPROLE_ADVERT_ENABLED, sizeof(uint8_t), &adv_enable);
+
+                    // Set new channel map (BLE stack handles timing internally)
+                    GAPRole_SetParameter(GAPROLE_ADV_CHANNEL_MAP, sizeof(uint8_t), &new_channel_map);
+
+                    // Restart advertising
+                    adv_enable = TRUE;
+                    GAPRole_SetParameter(GAPROLE_ADVERT_ENABLED, sizeof(uint8_t), &adv_enable);
+
+                    response[0] = param_type;      // param type
+                    response[1] = new_channel_map; // new value
+                    CH9329_SendResponse(addr, cmd_code, response, 2, 1);
+                    break;
+                }
+
+                default:
+                    status = STATUS_ERR_PARAM;
+                    CH9329_SendResponse(addr, cmd_code, &status, 1, 0);
+                    break;
+            }
             break;
         }
 
-        case 0x01:  // Set channel map
+        case 0x02:  // TX power control
         {
-            if (data_len < 3) {
-                status = STATUS_ERR_PARAM;
-                CH9329_SendResponse(addr, cmd_code, &status, 1, 0);
-                return;
+            switch (sub_cmd) {
+                case 0x00:  // Get current TX power
+                {
+                    // Return the configured TX power value
+                    uint8_t current_power = BLE_TX_POWER;
+                    response[0] = param_type;      // param type
+                    response[1] = current_power;   // current value
+                    CH9329_SendResponse(addr, cmd_code, response, 2, 1);
+                    break;
+                }
+
+                case 0x01:  // Set TX power
+                {
+                    if (data_len < 3) {
+                        status = STATUS_ERR_PARAM;
+                        CH9329_SendResponse(addr, cmd_code, &status, 1, 0);
+                        return;
+                    }
+
+                    // Check if already connected - cannot change TX power while connected
+                    if (Peripheral_GetConnHandle() != GAP_CONNHANDLE_INIT) {
+                        status = STATUS_ERR_FRAME;  // Device is connected, cannot change TX power
+                        CH9329_SendResponse(addr, cmd_code, &status, 1, 0);
+                        return;
+                    }
+
+                    uint8_t new_power = pdata[2];
+
+                    // Validate power value - must be one of the defined levels
+                    uint8_t valid = 0;
+                    switch (new_power) {
+                        case LL_TX_POWEER_MINUS_18_DBM:  // 0x01
+                        case LL_TX_POWEER_MINUS_10_DBM:  // 0x03
+                        case LL_TX_POWEER_MINUS_5_DBM:   // 0x05
+                        case LL_TX_POWEER_MINUS_3_DBM:   // 0x07
+                        case LL_TX_POWEER_0_DBM:         // 0x09
+                        case LL_TX_POWEER_1_DBM:         // 0x0B
+                        case LL_TX_POWEER_2_DBM:         // 0x0D
+                        case LL_TX_POWEER_3_DBM:         // 0x11
+                        case LL_TX_POWEER_4_DBM:         // 0x15
+                        case LL_TX_POWEER_5_DBM:         // 0x1B
+                        case LL_TX_POWEER_6_DBM:         // 0x25
+                        case LL_TX_POWEER_7_DBM:         // 0x3F
+                            valid = 1;
+                            break;
+                        default:
+                            valid = 0;
+                            break;
+                    }
+
+                    if (!valid) {
+                        status = STATUS_ERR_PARAM;
+                        CH9329_SendResponse(addr, cmd_code, &status, 1, 0);
+                        return;
+                    }
+
+                    // Set new TX power level
+                    LL_SetTxPowerLevel(new_power);
+
+                    response[0] = param_type;      // param type
+                    response[1] = new_power;       // new value
+                    CH9329_SendResponse(addr, cmd_code, response, 2, 1);
+                    break;
+                }
+
+                default:
+                    status = STATUS_ERR_PARAM;
+                    CH9329_SendResponse(addr, cmd_code, &status, 1, 0);
+                    break;
             }
-
-            // Check if already connected - cannot change adv params while connected
-            if (Peripheral_GetConnHandle() != GAP_CONNHANDLE_INIT) {
-                status = STATUS_ERR_FRAME;  // Device is connected, cannot change adv params
-                CH9329_SendResponse(addr, cmd_code, &status, 1, 0);
-                return;
-            }
-
-            uint8_t new_channel_map = pdata[2] & 0x07;  // Only use lower 3 bits
-            // Ensure at least one channel is enabled
-            if (new_channel_map == 0) {
-                new_channel_map = 0x07;  // Default to all channels
-            }
-
-            // Stop advertising first
-            uint8_t adv_enable = FALSE;
-            GAPRole_SetParameter(GAPROLE_ADVERT_ENABLED, sizeof(uint8_t), &adv_enable);
-
-            // Set new channel map (BLE stack handles timing internally)
-            GAPRole_SetParameter(GAPROLE_ADV_CHANNEL_MAP, sizeof(uint8_t), &new_channel_map);
-
-            // Restart advertising
-            adv_enable = TRUE;
-            GAPRole_SetParameter(GAPROLE_ADVERT_ENABLED, sizeof(uint8_t), &adv_enable);
-
-            response[0] = param_type;      // param type
-            response[1] = new_channel_map; // new value
-            CH9329_SendResponse(addr, cmd_code, response, 2, 1);
             break;
         }
 
