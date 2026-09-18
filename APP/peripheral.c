@@ -1384,7 +1384,7 @@ void Peripheral_BleAdvParamCommand(uint8_t addr, uint8_t cmd_code, uint8_t *pdat
                         return;
                     }
 
-                    // Check frequency band parameter (pdata[2])
+                    // Check frequency band parameter (pdata[2]) - required for start
                     if (data_len < 3) {
                         status = STATUS_ERR_PARAM;
                         CH9329_SendResponse(addr, cmd_code, &status, 1, 0);
@@ -1394,14 +1394,14 @@ void Peripheral_BleAdvParamCommand(uint8_t addr, uint8_t cmd_code, uint8_t *pdat
                     // Map frequency band to TX channel
                     // Test channel formula: freq = 2402 + 2 * channel (MHz)
                     // 0 = Low (CH37, 2402 MHz) -> test channel 0
-                    // 1 = Medium (CH38, 2426 MHz) -> test channel 12
+                    // 1 = Medium (2440 MHz) -> test channel 19
                     // 2 = High (CH39, 2480 MHz) -> test channel 39
                     switch (pdata[2]) {
                         case 0:
                             tx_channel = 0;   // 2402 MHz
                             break;
                         case 1:
-                            tx_channel = 12;  // 2426 MHz
+                            tx_channel = 19;  // 2440 MHz
                             break;
                         case 2:
                             tx_channel = 39;  // 2480 MHz
