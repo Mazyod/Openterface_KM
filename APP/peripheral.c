@@ -1372,15 +1372,43 @@ void Peripheral_BleAdvParamCommand(uint8_t addr, uint8_t cmd_code, uint8_t *pdat
         case 0x03:  // BLE Test Mode (using LL Test API)
         {
             switch (sub_cmd) {
-                case 0x00:  // Start test mode - continuous TX at 2402 MHz
+                case 0x00:  // Start test mode - continuous TX at selected frequency
                 {
                     bStatus_t ret;
+                    uint8_t tx_channel;
 
                     // Check if already connected
                     if (Peripheral_GetConnHandle() != GAP_CONNHANDLE_INIT) {
                         status = STATUS_ERR_FRAME;
                         CH9329_SendResponse(addr, cmd_code, &status, 1, 0);
                         return;
+                    }
+
+                    // Check frequency band parameter (pdata[2])
+                    if (data_len < 3) {
+                        status = STATUS_ERR_PARAM;
+                        CH9329_SendResponse(addr, cmd_code, &status, 1, 0);
+                        return;
+                    }
+
+                    // Map frequency band to TX channel
+                    // 0 = Low (CH37, 2402 MHz)
+                    // 1 = Medium (CH38, 2426 MHz)
+                    // 2 = High (CH39, 2480 MHz)
+                    switch (pdata[2]) {
+                        case 0:
+                            tx_channel = 0;  // CH37 = 2402 MHz
+                            break;
+                        case 1:
+                            tx_channel = 1;  // CH38 = 2426 MHz
+                            break;
+                        case 2:
+                            tx_channel = 2;  // CH39 = 2480 MHz
+                            break;
+                        default:
+                            status = STATUS_ERR_PARAM;
+                            CH9329_SendResponse(addr, cmd_code, &status, 1, 0);
+                            return;
                     }
 
                     // Step 1: Stop advertising and wait for it to fully stop
@@ -1395,10 +1423,10 @@ void Peripheral_BleAdvParamCommand(uint8_t addr, uint8_t cmd_code, uint8_t *pdat
                     // Using BLE 5.x test command (opcode 0x2034)
                     // Parameters: TX_Channel, Test_Data_Length, Packet_Payload, PHY
                     uint8_t test_params[4];
-                    test_params[0] = 0;    // TX_Channel: 0 = 2402 MHz
-                    test_params[1] = 255;  // Test_Data_Length: 255 bytes (max for BLE 5.x)
-                    test_params[2] = 4;    // Packet_Payload: 4 = 11111111 (continuous carrier)
-                    test_params[3] = 1;    // PHY: 1 = LE 1M PHY
+                    test_params[0] = tx_channel;  // TX_Channel: 0/1/2
+                    test_params[1] = 255;         // Test_Data_Length: 255 bytes (max for BLE 5.x)
+                    test_params[2] = 4;           // Packet_Payload: 4 = 11111111 (continuous carrier)
+                    test_params[3] = 1;           // PHY: 1 = LE 1M PHY
 
                     ret = API_LE_TransmitterTestCmd(test_params, 0x2034);
 
@@ -1406,9 +1434,9 @@ void Peripheral_BleAdvParamCommand(uint8_t addr, uint8_t cmd_code, uint8_t *pdat
                         // BLE 5.x command failed, try BLE 4.x command (opcode 0x201E)
                         // For BLE 4.x, max length is 37 bytes
                         uint8_t test_params_v4[3];
-                        test_params_v4[0] = 0;    // TX_Channel: 0 = 2402 MHz
-                        test_params_v4[1] = 37;   // Test_Data_Length: 37 bytes (max for BLE 4.x)
-                        test_params_v4[2] = 4;    // Packet_Payload: 4 = 11111111 (continuous carrier)
+                        test_params_v4[0] = tx_channel;  // TX_Channel: 0/1/2
+                        test_params_v4[1] = 37;          // Test_Data_Length: 37 bytes (max for BLE 4.x)
+                        test_params_v4[2] = 4;           // Packet_Payload: 4 = 11111111 (continuous carrier)
                         ret = API_LE_TransmitterTestCmd(test_params_v4, 0x201E);
                     }
 
