@@ -1407,6 +1407,7 @@ void Peripheral_BleAdvParamCommand(uint8_t addr, uint8_t cmd_code, uint8_t *pdat
                 {
                     bStatus_t ret;
                     uint8_t tx_channel;
+                    uint8_t tx_power;
 
                     // Check if already connected
                     if (Peripheral_GetConnHandle() != GAP_CONNHANDLE_INIT) {
@@ -1415,8 +1416,8 @@ void Peripheral_BleAdvParamCommand(uint8_t addr, uint8_t cmd_code, uint8_t *pdat
                         return;
                     }
 
-                    // Check frequency band parameter (pdata[2]) - required for start
-                    if (data_len < 3) {
+                    // Check frequency band and power parameters (pdata[2], pdata[3]) - required for start
+                    if (data_len < 4) {
                         status = STATUS_ERR_PARAM;
                         CH9329_SendResponse(addr, cmd_code, &status, 1, 0);
                         return;
@@ -1443,13 +1444,36 @@ void Peripheral_BleAdvParamCommand(uint8_t addr, uint8_t cmd_code, uint8_t *pdat
                             return;
                     }
 
+                    // Validate and set TX power (pdata[3])
+                    // Power value must be one of the defined levels
+                    tx_power = pdata[3];
+                    switch (tx_power) {
+                        case LL_TX_POWEER_MINUS_18_DBM:  // 0x01 = -18 dBm
+                        case LL_TX_POWEER_MINUS_10_DBM:  // 0x03 = -10 dBm
+                        case LL_TX_POWEER_MINUS_5_DBM:   // 0x05 = -5 dBm
+                        case LL_TX_POWEER_MINUS_3_DBM:   // 0x07 = -3 dBm
+                        case LL_TX_POWEER_0_DBM:         // 0x09 = 0 dBm
+                        case LL_TX_POWEER_1_DBM:         // 0x0B = +1 dBm
+                        case LL_TX_POWEER_2_DBM:         // 0x0D = +2 dBm
+                        case LL_TX_POWEER_3_DBM:         // 0x11 = +3 dBm
+                        case LL_TX_POWEER_4_DBM:         // 0x15 = +4 dBm
+                        case LL_TX_POWEER_5_DBM:         // 0x1B = +5 dBm
+                        case LL_TX_POWEER_6_DBM:         // 0x25 = +6 dBm
+                        case LL_TX_POWEER_7_DBM:         // 0x3F = +7 dBm
+                            break;  // Valid power level
+                        default:
+                            status = STATUS_ERR_PARAM;
+                            CH9329_SendResponse(addr, cmd_code, &status, 1, 0);
+                            return;
+                    }
+
                     // Step 1: Stop advertising and wait for it to fully stop
                     uint8_t adv_enable = FALSE;
                     GAPRole_SetParameter(GAPROLE_ADVERT_ENABLED, sizeof(uint8_t), &adv_enable);
 
-                    // Step 2: Set max TX power (7 dBm)
-                    LL_SetTxPowerLevel(LL_TX_POWEER_7_DBM);
-                    g_current_tx_power = LL_TX_POWEER_7_DBM;
+                    // Step 2: Set TX power (user specified)
+                    LL_SetTxPowerLevel(tx_power);
+                    g_current_tx_power = tx_power;
 
                     // Step 3: Start transmitter test with optimized parameters
                     // Using BLE 5.x test command (opcode 0x2034)
@@ -1477,8 +1501,9 @@ void Peripheral_BleAdvParamCommand(uint8_t addr, uint8_t cmd_code, uint8_t *pdat
 
                     response[0] = param_type;
                     response[1] = (ret == 0) ? 0x01 : 0x02;  // 0x01=success, 0x02=test started with fallback
-                    response[2] = ret;  // Return status code
-                    CH9329_SendResponse(addr, cmd_code, response, 3, 1);
+                    response[2] = ret;   // Return status code
+                    response[3] = tx_power;  // Return actual TX power used
+                    CH9329_SendResponse(addr, cmd_code, response, 4, 1);
                     break;
                 }
 
