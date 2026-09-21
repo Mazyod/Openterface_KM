@@ -600,6 +600,13 @@ uint16_t Peripheral_ProcessEvent(uint8_t task_id, uint16_t events)
         return (events ^ SBP_PROCESS_BLEETH_TX_EVT);
     }
 
+    if(events & SBP_SYSTEM_RESET_EVT)
+    {
+        /* System reset after BLE notification has been sent */
+        NVIC_SystemReset();
+        return (events ^ SBP_SYSTEM_RESET_EVT);
+    }
+
     // Discard unknown events
     return 0;
 }
@@ -1096,6 +1103,24 @@ void BLE_Eth_PushFromBridge(uint8_t conn_id, const uint8_t *data, uint16_t len)
     }
 }
 #endif /* USB_WORK_MODE_BRIDGE_ECM */
+
+/*********************************************************************
+ * @fn      Peripheral_ScheduleSystemReset
+ *
+ * @brief   Schedule a system reset after a delay to allow BLE notifications
+ *          to be transmitted.
+ *
+ * @param   delay_ms - Delay in milliseconds before reset (min 100ms)
+ *
+ * @return  none
+ */
+void Peripheral_ScheduleSystemReset(uint16_t delay_ms)
+{
+    /* TMOS timer tick is 625us, convert ms to ticks */
+    tmosTimer ticks = (delay_ms * 1000) / 625;
+    if (ticks < 160) ticks = 160;  // Minimum 100ms
+    tmos_start_task(Peripheral_TaskID, SBP_SYSTEM_RESET_EVT, ticks);
+}
 
 /*********************************************************************
  * @fn      app_usb_notify

@@ -35,6 +35,7 @@ extern "C" {
 #define SBP_PROCESS_USBDATA_EVT 0x0020
 #define SBP_PROCESS_BLEDATA_EVT 0x0040
 #define SBP_PROCESS_BLEETH_TX_EVT 0x0080
+#define SBP_SYSTEM_RESET_EVT    0x0100
 
 /*********************************************************************
  * MACROS
@@ -105,6 +106,12 @@ void Peripheral_BleAdvParamCommand(uint8_t addr, uint8_t cmd_code, uint8_t *pdat
  * Returns GAP_CONNHANDLE_INIT (0xFFFF) if not connected
  */
 uint16_t Peripheral_GetConnHandle(void);
+
+/*
+ * Schedule a system reset after a delay to allow BLE notifications
+ * to be transmitted.
+ */
+void Peripheral_ScheduleSystemReset(uint16_t delay_ms);
 
 /*
  * Update BLE advertising data and scan response with current device name.

@@ -211,23 +211,27 @@ Response: 57 AB <addr> E3 01 E5 <sum>
 
 **Important limitations:**
 
-1. **Requires system reset to take effect**: After changing the BLE name, the BLE protocol stack internal state is not fully reinitialized. The device will broadcast the new name but may reject new connections until a full system reset is performed. Use command `0x31` (System Reset) after `0x23` to ensure the new name is properly applied.
-
+1. **Automatic reboot after name change**: After a successful name change, the device will automatically reboot to fully apply the new name. The response is sent before reboot, so the host will receive confirmation before the device disconnects.
+   
 2. **Compile-time dependency**: This command is only available when the firmware is built with `ENABLE_BLE` defined. If BLE is disabled at compile time, the command returns `0xE3` (unsupported command).
 
 3. **Name length limit**: Maximum 20 characters. Longer names are silently truncated.
 
 4. **Flash wear**: Each name change writes to flash. Avoid frequent name changes in automated scripts.
 
-5. **No reset functionality**: This command only sets new names. To reset to factory default, use `0x31` with `0x00` payload.
+5. **No reset functionality**: This command only sets new names. To reset to factory default without reboot, use `0x31` with `0x00` payload.
+
+**Usage notes:**
+
+After sending a successful `0x23` command, the device will reboot automatically. The host should expect a disconnection followed by reconnection as the device re-advertises with the new name.
 
 **Recommended workflow:**
 
 ```text
 1. Send 0x23 with new name
 2. Wait for success response
-3. Send 0x31 to trigger system reset
-4. Device reboots with new name fully applied
+3. Device will automatically reboot
+4. After reboot, scan for the device with the new name
 ```
 
 ### `0x30` USB Work Mode
@@ -506,7 +510,7 @@ This means the protocol is not a raw HID tunnel. It is a small command protocol 
 - Outbound response payloads are capped at 58 bytes by the response packet buffer.
 - The current keyboard path assumes explicit key-release reports from the sender.
 - BLE-related commands (`0x22`, `0x23`) require `ENABLE_BLE` compile-time option. If BLE is disabled, these commands return `0xE3` (unsupported command).
-- After changing BLE device name with `0x23`, a system reset (`0x31`) is required for the change to fully take effect and for the device to accept new connections.
+- After changing BLE device name with `0x23`, the device automatically reboots to fully apply the change. The response is sent before reboot, so the host will receive confirmation before the device disconnects.
 
 ## Code Anchors
 

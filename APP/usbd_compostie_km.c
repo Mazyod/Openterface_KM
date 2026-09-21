@@ -339,10 +339,8 @@ void CH9329_DispatchCommand(uint8_t addr, uint8_t cmd_code, uint8_t* pdata, uint
                 if (name_changed) {
                     Peripheral_UpdateBLEAdvertisingData();
                     CH9329_SendResponse(addr, cmd_code, &status, 1, 1);
-                    // Delay to ensure response is sent before reset
-                    for (volatile uint32_t i = 0; i < 100000; i++);
-                    // Reboot to fully apply the new name
-                    NVIC_SystemReset();
+                    // Schedule reset after 500ms to allow BLE notification to be sent
+                    Peripheral_ScheduleSystemReset(500);
                 }
 
                 CH9329_SendResponse(addr, cmd_code, &status, 1, 1);
@@ -371,9 +369,8 @@ void CH9329_DispatchCommand(uint8_t addr, uint8_t cmd_code, uint8_t* pdata, uint
                 }
 
                 CH9329_SendResponse(addr, cmd_code, &status, 1, 1);
-                // Delay to ensure response is sent before reset
-                for (volatile uint32_t i = 0; i < 100000; i++);
-                NVIC_SystemReset();
+                // Schedule reset after 500ms to allow BLE notification to be sent
+                Peripheral_ScheduleSystemReset(500);
             }
             break;
         //cmd=08,Get parameter configuration(Only used for matching with ch9329)
