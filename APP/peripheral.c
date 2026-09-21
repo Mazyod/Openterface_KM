@@ -26,6 +26,7 @@
 #include "ble_usb_service.h"
 #include "include/ble_eth_protocol.h"
 #include "include/default_target_config.h"
+#include "include/ble_name_config.h"
 #include "usbd_composite_km.h"
 #include "include/ecm_bridge.h"
 #include "RGB.h"
@@ -127,7 +128,7 @@ static uint8_t advertData[31] = {
     LO_UINT16(SIMPLEPROFILE_SERV_UUID),
     HI_UINT16(SIMPLEPROFILE_SERV_UUID)
 };
-static uint8_t advertDataLen = 8; // Initial length without device name
+static uint8_t advertDataLen = 7; // Initial length without device name
 
 // GAP GATT Attributes
 static uint8_t attDeviceName[GAP_DEVICE_NAME_LEN] = {0};
@@ -212,6 +213,8 @@ uint8_t Peripheral_IsCh9329CommandByte(uint8_t cmd)
         case CMD_SD_SWITCH:          // 0x17
         case CMD_DS18B20_GET_TEMP:   // 0x18
         case CMD_BLE_ADV_PARAM:      // 0x19
+        case CMD_BLE_SECURITY:       // 0x22
+        case CMD_BLE_SET_NAME:       // 0x23
         case CMD_USB_WORK_MODE:      // 0x30
             return 1;
         default:
@@ -293,30 +296,33 @@ void Peripheral_Init()
 {
     Peripheral_TaskID = TMOS_ProcessEventRegister(Peripheral_ProcessEvent);
 
+    // 【Compile-time guarantee】KVM-GO: true initialization; MiniKVM: empty macro expansion
+    BLE_NameConfig_Init();
+
     // Setup the GAP Peripheral Role Profile
     {
         uint8_t  initial_advertising_enable = TRUE;
         uint16_t desired_min_interval = DEFAULT_DESIRED_MIN_CONN_INTERVAL;
         uint16_t desired_max_interval = DEFAULT_DESIRED_MAX_CONN_INTERVAL;
-        uint8_t nameLen = sizeof(BLE_DEVICE_NAME) - 1;
+        uint8_t nameLen = strlen(g_ble_name.name);  // Use runtime state
         uint8_t deviceNameLen = sizeof(attDeviceName) - 1;
 
         if(nameLen > 20) nameLen = 20;
         if(deviceNameLen > sizeof(BLE_DEVICE_NAME) - 1) deviceNameLen = sizeof(BLE_DEVICE_NAME) - 1;
 
         tmos_memset(attDeviceName, 0, sizeof(attDeviceName));
-        tmos_memcpy(attDeviceName, BLE_DEVICE_NAME, deviceNameLen);
+        tmos_memcpy(attDeviceName, g_ble_name.name, deviceNameLen);
 
         // Add device name to advertisement data (not just scan response)
         advertData[advertDataLen++] = nameLen + 1;
         advertData[advertDataLen++] = GAP_ADTYPE_LOCAL_NAME_COMPLETE;
-        tmos_memcpy(&advertData[advertDataLen], BLE_DEVICE_NAME, nameLen);
+        tmos_memcpy(&advertData[advertDataLen], g_ble_name.name, nameLen);
         advertDataLen += nameLen;
 
         scanRspDataLen = 0;
         scanRspData[scanRspDataLen++] = nameLen + 1;
         scanRspData[scanRspDataLen++] = GAP_ADTYPE_LOCAL_NAME_COMPLETE;
-        tmos_memcpy(&scanRspData[scanRspDataLen], BLE_DEVICE_NAME, nameLen);
+        tmos_memcpy(&scanRspData[scanRspDataLen], g_ble_name.name, nameLen);
         scanRspDataLen += nameLen;
         
         scanRspData[scanRspDataLen++] = 0x05;
@@ -1489,6 +1495,76 @@ void Peripheral_BleAdvParamCommand(uint8_t addr, uint8_t cmd_code, uint8_t *pdat
             CH9329_SendResponse(addr, cmd_code, &status, 1, 0);
             break;
     }
+}
+
+/*********************************************************************
+ * @fn      Peripheral_UpdateBLEAdvertisingData
+ *
+ * @brief   Update BLE advertising data and scan response with current device name
+ *
+ * @details This function should be called after the device name is changed
+ *          to ensure the new name appears in BLE advertisements.
+ *          It stops advertising, updates the data, and restarts advertising.
+ *
+ * @param   none
+ *
+ * @return  none
+ */
+void Peripheral_UpdateBLEAdvertisingData(void)
+{
+    uint8_t advertising_enable = FALSE;
+    uint8_t nameLen;
+    uint8_t deviceNameLen;
+
+    // Stop advertising first
+    GAPRole_SetParameter(GAPROLE_ADVERT_ENABLED, sizeof(uint8_t), &advertising_enable);
+
+    // Calculate name length
+    nameLen = strlen(g_ble_name.name);
+    deviceNameLen = sizeof(attDeviceName) - 1;
+
+    if(nameLen > 20) nameLen = 20;
+    if(deviceNameLen > 20) deviceNameLen = 20;
+
+    // Update GAP device name attribute
+    tmos_memset(attDeviceName, 0, sizeof(attDeviceName));
+    tmos_memcpy(attDeviceName, g_ble_name.name, deviceNameLen);
+    GGS_SetParameter(GGS_DEVICE_NAME_ATT, sizeof(attDeviceName), attDeviceName);
+
+    // Rebuild advertising data with new name
+    advertDataLen = 7; // Reset to initial length (flags + UUID)
+    advertData[advertDataLen++] = nameLen + 1;
+    advertData[advertDataLen++] = GAP_ADTYPE_LOCAL_NAME_COMPLETE;
+    tmos_memcpy(&advertData[advertDataLen], g_ble_name.name, nameLen);
+    advertDataLen += nameLen;
+
+    // Rebuild scan response data with new name
+    scanRspDataLen = 0;
+    scanRspData[scanRspDataLen++] = nameLen + 1;
+    scanRspData[scanRspDataLen++] = GAP_ADTYPE_LOCAL_NAME_COMPLETE;
+    tmos_memcpy(&scanRspData[scanRspDataLen], g_ble_name.name, nameLen);
+    scanRspDataLen += nameLen;
+
+    // Add connection interval range
+    scanRspData[scanRspDataLen++] = 0x05;
+    scanRspData[scanRspDataLen++] = GAP_ADTYPE_SLAVE_CONN_INTERVAL_RANGE;
+    scanRspData[scanRspDataLen++] = LO_UINT16(DEFAULT_DESIRED_MIN_CONN_INTERVAL);
+    scanRspData[scanRspDataLen++] = HI_UINT16(DEFAULT_DESIRED_MIN_CONN_INTERVAL);
+    scanRspData[scanRspDataLen++] = LO_UINT16(DEFAULT_DESIRED_MAX_CONN_INTERVAL);
+    scanRspData[scanRspDataLen++] = HI_UINT16(DEFAULT_DESIRED_MAX_CONN_INTERVAL);
+
+    // Add power level
+    scanRspData[scanRspDataLen++] = 0x02;
+    scanRspData[scanRspDataLen++] = GAP_ADTYPE_POWER_LEVEL;
+    scanRspData[scanRspDataLen++] = 0;
+
+    // Update GAP parameters
+    GAPRole_SetParameter(GAPROLE_SCAN_RSP_DATA, scanRspDataLen, scanRspData);
+    GAPRole_SetParameter(GAPROLE_ADVERT_DATA, advertDataLen, advertData);
+
+    // Restart advertising
+    advertising_enable = TRUE;
+    GAPRole_SetParameter(GAPROLE_ADVERT_ENABLED, sizeof(uint8_t), &advertising_enable);
 }
 
 #endif /* ENABLE_BLE */

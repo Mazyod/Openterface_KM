@@ -39,7 +39,7 @@
 #define CH9329_FRAME_HEAD2      0xAB
 #define CMD_GET_INFO  0x01
 #define CMD_SEND_KB_GENERAL_DATA 0x02
-#define CMD_SEND_KB_MEDIA_DATA  0x03  
+#define CMD_SEND_KB_MEDIA_DATA  0x03
 #define CMD_SEND_MS_ABS_DATA    0x04
 #define CMD_SEND_MS_REL_DATA    0x05
 #define CMD_GET_PARA_CFG     0x08
@@ -47,6 +47,8 @@
 #define CMD_DS18B20_GET_TEMP   0x18
 #define CMD_BLE_SECURITY       0x22
 #define CMD_BLE_ADV_PARAM      0x19   // BLE广播参数控制
+#define CMD_BLE_SET_NAME       0x23   // BLE名称设置/恢复出厂设置
+#define CMD_SYSTEM_RESET       0x31   // 系统复位
 #define CMD_USB_WORK_MODE      0x30
 // ACK Status Codes
 #define STATUS_SUCCESS        0x00

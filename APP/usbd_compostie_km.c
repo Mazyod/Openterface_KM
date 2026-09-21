@@ -13,6 +13,7 @@
 #include "km_ring.h"
 #include "Version_selection.h"
 #include "include/usb_mode_config.h"
+#include "include/ble_name_config.h"
 
 /* External variable from ch32v20x_usbfs_device.c - needs to be reset after STOP mode wakeup */
 extern volatile uint8_t USBFS_DevSleepStatus;
@@ -308,6 +309,72 @@ void CH9329_DispatchCommand(uint8_t addr, uint8_t cmd_code, uint8_t* pdata, uint
             CH9329_SendResponse(addr, cmd_code, &err, 1, 0);
         }
 #endif
+            break;
+        //cmd=0x23,BLE name configuration (set name / reset to factory)
+        case CMD_BLE_SET_NAME:
+#ifdef ENABLE_BLE
+            {
+                uint8_t status = STATUS_SUCCESS;
+                bool name_changed = false;
+
+                if (data_len == 0 || pdata[0] == 0x00) {
+                    // Empty payload or 0x00 is not allowed for setting name
+                    status = STATUS_ERR_PARAM;
+                }
+                else {  // Set new name
+                    // Safely copy name (max 20 bytes + null terminator)
+                    char name[21];
+                    uint8_t copy_len = (data_len > 20) ? 20 : data_len;
+                    memcpy(name, pdata, copy_len);
+                    name[copy_len] = '\0';  // Ensure null termination
+
+                    if (BLE_NameConfig_Set(name)) {
+                        name_changed = true;
+                    } else {
+                        status = STATUS_ERR_PARAM;
+                    }
+                }
+
+                // Update advertising data and GAP characteristics if name changed successfully
+                if (name_changed) {
+                    Peripheral_UpdateBLEAdvertisingData();
+                    CH9329_SendResponse(addr, cmd_code, &status, 1, 1);
+                    // Delay to ensure response is sent before reset
+                    for (volatile uint32_t i = 0; i < 100000; i++);
+                    // Reboot to fully apply the new name
+                    NVIC_SystemReset();
+                }
+
+                CH9329_SendResponse(addr, cmd_code, &status, 1, 1);
+            }
+#else
+        {
+            uint8_t err = STATUS_ERR_CMD;
+            CH9329_SendResponse(addr, cmd_code, &err, 1, 0);
+        }
+#endif
+            break;
+        case CMD_SYSTEM_RESET:
+            {
+                uint8_t status = STATUS_SUCCESS;
+                bool reset_to_default = false;
+
+                // Check if payload contains 0x00 (reset to default name)
+                if (data_len > 0 && pdata[0] == 0x00) {
+                    // Reset BLE name to factory default
+                    if (BLE_NameConfig_Reset()) {
+                        reset_to_default = true;
+                        Peripheral_UpdateBLEAdvertisingData();
+                    } else {
+                        status = STATUS_ERR_FRAME;
+                    }
+                }
+
+                CH9329_SendResponse(addr, cmd_code, &status, 1, 1);
+                // Delay to ensure response is sent before reset
+                for (volatile uint32_t i = 0; i < 100000; i++);
+                NVIC_SystemReset();
+            }
             break;
         //cmd=08,Get parameter configuration(Only used for matching with ch9329)
         case CMD_GET_PARA_CFG:

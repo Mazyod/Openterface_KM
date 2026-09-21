@@ -79,7 +79,9 @@ The response payload is usually a 1-byte status for write-like commands, or a st
 | `0x17` | SD switch | board-specific | board-specific | Openterface extension |
 | `0x18` | Temperature | board-specific | board-specific | DS18B20 extension |
 | `0x22` | BLE security | 1-byte sub-command | status + sub-command data | Openterface extension for BLE pairing/bond management |
+| `0x23` | BLE set name | 1-20 bytes name or `0x00` | 1-byte status | Openterface extension for BLE device name configuration |
 | `0x30` | USB work mode | optional control payload | 12-byte status block | Openterface extension for runtime USB personality selection |
+| `0x31` | System reset | none | 1-byte status | Openterface extension for system reboot |
 
 ## Command Details
 
@@ -177,6 +179,56 @@ The payload is a single sub-command byte; responses follow the standard
 
 Status values follow the status code table above. `0x01` and `0x03` can also be
 tunneled through the BLE rawpass characteristic once the link is encrypted.
+
+### `0x23` BLE Set Name
+
+This is an Openterface extension for dynamic BLE device name configuration. The name is persisted to flash and survives power cycles.
+
+**Payload format:**
+
+- 1-20 bytes: set new BLE device name (ASCII string, no null terminator required)
+- Empty payload or `0x00` byte: returns `0xE5` parameter error (use `0x31` with `0x00` to reset to default)
+
+**Response:**
+
+- Single byte status (`0x00` = success, `0xE5` = parameter error, `0xE6` = flash operation failed)
+
+**Examples:**
+
+Set name to `"kvmgo-test"`:
+
+```text
+Request : 57 AB <addr> 23 0A 6B 76 6D 67 6F 2D 74 65 73 74 <sum>
+Response: 57 AB <addr> A3 01 00 <sum>
+```
+
+Empty payload (error):
+
+```text
+Request : 57 AB <addr> 23 00 <sum>
+Response: 57 AB <addr> E3 01 E5 <sum>
+```
+
+**Important limitations:**
+
+1. **Requires system reset to take effect**: After changing the BLE name, the BLE protocol stack internal state is not fully reinitialized. The device will broadcast the new name but may reject new connections until a full system reset is performed. Use command `0x31` (System Reset) after `0x23` to ensure the new name is properly applied.
+
+2. **Compile-time dependency**: This command is only available when the firmware is built with `ENABLE_BLE` defined. If BLE is disabled at compile time, the command returns `0xE3` (unsupported command).
+
+3. **Name length limit**: Maximum 20 characters. Longer names are silently truncated.
+
+4. **Flash wear**: Each name change writes to flash. Avoid frequent name changes in automated scripts.
+
+5. **No reset functionality**: This command only sets new names. To reset to factory default, use `0x31` with `0x00` payload.
+
+**Recommended workflow:**
+
+```text
+1. Send 0x23 with new name
+2. Wait for success response
+3. Send 0x31 to trigger system reset
+4. Device reboots with new name fully applied
+```
 
 ### `0x30` USB Work Mode
 
@@ -387,6 +439,55 @@ Response: 57 AB <addr> B0 01 00 <sum>
 
 The same state model is also mirrored through the vendor HID Feature report with report ID `0x30`, so desktop tools can manage USB mode selection even when CDC ACM or ECM binding is inconvenient.
 
+### `0x31` System Reset
+
+This is an Openterface extension for triggering a full system reboot. It is primarily used after BLE configuration changes (such as `0x23` BLE Set Name) to ensure all protocol stack state is fully reinitialized.
+
+**Payload format:**
+
+- No payload (empty): normal system reset
+- Single `0x00` byte: reset BLE name to factory default (`"KVM-GO"`) before rebooting
+
+**Response:**
+
+- Single byte status (`0x00` = success)
+- Device reboots immediately after sending response
+
+**Examples:**
+
+Normal system reset:
+
+```text
+Request : 57 AB <addr> 31 00 <sum>
+Response: 57 AB <addr> B1 01 00 <sum>
+[Device reboots]
+```
+
+Reset BLE name to factory default and reboot:
+
+```text
+Request : 57 AB <addr> 31 01 00 <sum>
+Response: 57 AB <addr> B1 01 00 <sum>
+[BLE name reset to "KVM-GO", device reboots]
+```
+
+**Important limitations:**
+
+1. **Immediate reboot**: The device reboots within milliseconds after sending the response. Any pending operations will be aborted.
+
+2. **Connection loss**: If issued over BLE, the connection will be dropped immediately after the response. Host software should expect a disconnection event.
+
+3. **No confirmation**: The command does not wait for acknowledgment from the host. Once sent, the reboot is unconditional.
+
+4. **Use case**: This command is intended for configuration workflows where a full reinitialization is required. For normal operation, the device manages its own state without requiring manual resets.
+
+**When to use:**
+
+- After changing BLE device name with `0x23`
+- To reset BLE name to factory default (with `0x00` payload)
+- After other configuration changes that require full stack reinitialization
+- As a recovery mechanism when the device is in an inconsistent state
+
 ## Practical Interpretation
 
 For host software, the safest mental model is:
@@ -401,9 +502,11 @@ This means the protocol is not a raw HID tunnel. It is a small command protocol 
 ## Limitations And Compatibility Notes
 
 - The implementation is compatibility-oriented, not a bit-for-bit clone of every possible CH9329 feature.
-- `0x17`, `0x18`, and `0x30` are project-specific extensions.
+- `0x17`, `0x18`, `0x23`, `0x30`, and `0x31` are project-specific extensions.
 - Outbound response payloads are capped at 58 bytes by the response packet buffer.
 - The current keyboard path assumes explicit key-release reports from the sender.
+- BLE-related commands (`0x22`, `0x23`) require `ENABLE_BLE` compile-time option. If BLE is disabled, these commands return `0xE3` (unsupported command).
+- After changing BLE device name with `0x23`, a system reset (`0x31`) is required for the change to fully take effect and for the device to accept new connections.
 
 ## Code Anchors
 

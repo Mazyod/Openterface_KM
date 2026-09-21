@@ -106,6 +106,13 @@ void Peripheral_BleAdvParamCommand(uint8_t addr, uint8_t cmd_code, uint8_t *pdat
  */
 uint16_t Peripheral_GetConnHandle(void);
 
+/*
+ * Update BLE advertising data and scan response with current device name.
+ * Called after device name is changed to ensure new name appears in advertisements.
+ * Stops advertising, updates data, and restarts advertising.
+ */
+void Peripheral_UpdateBLEAdvertisingData(void);
+
 #endif /* ENABLE_BLE */
 
 /*********************************************************************
