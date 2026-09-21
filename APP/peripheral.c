@@ -308,7 +308,7 @@ void Peripheral_Init()
         uint8_t deviceNameLen = sizeof(attDeviceName) - 1;
 
         if(nameLen > 20) nameLen = 20;
-        if(deviceNameLen > sizeof(BLE_DEVICE_NAME) - 1) deviceNameLen = sizeof(BLE_DEVICE_NAME) - 1;
+        if(deviceNameLen > 20) deviceNameLen = 20;
 
         tmos_memset(attDeviceName, 0, sizeof(attDeviceName));
         tmos_memcpy(attDeviceName, g_ble_name.name, deviceNameLen);
@@ -998,7 +998,8 @@ void ble_usb_ServiceEvt(uint16_t connection_handle, ble_usb_evt_t *p_evt)
             PRINT("%02x:bleusb_EVT_TX_NOTI_ENABLED\r\n", connection_handle);
             break;
         case BLE_USB_EVT_BLE_DATA_RECIEVED:
-            PRINT("BLE RX DATA len:%d\r\n", p_evt->data.length);
+            PRINT("BLE RX DATA len:%d cmd=0x%02X\r\n", p_evt->data.length,
+                  p_evt->data.length >= 4 ? p_evt->data.p_data[3] : 0);
 
             /* Check if this is a CH9329 command that should be handled locally.
              * CH9329 commands (0x01-0x08, 0x17, 0x18, 0x30) are processed by the
@@ -1009,13 +1010,18 @@ void ble_usb_ServiceEvt(uint16_t connection_handle, ble_usb_evt_t *p_evt)
                 p_evt->data.p_data[1] == CH9329_FRAME_HEAD2 &&
                 Peripheral_IsCh9329CommandByte(p_evt->data.p_data[3]))
             {
+                PRINT("CH9329 path: cmd=0x%02X len=%d\r\n", p_evt->data.p_data[3], p_evt->data.length);
                 /* CH9329 command from BLE — route response via BLE notification */
                 Peripheral_SetBleCh9329Response(1);
                 CH9329_DataParser((uint8_t *)p_evt->data.p_data, p_evt->data.length);
                 Peripheral_SetBleCh9329Response(0);
+                PRINT("CH9329 path done\r\n");
             }
             else
             {
+                PRINT("BLE-Eth/other path: len=%d hdr=0x%02X%02X\r\n", p_evt->data.length,
+                      p_evt->data.length > 0 ? p_evt->data.p_data[0] : 0,
+                      p_evt->data.length > 1 ? p_evt->data.p_data[1] : 0);
                 /* Not a CH9329 command — try BLE-Eth protocol parser */
                 BLE_Eth_Parse(p_evt->data.p_data, p_evt->data.length);
                 tmos_set_event(Peripheral_TaskID, SBP_PROCESS_BLEETH_TX_EVT);
@@ -1119,7 +1125,9 @@ void Peripheral_ScheduleSystemReset(uint16_t delay_ms)
     /* TMOS timer tick is 625us, convert ms to ticks */
     tmosTimer ticks = (delay_ms * 1000) / 625;
     if (ticks < 160) ticks = 160;  // Minimum 100ms
-    tmos_start_task(Peripheral_TaskID, SBP_SYSTEM_RESET_EVT, ticks);
+    PRINT("Scheduling system reset in %d ms (%d ticks)\n", delay_ms, ticks);
+    bStatus_t ret = tmos_start_task(Peripheral_TaskID, SBP_SYSTEM_RESET_EVT, ticks);
+    PRINT("tmos_start_task returned: %d\n", ret);
 }
 
 /*********************************************************************

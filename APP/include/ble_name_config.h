@@ -5,8 +5,8 @@
  * Supports runtime modification of BLE device name via CH9329 command,
  * with persistent storage in Flash. Factory reset restores default name.
  *
- * 【Compile-time guarantee】Only enabled when ENABLE_BLE is defined (KVM-GO).
- * MiniKVM firmware (built without ENABLE_BLE) has zero BLE name config code.
+ * 【Compile-time guarantee】Only enabled when ENABLE_BLE_NAME_CONFIG is defined (KVM-GO).
+ * MiniKVM firmware (built without ENABLE_BLE_NAME_CONFIG) has zero BLE name config code.
  */
 
 #ifndef _BLE_NAME_CONFIG_H
@@ -14,12 +14,13 @@
 
 #include <stdint.h>
 #include <stdbool.h>
+#include "version_selection.h"
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-#if defined(ENABLE_BLE)
+#if (ENABLE_BLE_NAME_CONFIG == 1)
 
 /**
  * @brief Initialize BLE name configuration module
@@ -108,12 +109,12 @@ typedef struct {
 /** Global runtime state instance */
 extern BLE_NameConfig_t g_ble_name;
 
-#else /* !ENABLE_BLE */
+#else /* !ENABLE_BLE_NAME_CONFIG */
 
 /**
  * @brief Empty implementation macros (MiniKVM compilation eliminates call-site code)
  *
- * When ENABLE_BLE is not defined, provides empty definitions so call code compiles
+ * When ENABLE_BLE_NAME_CONFIG is not 1, provides empty definitions so call code compiles
  * but produces no instructions. Avoids need for #ifdef in peripheral.c etc.
  */
 #define BLE_NameConfig_Init()           do {} while(0)

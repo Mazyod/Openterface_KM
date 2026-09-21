@@ -18,14 +18,14 @@
  *   - Default Target Config: 0x0806E000 (second-to-last 4KB)
  *   - BLE Name Config:       0x0806D000 (third-to-last 4KB)
  *
- * 【Compile-time guarantee】Entire file is excluded when ENABLE_BLE is not defined.
+ * 【Compile-time guarantee】Entire file is excluded when ENABLE_BLE_NAME_CONFIG is not 1.
  */
 
 #include "ble_name_config.h"
 #include "ch32v20x_flash.h"
 #include <string.h>
 
-#if defined(ENABLE_BLE)
+#if (ENABLE_BLE_NAME_CONFIG == 1)
 
 #define BLE_NAME_CONFIG_MAGIC             0x424C454Eu  /* "BLEN" */
 #define BLE_NAME_CONFIG_VERSION           1u
@@ -105,15 +105,29 @@ void BLE_NameConfig_Init(void)
     g_ble_name.is_custom = false;
     strcpy(g_ble_name.name, "KVM-GO");
 
+    /* Debug: print Flash record info */
+    PRINT("BLE Name Config: Flash addr=0x%08X\n", BLE_NAME_CONFIG_FLASH_ADDR);
+    PRINT("BLE Name Config: magic=0x%08X (expected 0x%08X)\n", record->magic, BLE_NAME_CONFIG_MAGIC);
+    PRINT("BLE Name Config: version=%d (expected %d)\n", record->record_version, BLE_NAME_CONFIG_VERSION);
+    PRINT("BLE Name Config: name_length=%d\n", record->name_length);
+
     /* Try to load valid configuration from Flash */
     if (record->magic == BLE_NAME_CONFIG_MAGIC &&
         record->record_version == BLE_NAME_CONFIG_VERSION &&
-        record->name_length <= 20 &&
-        record->crc == nameconfig_crc(record)) {
-        /* Copy name from Flash (ensuring null termination) */
-        memcpy(g_ble_name.name, record->name, record->name_length);
-        g_ble_name.name[record->name_length] = '\0';
-        g_ble_name.is_custom = true;
+        record->name_length <= 20) {
+        uint32_t computed_crc = nameconfig_crc(record);
+        PRINT("BLE Name Config: stored_crc=0x%08X, computed_crc=0x%08X\n", record->crc, computed_crc);
+        if (record->crc == computed_crc) {
+            /* Copy name from Flash (ensuring null termination) */
+            memcpy(g_ble_name.name, record->name, record->name_length);
+            g_ble_name.name[record->name_length] = '\0';
+            g_ble_name.is_custom = true;
+            PRINT("BLE Name Config: loaded custom name \"%s\"\n", g_ble_name.name);
+        } else {
+            PRINT("BLE Name Config: CRC mismatch, using default\n");
+        }
+    } else {
+        PRINT("BLE Name Config: invalid record, using default\n");
     }
 }
 
@@ -134,44 +148,76 @@ bool BLE_NameConfig_Set(const char *new_name)
 
     /* Validate input */
     if (new_name == NULL) {
+        PRINT("BLE Name Config Set: NULL name\n");
         return false;
     }
     name_len = strlen(new_name);
     if (name_len == 0 || name_len > 20) {
+        PRINT("BLE Name Config Set: invalid length %d\n", name_len);
         return false;
     }
 
+    PRINT("BLE Name Config Set: setting name to \"%s\" (len=%d)\n", new_name, name_len);
+
     /* Prepare configuration record for Flash */
+    memset(&record, 0, sizeof(record));
     record.magic = BLE_NAME_CONFIG_MAGIC;
     record.record_version = BLE_NAME_CONFIG_VERSION;
     memcpy(record.name, new_name, name_len);
     record.name_length = (uint8_t)name_len;
-    record.padding = 0;  /* Initialize padding for deterministic CRC */
-    record.sequence = flash_record()->sequence + 1u;
+
+    /* Read current sequence from Flash */
+    const BLE_NameConfig_Record_t *current = flash_record();
+    uint32_t current_seq = current->sequence;
+    PRINT("BLE Name Config Set: current seq=0x%08X\n", current_seq);
+
+    /* Handle unprogrammed Flash (all 0xFF) */
+    if (current_seq == 0xFFFFFFFFu) {
+        record.sequence = 1u;
+    } else {
+        record.sequence = current_seq + 1u;
+    }
     record.crc = nameconfig_crc(&record);
+
+    PRINT("BLE Name Config Set: magic=0x%08X, version=%d, seq=%d, crc=0x%08X\n",
+          record.magic, record.record_version, record.sequence, record.crc);
 
     /* Write to Flash: erase then program */
     FLASH_Unlock();
     status = FLASH_ErasePage(BLE_NAME_CONFIG_FLASH_ADDR);
+    PRINT("BLE Name Config Set: erase status=%d\n", status);
     if (status == FLASH_COMPLETE) {
         words = (const uint32_t *)&record;
         for (word_index = 0; word_index < (sizeof(record) / sizeof(uint32_t)); word_index++) {
             status = FLASH_ProgramWord(BLE_NAME_CONFIG_FLASH_ADDR + ((uint32_t)word_index * sizeof(uint32_t)),
                                       words[word_index]);
             if (status != FLASH_COMPLETE) {
+                PRINT("BLE Name Config Set: program failed at word %d, status=%d\n", word_index, status);
                 break;
             }
         }
     }
     FLASH_Lock();
 
+    /* Verify Flash write by reading back */
+    const BLE_NameConfig_Record_t *verify = flash_record();
+    PRINT("BLE Name Config Set: verify read: magic=0x%08X, crc=0x%08X, name_len=%d\n",
+          verify->magic, verify->crc, verify->name_length);
+    if (verify->magic != record.magic || verify->crc != record.crc) {
+        PRINT("BLE Name Config Set: VERIFY FAILED! Data mismatch\n");
+        PRINT("  Expected: magic=0x%08X, crc=0x%08X\n", record.magic, record.crc);
+        return false;
+    }
+
     if (status == FLASH_COMPLETE) {
         /* Update runtime state on successful Flash write */
         memcpy(g_ble_name.name, new_name, name_len);
         g_ble_name.name[name_len] = '\0';
         g_ble_name.is_custom = true;
+        PRINT("BLE Name Config Set: success, name now \"%s\"\n", g_ble_name.name);
         return true;
     }
+    PRINT("BLE Name Config Set: Flash write failed\n");
     return false;
 }
 
@@ -221,13 +267,13 @@ bool BLE_NameConfig_IsCustom(void)
     return g_ble_name.is_custom;
 }
 
-#else /* !ENABLE_BLE */
+#else /* !ENABLE_BLE_NAME_CONFIG */
 
-/* Provide a definition for g_ble_name when BLE is disabled.
+/* Provide a definition for g_ble_name when BLE name config is disabled.
  * This is referenced by peripheral.c but the functions are empty macros. */
 BLE_NameConfig_t g_ble_name = {
     .name = "KVM-GO",
     .is_custom = false
 };
 
-#endif /* ENABLE_BLE */
+#endif /* ENABLE_BLE_NAME_CONFIG */

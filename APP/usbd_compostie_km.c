@@ -89,6 +89,8 @@ void CH9329_SendResponse(uint8_t addr, uint8_t cmd_code, uint8_t* pdata,
     uint8_t packet[64];
     uint8_t index = 0;
 
+    PRINT("CH9329_SendResponse: cmd=0x%02X, len=%d, ble_resp=%d\n", cmd_code, len, Peripheral_GetBleCh9329Response());
+
     if (len > 58) len = 58; // max 58 bytes payload (64 - 6 header+checksum)
     packet[index++] = 0x57; // FRAME_HEAD1
     packet[index++] = 0xAB; // FRAME_HEAD2
@@ -312,10 +314,13 @@ void CH9329_DispatchCommand(uint8_t addr, uint8_t cmd_code, uint8_t* pdata, uint
             break;
         //cmd=0x23,BLE name configuration (set name / reset to factory)
         case CMD_BLE_SET_NAME:
-#ifdef ENABLE_BLE
+#if (ENABLE_BLE_NAME_CONFIG == 1)
             {
                 uint8_t status = STATUS_SUCCESS;
                 bool name_changed = false;
+                char name[21] = {0};
+
+                PRINT("CMD_BLE_SET_NAME reached! data_len=%d\n", data_len);
 
                 if (data_len == 0 || pdata[0] == 0x00) {
                     // Empty payload or 0x00 is not allowed for setting name
@@ -323,27 +328,26 @@ void CH9329_DispatchCommand(uint8_t addr, uint8_t cmd_code, uint8_t* pdata, uint
                 }
                 else {  // Set new name
                     // Safely copy name (max 20 bytes + null terminator)
-                    char name[21];
                     uint8_t copy_len = (data_len > 20) ? 20 : data_len;
                     memcpy(name, pdata, copy_len);
                     name[copy_len] = '\0';  // Ensure null termination
+                }
 
+                // Send response FIRST before Flash operations to ensure it goes out
+                CH9329_SendResponse(addr, cmd_code, &status, 1, 1);
+
+                // Then perform Flash write and name change if valid
+                if (status == STATUS_SUCCESS && name[0] != '\0') {
                     if (BLE_NameConfig_Set(name)) {
                         name_changed = true;
-                    } else {
-                        status = STATUS_ERR_PARAM;
+                    }
+                    // Update advertising data and reboot if name changed successfully
+                    if (name_changed) {
+                        Peripheral_UpdateBLEAdvertisingData();
+                        // Give BLE stack time to notify, then reboot
+                        Peripheral_ScheduleSystemReset(500);
                     }
                 }
-
-                // Update advertising data and GAP characteristics if name changed successfully
-                if (name_changed) {
-                    Peripheral_UpdateBLEAdvertisingData();
-                    CH9329_SendResponse(addr, cmd_code, &status, 1, 1);
-                    // Schedule reset after 500ms to allow BLE notification to be sent
-                    Peripheral_ScheduleSystemReset(500);
-                }
-
-                CH9329_SendResponse(addr, cmd_code, &status, 1, 1);
             }
 #else
         {

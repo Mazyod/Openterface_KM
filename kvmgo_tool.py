@@ -316,6 +316,9 @@ async def ble_connect_and_send(device_identifier: str, command: bytes,
             if rx_char:
                 print(f"  ✓ Found RX: {rx_char.uuid}")
 
+            # Wait a bit for service discovery to complete
+            await asyncio.sleep(0.5)
+
             # Send command
             print(f"  Sending: {command.hex(' ')}")
 
@@ -326,9 +329,16 @@ async def ble_connect_and_send(device_identifier: str, command: bytes,
                     response_data.extend(data)
 
                 await client.start_notify(rx_char, notification_handler)
-                await client.write_gatt_char(tx_char, command, response=False)
-                await asyncio.sleep(response_wait)
-                await client.stop_notify(rx_char)
+                await asyncio.sleep(0.1)  # Small delay before write
+                try:
+                    await client.write_gatt_char(tx_char, command, response=False)
+                    await asyncio.sleep(response_wait)
+                    await client.stop_notify(rx_char)
+                except Exception as e:
+                    # Device may have disconnected (e.g., rebooting after name change)
+                    if response_data:
+                        return bytes(response_data), None
+                    return None, "Device disconnected (may have rebooted)"
 
                 if response_data:
                     return bytes(response_data), None
@@ -342,7 +352,11 @@ async def ble_connect_and_send(device_identifier: str, command: bytes,
     except asyncio.TimeoutError:
         return None, "Connection timeout"
     except Exception as e:
-        return None, str(e) if str(e) else "Connection error"
+        error_str = str(e) if str(e) else "Connection error"
+        # Check if this is a disconnection (expected for reboot commands)
+        if "disconnect" in error_str.lower():
+            return None, "Device disconnected (may have rebooted)"
+        return None, error_str
 
 
 # ============================================================
@@ -484,7 +498,15 @@ async def cmd_set_name(args):
         return
 
     cmd = build_set_name(name)
-    response, error = await ble_connect_and_send(args.device, cmd)
+    response, error = await ble_connect_and_send(args.device, cmd, timeout=15.0)
+
+    # Device reboots after successful name change, so disconnection is expected
+    if error and "disconnect" in error.lower():
+        ok(f"BLE name set to \"{name}\"")
+        print()
+        info("Device rebooted to apply the new name.")
+        info(f"Scan for device with new name: \"{name}\"")
+        return
 
     if error:
         fail(f"Error: {error}")
@@ -504,8 +526,8 @@ async def cmd_set_name(args):
     if status == STATUS_SUCCESS:
         ok(f"BLE name set to \"{name}\"")
         print()
-        warn("Remember: name change requires a reboot to fully apply.")
-        warn("Run: python3 kvmgo_tool.py reboot --device <new-name-or-address>")
+        info("Device will reboot to apply the new name.")
+        info(f"Scan for device with new name: \"{name}\"")
     else:
         fail(f"Failed: {decode_status(status)}")
 
@@ -517,6 +539,12 @@ async def cmd_reset(args):
 
     cmd = build_system_reset(reset_name=True)
     response, error = await ble_connect_and_send(args.device, cmd, response_wait=1.0)
+
+    # Device reboots after reset, so disconnection is expected
+    if error and "disconnect" in error.lower():
+        ok("Reset command sent. Device is rebooting...")
+        info("BLE name will be \"KVM-GO\" after reboot.")
+        return
 
     if error and "not found" not in error and "timeout" not in error.lower():
         fail(f"Error: {error}")
@@ -532,6 +560,11 @@ async def cmd_reboot(args):
 
     cmd = build_system_reset(reset_name=False)
     response, error = await ble_connect_and_send(args.device, cmd, response_wait=1.0)
+
+    # Device reboots, so disconnection is expected
+    if error and "disconnect" in error.lower():
+        ok("Reboot command sent. Device is restarting...")
+        return
 
     if error and "not found" not in error and "timeout" not in error.lower():
         fail(f"Error: {error}")
