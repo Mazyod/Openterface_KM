@@ -317,7 +317,6 @@ void CH9329_DispatchCommand(uint8_t addr, uint8_t cmd_code, uint8_t* pdata, uint
 #if (ENABLE_BLE_NAME_CONFIG == 1)
             {
                 uint8_t status = STATUS_SUCCESS;
-                bool name_changed = false;
                 char name[21] = {0};
 
                 PRINT("CMD_BLE_SET_NAME reached! data_len=%d\n", data_len);
@@ -331,22 +330,39 @@ void CH9329_DispatchCommand(uint8_t addr, uint8_t cmd_code, uint8_t* pdata, uint
                     uint8_t copy_len = (data_len > 20) ? 20 : data_len;
                     memcpy(name, pdata, copy_len);
                     name[copy_len] = '\0';  // Ensure null termination
+
+                    // Perform Flash write BEFORE sending response
+                    BLE_NameConfig_Status_t set_status = BLE_NameConfig_Set(name);
+                    switch (set_status) {
+                        case BLE_NAME_OK:
+                            status = STATUS_SUCCESS;
+                            break;
+                        case BLE_NAME_ERR_NULL_NAME:
+                        case BLE_NAME_ERR_INVALID_LENGTH:
+                            status = STATUS_ERR_PARAM;
+                            break;
+                        case BLE_NAME_ERR_FLASH_ERASE:
+                            status = STATUS_ERR_FLASH_ERASE;
+                            break;
+                        case BLE_NAME_ERR_FLASH_PROGRAM:
+                            status = STATUS_ERR_FLASH_PROGRAM;
+                            break;
+                        case BLE_NAME_ERR_FLASH_VERIFY:
+                            status = STATUS_ERR_FLASH_VERIFY;
+                            break;
+                    }
                 }
 
-                // Send response FIRST before Flash operations to ensure it goes out
-                CH9329_SendResponse(addr, cmd_code, &status, 1, 1);
+                // Send response AFTER Flash operation with appropriate error code
+                // Use resp_mode=1 (0x80) for success, resp_mode=0 (0xC0) for error
+                uint8_t resp_mode = (status == STATUS_SUCCESS) ? 1 : 0;
+                CH9329_SendResponse(addr, cmd_code, &status, 1, resp_mode);
 
-                // Then perform Flash write and name change if valid
-                if (status == STATUS_SUCCESS && name[0] != '\0') {
-                    if (BLE_NameConfig_Set(name)) {
-                        name_changed = true;
-                    }
-                    // Update advertising data and reboot if name changed successfully
-                    if (name_changed) {
-                        Peripheral_UpdateBLEAdvertisingData();
-                        // Give BLE stack time to notify, then reboot
-                        Peripheral_ScheduleSystemReset(500);
-                    }
+                // Update advertising data and reboot if name changed successfully
+                if (status == STATUS_SUCCESS) {
+                    Peripheral_UpdateBLEAdvertisingData();
+                    // Give BLE stack time to notify, then reboot
+                    Peripheral_ScheduleSystemReset(500);
                 }
             }
 #else
@@ -359,20 +375,22 @@ void CH9329_DispatchCommand(uint8_t addr, uint8_t cmd_code, uint8_t* pdata, uint
         case CMD_SYSTEM_RESET:
             {
                 uint8_t status = STATUS_SUCCESS;
-                bool reset_to_default = false;
 
                 // Check if payload contains 0x00 (reset to default name)
                 if (data_len > 0 && pdata[0] == 0x00) {
-                    // Reset BLE name to factory default
-                    if (BLE_NameConfig_Reset()) {
-                        reset_to_default = true;
+                    // Reset BLE name to factory default BEFORE sending response
+                    BLE_NameConfig_Status_t reset_status = BLE_NameConfig_Reset();
+                    if (reset_status == BLE_NAME_OK) {
+                        status = STATUS_SUCCESS;
                         Peripheral_UpdateBLEAdvertisingData();
                     } else {
-                        status = STATUS_ERR_FRAME;
+                        status = STATUS_ERR_FLASH_ERASE;
                     }
                 }
 
-                CH9329_SendResponse(addr, cmd_code, &status, 1, 1);
+                // Send response AFTER Flash operation with appropriate error code
+                uint8_t resp_mode = (status == STATUS_SUCCESS) ? 1 : 0;
+                CH9329_SendResponse(addr, cmd_code, &status, 1, resp_mode);
                 // Schedule reset after 500ms to allow BLE notification to be sent
                 Peripheral_ScheduleSystemReset(500);
             }

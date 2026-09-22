@@ -135,10 +135,14 @@ void BLE_NameConfig_Init(void)
  * @brief Set new BLE device name and persist to Flash
  *
  * @param new_name  Null-terminated string containing new name (1-20 characters)
- * @return true if name successfully set and persisted to Flash
- * @return false if name invalid or Flash operation failed
+ * @return BLE_NAME_OK if name successfully set and persisted to Flash
+ * @return BLE_NAME_ERR_NULL_NAME if new_name is NULL
+ * @return BLE_NAME_ERR_INVALID_LENGTH if name length is 0 or > 20
+ * @return BLE_NAME_ERR_FLASH_ERASE if Flash page erase failed
+ * @return BLE_NAME_ERR_FLASH_PROGRAM if Flash word program failed
+ * @return BLE_NAME_ERR_FLASH_VERIFY if Flash read-back verification failed
  */
-bool BLE_NameConfig_Set(const char *new_name)
+BLE_NameConfig_Status_t BLE_NameConfig_Set(const char *new_name)
 {
     BLE_NameConfig_Record_t record;
     FLASH_Status status;
@@ -149,12 +153,12 @@ bool BLE_NameConfig_Set(const char *new_name)
     /* Validate input */
     if (new_name == NULL) {
         PRINT("BLE Name Config Set: NULL name\n");
-        return false;
+        return BLE_NAME_ERR_NULL_NAME;
     }
     name_len = strlen(new_name);
     if (name_len == 0 || name_len > 20) {
         PRINT("BLE Name Config Set: invalid length %d\n", name_len);
-        return false;
+        return BLE_NAME_ERR_INVALID_LENGTH;
     }
 
     PRINT("BLE Name Config Set: setting name to \"%s\" (len=%d)\n", new_name, name_len);
@@ -186,15 +190,20 @@ bool BLE_NameConfig_Set(const char *new_name)
     FLASH_Unlock();
     status = FLASH_ErasePage(BLE_NAME_CONFIG_FLASH_ADDR);
     PRINT("BLE Name Config Set: erase status=%d\n", status);
-    if (status == FLASH_COMPLETE) {
-        words = (const uint32_t *)&record;
-        for (word_index = 0; word_index < (sizeof(record) / sizeof(uint32_t)); word_index++) {
-            status = FLASH_ProgramWord(BLE_NAME_CONFIG_FLASH_ADDR + ((uint32_t)word_index * sizeof(uint32_t)),
-                                      words[word_index]);
-            if (status != FLASH_COMPLETE) {
-                PRINT("BLE Name Config Set: program failed at word %d, status=%d\n", word_index, status);
-                break;
-            }
+    if (status != FLASH_COMPLETE) {
+        FLASH_Lock();
+        PRINT("BLE Name Config Set: erase failed, status=%d\n", status);
+        return BLE_NAME_ERR_FLASH_ERASE;
+    }
+
+    words = (const uint32_t *)&record;
+    for (word_index = 0; word_index < (sizeof(record) / sizeof(uint32_t)); word_index++) {
+        status = FLASH_ProgramWord(BLE_NAME_CONFIG_FLASH_ADDR + ((uint32_t)word_index * sizeof(uint32_t)),
+                                  words[word_index]);
+        if (status != FLASH_COMPLETE) {
+            FLASH_Lock();
+            PRINT("BLE Name Config Set: program failed at word %d, status=%d\n", word_index, status);
+            return BLE_NAME_ERR_FLASH_PROGRAM;
         }
     }
     FLASH_Lock();
@@ -206,19 +215,15 @@ bool BLE_NameConfig_Set(const char *new_name)
     if (verify->magic != record.magic || verify->crc != record.crc) {
         PRINT("BLE Name Config Set: VERIFY FAILED! Data mismatch\n");
         PRINT("  Expected: magic=0x%08X, crc=0x%08X\n", record.magic, record.crc);
-        return false;
+        return BLE_NAME_ERR_FLASH_VERIFY;
     }
 
-    if (status == FLASH_COMPLETE) {
-        /* Update runtime state on successful Flash write */
-        memcpy(g_ble_name.name, new_name, name_len);
-        g_ble_name.name[name_len] = '\0';
-        g_ble_name.is_custom = true;
-        PRINT("BLE Name Config Set: success, name now \"%s\"\n", g_ble_name.name);
-        return true;
-    }
-    PRINT("BLE Name Config Set: Flash write failed\n");
-    return false;
+    /* Update runtime state on successful Flash write */
+    memcpy(g_ble_name.name, new_name, name_len);
+    g_ble_name.name[name_len] = '\0';
+    g_ble_name.is_custom = true;
+    PRINT("BLE Name Config Set: success, name now \"%s\"\n", g_ble_name.name);
+    return BLE_NAME_OK;
 }
 
 /**
@@ -236,10 +241,10 @@ const char *BLE_NameConfig_Get(void)
  *
  * Erases Flash configuration and restores runtime state to "KVM-GO".
  *
- * @return true if Flash erase succeeded
- * @return false if Flash erase failed
+ * @return BLE_NAME_OK if Flash erase succeeded
+ * @return BLE_NAME_ERR_FLASH_ERASE if Flash erase failed (hardware fault)
  */
-bool BLE_NameConfig_Reset(void)
+BLE_NameConfig_Status_t BLE_NameConfig_Reset(void)
 {
     FLASH_Status status;
 
@@ -251,9 +256,9 @@ bool BLE_NameConfig_Reset(void)
         /* Reset runtime state to factory defaults */
         g_ble_name.is_custom = false;
         strcpy(g_ble_name.name, "KVM-GO");
-        return true;
+        return BLE_NAME_OK;
     }
-    return false;
+    return BLE_NAME_ERR_FLASH_ERASE;
 }
 
 /**

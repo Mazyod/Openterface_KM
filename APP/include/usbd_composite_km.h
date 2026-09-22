@@ -31,6 +31,9 @@
 #define STATUS_ERR_CHECKSUM   0xE4
 #define STATUS_ERR_PARAM      0xE5
 #define STATUS_ERR_FRAME      0xE6  // Custom frame format error, frame exception, execution failed
+#define STATUS_ERR_FLASH_ERASE   0xE9  // Flash page erase failed (hardware fault)
+#define STATUS_ERR_FLASH_PROGRAM 0xEA  // Flash word program failed (hardware fault)
+#define STATUS_ERR_FLASH_VERIFY  0xEB  // Flash write-back verification failed (data mismatch)
 /*******************************************************************************/
 #define CH9329_MAX_DATA_LEN 100
 #define RX_BUF_SIZE   2048
@@ -58,6 +61,9 @@
 #define STATUS_ERR_CHECKSUM   0xE4
 #define STATUS_ERR_PARAM      0xE5
 #define STATUS_ERR_FRAME      0xE6  // Custom frame format error, frame exception, execution failed
+#define STATUS_ERR_FLASH_ERASE   0xE9  // Flash page erase failed (hardware fault)
+#define STATUS_ERR_FLASH_PROGRAM 0xEA  // Flash word program failed (hardware fault)
+#define STATUS_ERR_FLASH_VERIFY  0xEB  // Flash write-back verification failed (data mismatch)
 /*******************************************************************************/
 void USB_Sleep_Wakeup_CFG( void );
 void MCU_Sleep_Wakeup_Operate( void );
