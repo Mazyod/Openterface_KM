@@ -50,7 +50,7 @@ typedef struct {
 
 /** Runtime state */
 BLE_NameConfig_t g_ble_name = {
-    .name = "KVM-GO",
+    .name = BLE_DEVICE_NAME,
     .is_custom = false
 };
 
@@ -103,7 +103,7 @@ void BLE_NameConfig_Init(void)
 
     /* Set factory defaults */
     g_ble_name.is_custom = false;
-    strcpy(g_ble_name.name, "KVM-GO");
+    strcpy(g_ble_name.name, BLE_DEVICE_NAME);
 
     /* Debug: print Flash record info */
     PRINT("BLE Name Config: Flash addr=0x%08X\n", BLE_NAME_CONFIG_FLASH_ADDR);
@@ -255,7 +255,7 @@ BLE_NameConfig_Status_t BLE_NameConfig_Reset(void)
     if (status == FLASH_COMPLETE) {
         /* Reset runtime state to factory defaults */
         g_ble_name.is_custom = false;
-        strcpy(g_ble_name.name, "KVM-GO");
+        strcpy(g_ble_name.name, BLE_DEVICE_NAME);
         return BLE_NAME_OK;
     }
     return BLE_NAME_ERR_FLASH_ERASE;
@@ -277,7 +277,7 @@ bool BLE_NameConfig_IsCustom(void)
 /* Provide a definition for g_ble_name when BLE name config is disabled.
  * This is referenced by peripheral.c but the functions are empty macros. */
 BLE_NameConfig_t g_ble_name = {
-    .name = "KVM-GO",
+    .name = BLE_DEVICE_NAME,
     .is_custom = false
 };
 

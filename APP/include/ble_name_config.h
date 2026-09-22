@@ -143,7 +143,7 @@ extern BLE_NameConfig_t g_ble_name;
  */
 #define BLE_NameConfig_Init()           do {} while(0)
 #define BLE_NameConfig_Set(x)           (BLE_NAME_ERR_NULL_NAME)
-#define BLE_NameConfig_Get()            ("KVM-GO")
+#define BLE_NameConfig_Get()            (BLE_DEVICE_NAME)
 #define BLE_NameConfig_Reset()          (BLE_NAME_ERR_FLASH_ERASE)
 #define BLE_NameConfig_IsCustom()       (false)
 
