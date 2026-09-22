@@ -65,6 +65,9 @@ The response payload is usually a 1-byte status for write-like commands, or a st
 | `0xE4` | Checksum error |
 | `0xE5` | Parameter error |
 | `0xE6` | Frame / execution error |
+| `0xE9` | Flash page erase failed (hardware fault) |
+| `0xEA` | Flash word program failed (hardware fault) |
+| `0xEB` | Flash write-back verification failed (data mismatch) |
 
 ## Implemented Commands
 
@@ -191,7 +194,8 @@ This is an Openterface extension for dynamic BLE device name configuration. The 
 
 **Response:**
 
-- Single byte status (`0x00` = success, `0xE5` = parameter error, `0xE6` = flash operation failed)
+- Single byte status (`0x00` = success, `0xE5` = parameter error, `0xE9` = flash erase failed, `0xEA` = flash program failed, `0xEB` = flash verification failed)
+- Response command byte uses `cmd | 0x80` for success, `cmd | 0xC0` for error (matches protocol convention)
 
 **Examples:**
 
@@ -450,11 +454,12 @@ This is an Openterface extension for triggering a full system reboot. It is prim
 **Payload format:**
 
 - No payload (empty): normal system reset
-- Single `0x00` byte: reset BLE name to factory default (`"KVM-GO"`) before rebooting
+- Single `0x00` byte: reset BLE name to factory default (`"KVM-GO"` for KVM-GO, `"Mini-KVM"` for MiniKVM, `"KeyMod"` for KeyMod) before rebooting
 
 **Response:**
 
-- Single byte status (`0x00` = success)
+- Single byte status (`0x00` = success, `0xE9` = flash erase failed when resetting BLE name)
+- Response command byte uses `cmd | 0x80` for success, `cmd | 0xC0` for error
 - Device reboots immediately after sending response
 
 **Examples:**
@@ -472,7 +477,7 @@ Reset BLE name to factory default and reboot:
 ```text
 Request : 57 AB <addr> 31 01 00 <sum>
 Response: 57 AB <addr> B1 01 00 <sum>
-[BLE name reset to "KVM-GO", device reboots]
+[BLE name reset to factory default (board-specific), device reboots]
 ```
 
 **Important limitations:**

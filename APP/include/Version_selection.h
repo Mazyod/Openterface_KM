@@ -48,4 +48,12 @@
 #define ENABLE_BLE
 #endif
 
+/* BLE Name Config — only enabled for KVM-GO (version 1).
+ * MiniKVM (version 2) and KeyMod (version 3) do not have BLE hardware. */
+#if (version == 1)
+    #define ENABLE_BLE_NAME_CONFIG  1
+#else
+    #define ENABLE_BLE_NAME_CONFIG  0
+#endif
+
 #endif /* VERSION_SELECTION_H */
