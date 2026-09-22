@@ -204,19 +204,57 @@ uint8_t Peripheral_IsCh9329CommandByte(uint8_t cmd)
 {
     switch (cmd)
     {
-        case CMD_GET_INFO:           // 0x01
-        case CMD_SEND_KB_GENERAL_DATA: // 0x02
-        case CMD_SEND_KB_MEDIA_DATA: // 0x03
-        case CMD_SEND_MS_ABS_DATA:   // 0x04
-        case CMD_SEND_MS_REL_DATA:   // 0x05
-        case CMD_GET_PARA_CFG:       // 0x08
-        case CMD_SD_SWITCH:          // 0x17
-        case CMD_DS18B20_GET_TEMP:   // 0x18
-        case CMD_BLE_ADV_PARAM:      // 0x19
-        case CMD_BLE_SECURITY:       // 0x22
-        case CMD_BLE_SET_NAME:       // 0x23
-        case CMD_USB_WORK_MODE:      // 0x30
+        case CMD_GET_INFO:             /* 0x01 - Query device status: board version,
+                                        *        USB enumeration state, keyboard LED
+                                        *        indicators, and firmware version. */
+
+        case CMD_SEND_KB_GENERAL_DATA: /* 0x02 - Send a standard USB HID keyboard
+                                        *        report (modifier keys + 6 keycodes). */
+
+        case CMD_SEND_KB_MEDIA_DATA:   /* 0x03 - Send media / consumer control keys
+                                        *        (play, volume, brightness) or ACPI
+                                        *        power keys (sleep, shutdown, wake). */
+
+        case CMD_SEND_MS_ABS_DATA:     /* 0x04 - Send absolute-position mouse / stylus
+                                        *        report (X, Y coordinates in device
+                                        *        units, buttons, wheel). */
+
+        case CMD_SEND_MS_REL_DATA:     /* 0x05 - Send relative-motion mouse report
+                                        *        (delta X, delta Y, buttons, wheel). */
+
+        case CMD_GET_PARA_CFG:         /* 0x08 - Read back the device's CH9329
+                                        *        parameter configuration block
+                                        *        (fixed 44-byte compatibility reply). */
+
+        case CMD_SD_SWITCH:            /* 0x17 - Switch or query the SD card routing
+                                        *        path (Openterface extension). */
+
+        case CMD_DS18B20_GET_TEMP:     /* 0x18 - Issue a temperature measurement
+                                        *        command to the DS18B20 onewire
+                                        *        sensor (Openterface extension). */
+
+        case CMD_BLE_ADV_PARAM:        /* 0x19 - Control BLE advertising parameters
+                                        *        such as channel map selection and
+                                        *        continuous-TX test mode (extension). */
+
+        case CMD_BLE_SECURITY:         /* 0x22 - Manage BLE security / pairing:
+                                        *        open pairing window, erase bonds,
+                                        *        or query bond count (extension). */
+
+        case CMD_BLE_SET_NAME:         /* 0x23 - Set BLE device name (persisted to
+                                        *        Flash) or reset to factory default
+                                        *        "KVM-GO" (Openterface extension). */
+
+        case CMD_USB_WORK_MODE:        /* 0x30 - Query or change the active USB
+                                        *        personality (HID+ACM, HID+UAC+ACM,
+                                        *        HID+ACM-Bridge, HID+ECM-Bridge)
+                                        *        and trigger a reboot if changed. */
+
+        case CMD_SYSTEM_RESET:         /* 0x31 - Trigger a system reset / reboot.
+                                        *        Optionally reset BLE name to factory
+                                        *        default "KVM-GO" if payload is 0x00. */
             return 1;
+
         default:
             return 0;
     }
