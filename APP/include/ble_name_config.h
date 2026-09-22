@@ -46,7 +46,7 @@ typedef enum {
  * @brief Initialize BLE name configuration module
  *
  * Loads saved custom name from Flash (if exists and valid).
- * Falls back to factory default name "KVM-GO" if no valid config.
+ * Falls back to factory default name (BLE_DEVICE_NAME) if no valid config.
  * Initializes runtime state structure @ref g_ble_name.
  *
  * This function must be called before BLE stack initialization
@@ -95,7 +95,7 @@ const char *BLE_NameConfig_Get(void);
  * @brief Reset BLE device name to factory default
  *
  * Erases Flash page containing BLE name config record.
- * Re-initializes runtime state to factory default name "KVM-GO".
+ * Re-initializes runtime state to factory default name (BLE_DEVICE_NAME).
  * Updates advertising data and GAP characteristics to reflect default name.
  * Restarts advertising to make change immediate.
  *
@@ -115,7 +115,7 @@ BLE_NameConfig_Status_t BLE_NameConfig_Reset(void);
  * Convenience for upper-layer logic to determine if "modified" status should be displayed.
  *
  * @return true  if current name was set via BLE_NameConfig_Set()
- * @return false if current name is factory default "KVM-GO"
+ * @return false if current name is factory default (BLE_DEVICE_NAME)
  *
  * @note Depends on BLE_NameConfig_Init() having been called correctly.
  * @note 【Compile-time guarantee】Only exists when ENABLE_BLE is defined.

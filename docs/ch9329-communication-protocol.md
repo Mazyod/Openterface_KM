@@ -454,7 +454,7 @@ This is an Openterface extension for triggering a full system reboot. It is prim
 **Payload format:**
 
 - No payload (empty): normal system reset
-- Single `0x00` byte: reset BLE name to factory default (`"KVM-GO"`) before rebooting
+- Single `0x00` byte: reset BLE name to factory default (`"KVM-GO"` for KVM-GO, `"Mini-KVM"` for MiniKVM, `"KeyMod"` for KeyMod) before rebooting
 
 **Response:**
 
@@ -477,7 +477,7 @@ Reset BLE name to factory default and reboot:
 ```text
 Request : 57 AB <addr> 31 01 00 <sum>
 Response: 57 AB <addr> B1 01 00 <sum>
-[BLE name reset to "KVM-GO", device reboots]
+[BLE name reset to factory default (board-specific), device reboots]
 ```
 
 **Important limitations:**

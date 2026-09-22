@@ -239,7 +239,7 @@ const char *BLE_NameConfig_Get(void)
 /**
  * @brief Reset BLE device name to factory default
  *
- * Erases Flash configuration and restores runtime state to "KVM-GO".
+ * Erases Flash configuration and restores runtime state to BLE_DEVICE_NAME.
  *
  * @return BLE_NAME_OK if Flash erase succeeded
  * @return BLE_NAME_ERR_FLASH_ERASE if Flash erase failed (hardware fault)
@@ -265,7 +265,7 @@ BLE_NameConfig_Status_t BLE_NameConfig_Reset(void)
  * @brief Check if current name is custom (non-factory-default)
  *
  * @return true if using custom name set via BLE_NameConfig_Set()
- * @return false if using factory default name "KVM-GO"
+ * @return false if using factory default name (BLE_DEVICE_NAME)
  */
 bool BLE_NameConfig_IsCustom(void)
 {
