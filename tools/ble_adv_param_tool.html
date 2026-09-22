@@ -1,0 +1,565 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BLE 测试模式工具</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: #f5f5f7;
+    color: #1d1d1f;
+    padding: 20px;
+    max-width: 800px;
+    margin: 0 auto;
+  }
+  h1 { font-size: 22px; margin-bottom: 6px; }
+  .subtitle { color: #86868b; font-size: 12px; margin-bottom: 16px; }
+  .card {
+    background: #fff;
+    border-radius: 12px;
+    padding: 16px;
+    margin-bottom: 12px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+  }
+  .card-title {
+    font-size: 14px;
+    font-weight: 600;
+    margin-bottom: 12px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .badge {
+    display: inline-block;
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-size: 10px;
+    font-weight: 500;
+    background: #d9e9ff;
+    color: #0a4a8f;
+  }
+
+  /* Serial */
+  .serial-row {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    flex-wrap: wrap;
+  }
+  select {
+    padding: 6px 10px;
+    border: 1px solid #d2d2d7;
+    border-radius: 6px;
+    font-size: 13px;
+    background: #fff;
+  }
+  button {
+    padding: 8px 16px;
+    border: none;
+    border-radius: 8px;
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  button:disabled { opacity: 0.5; cursor: not-allowed; }
+  .btn-primary { background: #0071e3; color: #fff; }
+  .btn-primary:hover:not(:disabled) { background: #0060c0; }
+  .btn-danger { background: #e30000; color: #fff; }
+  .btn-danger:hover:not(:disabled) { background: #c00000; }
+  .btn-send { background: #1d8e3f; color: #fff; width: 100%; padding: 14px; font-size: 16px; font-weight: 600; }
+  .btn-send:hover:not(:disabled) { background: #157a32; }
+  .btn-stop { background: #e30000; color: #fff; width: 100%; padding: 14px; font-size: 16px; font-weight: 600; }
+  .btn-stop:hover:not(:disabled) { background: #c00000; }
+
+  .status-dot {
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #86868b;
+  }
+  .status-dot.connected { background: #30d158; }
+
+  /* Frequency blocks */
+  .freq-row {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 10px;
+    margin-bottom: 16px;
+  }
+  .freq-block {
+    background: #f5f5f7;
+    border: 2px solid #e8e8ed;
+    border-radius: 12px;
+    padding: 16px 8px;
+    text-align: center;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .freq-block:hover { border-color: #0071e3; background: #f0f4ff; }
+  .freq-block.selected {
+    border-color: #0071e3;
+    background: #e8f0ff;
+    box-shadow: 0 0 0 2px rgba(0,113,227,0.2);
+  }
+  .freq-label {
+    font-size: 12px;
+    color: #86868b;
+    margin-bottom: 4px;
+  }
+  .freq-value {
+    font-size: 20px;
+    font-weight: 700;
+    color: #1d1d1f;
+  }
+  .freq-unit {
+    font-size: 12px;
+    color: #86868b;
+    margin-top: 2px;
+  }
+
+  /* Power slider */
+  .power-section {
+    margin-bottom: 16px;
+  }
+  .power-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
+  }
+  .power-label { font-size: 13px; color: #86868b; }
+  .power-value {
+    font-size: 18px;
+    font-weight: 700;
+    color: #1d8e3f;
+  }
+  .slider-container {
+    position: relative;
+    padding: 0 4px;
+  }
+  input[type="range"] {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 100%;
+    height: 6px;
+    border-radius: 3px;
+    background: linear-gradient(to right, #e8e8ed 0%, #e8e8ed 100%);
+    outline: none;
+  }
+  input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    background: #0071e3;
+    cursor: pointer;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+  }
+  input[type="range"]::-moz-range-thumb {
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    background: #0071e3;
+    cursor: pointer;
+    border: none;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+  }
+  .power-ticks {
+    display: flex;
+    justify-content: space-between;
+    margin-top: 4px;
+    padding: 0 2px;
+  }
+  .power-tick {
+    font-size: 10px;
+    color: #86868b;
+    text-align: center;
+    width: 0;
+    position: relative;
+  }
+  .power-tick span {
+    position: absolute;
+    transform: translateX(-50%);
+    white-space: nowrap;
+  }
+
+  /* Command preview */
+  .cmd-preview {
+    background: #1d1d1f;
+    color: #30d158;
+    padding: 10px 14px;
+    border-radius: 8px;
+    font-family: "SF Mono", Monaco, Consolas, monospace;
+    font-size: 12px;
+    margin-bottom: 12px;
+    word-break: break-all;
+    line-height: 1.5;
+  }
+
+  /* Buttons row */
+  .btn-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+  }
+
+  /* Log */
+  .log {
+    background: #1d1d1f;
+    color: #f5f5f7;
+    border-radius: 8px;
+    padding: 10px;
+    font-family: "SF Mono", Monaco, Consolas, monospace;
+    font-size: 11px;
+    height: 180px;
+    overflow-y: auto;
+    line-height: 1.5;
+  }
+  .log-line { margin-bottom: 1px; }
+  .log-time { color: #86868b; }
+  .log-tx { color: #64d2ff; }
+  .log-rx { color: #30d158; }
+  .log-err { color: #ff6b6b; }
+  .log-info { color: #ffd60a; }
+  .log-controls {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 6px;
+  }
+  .btn-small {
+    padding: 4px 10px;
+    font-size: 12px;
+    background: #e8e8ed;
+    color: #1d1d1f;
+  }
+  .btn-small:hover { background: #d8d8dd; }
+</style>
+</head>
+<body>
+
+<h1>BLE 测试模式工具 <span class="badge">CMD 0x19</span></h1>
+<p class="subtitle">选择频段和功率，发送测试命令</p>
+
+<!-- Serial -->
+<div class="card">
+  <div class="card-title">
+    <span class="status-dot" id="statusDot"></span>
+    串口连接
+  </div>
+  <div class="serial-row">
+    <button class="btn-primary" id="btnConnect" onclick="toggleConnection()">连接串口</button>
+    <select id="baudRate">
+      <option value="9600">9600</option>
+      <option value="19200">19200</option>
+      <option value="38400">38400</option>
+      <option value="57600">57600</option>
+      <option value="115200" selected>115200</option>
+      <option value="230400">230400</option>
+      <option value="460800">460800</option>
+      <option value="921600">921600</option>
+    </select>
+    <span id="connStatus" style="font-size:12px;color:#86868b;">未连接</span>
+  </div>
+</div>
+
+<!-- Test Mode Control -->
+<div class="card">
+  <div class="card-title">测试模式</div>
+
+  <!-- Frequency selection -->
+  <div class="freq-row">
+    <div class="freq-block selected" onclick="selectFreq(0, this)" data-band="0">
+      <div class="freq-label">低频段</div>
+      <div class="freq-value">2402</div>
+      <div class="freq-unit">MHz</div>
+    </div>
+    <div class="freq-block" onclick="selectFreq(1, this)" data-band="1">
+      <div class="freq-label">中频段</div>
+      <div class="freq-value">2440</div>
+      <div class="freq-unit">MHz</div>
+    </div>
+    <div class="freq-block" onclick="selectFreq(2, this)" data-band="2">
+      <div class="freq-label">高频段</div>
+      <div class="freq-value">2480</div>
+      <div class="freq-unit">MHz</div>
+    </div>
+  </div>
+
+  <!-- Power slider -->
+  <div class="power-section">
+    <div class="power-header">
+      <span class="power-label">发射功率</span>
+      <span class="power-value" id="powerDisplay">+7 dBm</span>
+    </div>
+    <div class="slider-container">
+      <input type="range" id="powerSlider" min="0" max="11" value="11" oninput="updatePower()">
+    </div>
+    <div class="power-ticks">
+      <div class="power-tick"><span>-18</span></div>
+      <div class="power-tick"><span>-10</span></div>
+      <div class="power-tick"><span>-5</span></div>
+      <div class="power-tick"><span>-3</span></div>
+      <div class="power-tick"><span>0</span></div>
+      <div class="power-tick"><span>+1</span></div>
+      <div class="power-tick"><span>+2</span></div>
+      <div class="power-tick"><span>+3</span></div>
+      <div class="power-tick"><span>+4</span></div>
+      <div class="power-tick"><span>+5</span></div>
+      <div class="power-tick"><span>+6</span></div>
+      <div class="power-tick"><span>+7</span></div>
+    </div>
+  </div>
+
+  <!-- Command preview -->
+  <div class="cmd-preview" id="cmdPreview"></div>
+
+  <!-- Action buttons -->
+  <div class="btn-row">
+    <button class="btn-send" onclick="sendStart()">发送</button>
+    <button class="btn-stop" onclick="sendStop()">停止测试</button>
+  </div>
+</div>
+
+<!-- Log -->
+<div class="card">
+  <div class="log-controls">
+    <div class="card-title" style="margin:0;">通信日志</div>
+    <button class="btn-small" onclick="clearLog()">清空</button>
+  </div>
+  <div class="log" id="log"></div>
+</div>
+
+<script>
+// ========== Power mapping ==========
+const POWER_LEVELS = [
+  { dbm: -18, hex: 0x01, label: '-18 dBm' },
+  { dbm: -10, hex: 0x03, label: '-10 dBm' },
+  { dbm: -5,  hex: 0x05, label: '-5 dBm' },
+  { dbm: -3,  hex: 0x07, label: '-3 dBm' },
+  { dbm: 0,   hex: 0x09, label: '0 dBm' },
+  { dbm: 1,   hex: 0x0B, label: '+1 dBm' },
+  { dbm: 2,   hex: 0x0D, label: '+2 dBm' },
+  { dbm: 3,   hex: 0x11, label: '+3 dBm' },
+  { dbm: 4,   hex: 0x15, label: '+4 dBm' },
+  { dbm: 5,   hex: 0x1B, label: '+5 dBm' },
+  { dbm: 6,   hex: 0x25, label: '+6 dBm' },
+  { dbm: 7,   hex: 0x3F, label: '+7 dBm' },
+];
+
+// ========== State ==========
+let port = null;
+let reader = null;
+let keepReading = false;
+let selectedBand = 0;
+let selectedPowerIdx = 11; // +7 dBm
+
+// ========== Serial ==========
+async function toggleConnection() {
+  if (port) {
+    await disconnect();
+  } else {
+    await connect();
+  }
+}
+
+async function connect() {
+  if (!('serial' in navigator)) {
+    logMsg('err', '浏览器不支持 Web Serial API，请使用 Chrome/Edge');
+    return;
+  }
+  try {
+    if (port) {
+      try { await port.close(); } catch(e) {}
+      port = null;
+    }
+    port = await navigator.serial.requestPort();
+    const baudRate = parseInt(document.getElementById('baudRate').value);
+    await port.open({ baudRate });
+    keepReading = true;
+    readLoop();
+    document.getElementById('btnConnect').textContent = '断开连接';
+    document.getElementById('btnConnect').className = 'btn-danger';
+    document.getElementById('connStatus').textContent = '已连接';
+    document.getElementById('statusDot').classList.add('connected');
+    logMsg('info', `串口已连接，波特率: ${baudRate}`);
+  } catch (e) {
+    logMsg('err', '连接失败: ' + e.message);
+    if (port) { try { await port.close(); } catch(e2) {} port = null; }
+    document.getElementById('btnConnect').textContent = '连接串口';
+    document.getElementById('btnConnect').className = 'btn-primary';
+    document.getElementById('connStatus').textContent = '未连接';
+    document.getElementById('statusDot').classList.remove('connected');
+  }
+}
+
+async function disconnect() {
+  keepReading = false;
+  try {
+    if (reader) { await reader.cancel().catch(() => {}); reader = null; }
+    if (port) { await port.close().catch(() => {}); port = null; }
+  } catch (e) {
+    logMsg('err', '断开失败: ' + e.message);
+    port = null; reader = null;
+  }
+  document.getElementById('btnConnect').textContent = '连接串口';
+  document.getElementById('btnConnect').className = 'btn-primary';
+  document.getElementById('connStatus').textContent = '未连接';
+  document.getElementById('statusDot').classList.remove('connected');
+  logMsg('info', '串口已断开');
+}
+
+async function readLoop() {
+  while (keepReading && port && port.readable) {
+    try {
+      reader = port.readable.getReader();
+      let buffer = [];
+      while (keepReading) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        if (value) {
+          // 添加所有接收到的字节到缓冲区
+          for (let i = 0; i < value.length; i++) buffer.push(value[i]);
+
+          // 尝试解析 CH9329 响应帧 (57 AB 00 D9)
+          let parsed = false;
+          while (buffer.length >= 6) {
+            if (buffer[0] === 0x57 && buffer[1] === 0xAB && buffer[2] === 0x00 && buffer[3] === 0xD9) {
+              const len = buffer[4];
+              const frameLen = 5 + len + 1;
+              if (buffer.length >= frameLen) {
+                const frame = buffer.slice(0, frameLen);
+                buffer = buffer.slice(frameLen);
+                logMsg('rx', bytesToHex(frame));
+                parsed = true;
+              } else break;
+            } else {
+              // 不是预期的帧头，显示原始数据并清除
+              if (buffer.length > 0) {
+                logMsg('rx', '[RAW] ' + bytesToHex(buffer));
+                buffer = [];
+              }
+              break;
+            }
+          }
+        }
+      }
+    } catch (e) {
+      if (keepReading) logMsg('err', '读取错误: ' + e.message);
+    } finally {
+      if (reader) { try { reader.releaseLock(); } catch(e) {} reader = null; }
+    }
+  }
+}
+
+async function sendBytes(bytes) {
+  if (!port || !port.writable) {
+    logMsg('err', '串口未连接');
+    return false;
+  }
+  try {
+    const w = port.writable.getWriter();
+    await w.write(new Uint8Array(bytes));
+    w.releaseLock();
+    logMsg('tx', bytesToHex(bytes));
+    return true;
+  } catch (e) {
+    logMsg('err', '发送失败: ' + e.message);
+    return false;
+  }
+}
+
+// ========== Command builders ==========
+function calcChecksum(bytes) {
+  let sum = 0;
+  for (let i = 0; i < bytes.length; i++) sum += bytes[i];
+  return sum & 0xFF;
+}
+
+function buildFrame(data) {
+  const header = [0x57, 0xAB, 0x00, 0x19, data.length];
+  const frame = header.concat(data);
+  frame.push(calcChecksum(frame));
+  return frame;
+}
+
+function buildTestStart(band, powerHex) {
+  return buildFrame([0x00, 0x03, band, powerHex]);
+}
+
+function buildTestStop() {
+  return buildFrame([0x01, 0x03]);
+}
+
+// ========== UI ==========
+function selectFreq(band, el) {
+  selectedBand = band;
+  document.querySelectorAll('.freq-block').forEach(b => b.classList.remove('selected'));
+  el.classList.add('selected');
+  updatePreview();
+}
+
+function updatePower() {
+  selectedPowerIdx = parseInt(document.getElementById('powerSlider').value);
+  const power = POWER_LEVELS[selectedPowerIdx];
+  const sign = power.dbm > 0 ? '+' : '';
+  document.getElementById('powerDisplay').textContent = sign + power.dbm + ' dBm';
+  updatePreview();
+}
+
+function updatePreview() {
+  const power = POWER_LEVELS[selectedPowerIdx];
+  const freq = [2402, 2440, 2480][selectedBand];
+  const frame = buildTestStart(selectedBand, power.hex);
+  document.getElementById('cmdPreview').innerHTML =
+    `<span style="color:#86868b">启动测试:</span> ${freq} MHz @ ${power.label}\n` +
+    `<span style="color:#86868b">命令帧:</span> ${bytesToHex(frame)}`;
+}
+
+async function sendStart() {
+  const power = POWER_LEVELS[selectedPowerIdx];
+  const frame = buildTestStart(selectedBand, power.hex);
+  await sendBytes(frame);
+}
+
+async function sendStop() {
+  const frame = buildTestStop();
+  await sendBytes(frame);
+}
+
+// ========== Log ==========
+function logMsg(type, msg) {
+  const log = document.getElementById('log');
+  const time = new Date().toLocaleTimeString('zh-CN', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  const ms = String(new Date().getMilliseconds()).padStart(3, '0');
+  const typeLabel = { tx: 'TX', rx: 'RX', err: 'ERR', info: 'INFO' }[type] || type;
+  const line = document.createElement('div');
+  line.className = 'log-line';
+  line.innerHTML = `<span class="log-time">[${time}.${ms}]</span> <span class="log-${type}">[${typeLabel}]</span> ${escapeHtml(msg)}`;
+  log.appendChild(line);
+  log.scrollTop = log.scrollHeight;
+}
+
+function clearLog() {
+  document.getElementById('log').innerHTML = '';
+}
+
+// ========== Utils ==========
+function hex(n) { return n.toString(16).toUpperCase().padStart(2, '0'); }
+function bytesToHex(bytes) { return bytes.map(b => hex(b)).join(' '); }
+function escapeHtml(s) { return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+// ========== Init ==========
+updatePreview();
+if (!('serial' in navigator)) {
+  logMsg('err', '当前浏览器不支持 Web Serial API，请使用 Chrome 或 Edge');
+}
+</script>
+
+</body>
+</html>
