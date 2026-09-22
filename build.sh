@@ -207,9 +207,9 @@ build_one() {
     local ble_name=$4
 
     if build_firmware "${target}" "${board_version}" "${enable_oscillator}" "${ble_name}"; then
-        ((BUILD_SUCCESS++))
+        BUILD_SUCCESS=$((BUILD_SUCCESS + 1))
     else
-        ((BUILD_FAILED++))
+        BUILD_FAILED=$((BUILD_FAILED + 1))
     fi
 }
 

@@ -415,7 +415,8 @@ void Peripheral_Init()
     ble_usb_add_service(ble_usb_ServiceEvt);
 
     // Set the GAP Characteristics
-    GGS_SetParameter(GGS_DEVICE_NAME_ATT, sizeof(attDeviceName), attDeviceName);
+    // Pass actual name length (not buffer size) to avoid trailing zeros
+    GGS_SetParameter(GGS_DEVICE_NAME_ATT, strlen(g_ble_name.name) + 1, (void *)g_ble_name.name);
 
     // Setup the SimpleProfile Characteristic Values
     {
@@ -1623,9 +1624,8 @@ void Peripheral_UpdateBLEAdvertisingData(void)
     if(deviceNameLen > 20) deviceNameLen = 20;
 
     // Update GAP device name attribute
-    tmos_memset(attDeviceName, 0, sizeof(attDeviceName));
-    tmos_memcpy(attDeviceName, g_ble_name.name, deviceNameLen);
-    GGS_SetParameter(GGS_DEVICE_NAME_ATT, sizeof(attDeviceName), attDeviceName);
+    // Pass actual name length (not buffer size) to avoid trailing zeros
+    GGS_SetParameter(GGS_DEVICE_NAME_ATT, strlen(g_ble_name.name) + 1, (void *)g_ble_name.name);
 
     // Rebuild advertising data with new name
     advertDataLen = 7; // Reset to initial length (flags + UUID)
