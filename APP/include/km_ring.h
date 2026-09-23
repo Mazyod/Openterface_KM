@@ -7,8 +7,8 @@
 
 /* Queue size definitions */
 #define KB_QUEUE_SIZE      512    // Keyboard report queue size
-#define MS_REL_QUEUE_SIZE  28     // Relative mouse report queue size
-#define MS_ABS_QUEUE_SIZE  28     // Absolute mouse report queue size
+#define MS_REL_QUEUE_SIZE  64     // Relative mouse report queue size (increased from 28 to handle bursts)
+#define MS_ABS_QUEUE_SIZE  64     // Absolute mouse report queue size (increased from 28 to handle bursts)
 #define RESP_QUEUE_SIZE    28     // Response packet queue size
 #define MEDIA_QUEUE_SIZE   16     // Media key report queue size
 

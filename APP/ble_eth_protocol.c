@@ -164,8 +164,6 @@ void BLE_Eth_LearnHostMac(const uint8_t *mac)
     if (mac && !g_host_mac_valid) {
         memcpy(g_host_mac_learned, mac, 6);
         g_host_mac_valid = true;
-        PRINT("BLE-Eth learned host MAC: %02X:%02X:%02X:%02X:%02X:%02X\r\n",
-              mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
     }
 }
 
@@ -878,9 +876,6 @@ bool BLE_Eth_HandleArpReply(const uint8_t sender_ip[4], const uint8_t sender_mac
             c->syn_seq = c->local_seq;
             c->syn_retries_left = BLE_ETH_SYN_MAX_RETRIES;
             c->arp_timeout_ticks = BLE_ETH_SYN_RETRY_TICKS;
-            PRINT("BLE-Eth ARP resolved: conn=%d mac=%02X:%02X:%02X:%02X:%02X:%02X\r\n",
-                  i, sender_mac[0], sender_mac[1], sender_mac[2],
-                  sender_mac[3], sender_mac[4], sender_mac[5]);
             if (!send_tcp_syn(i)) {
                 c->tcp_state = BLE_ETH_TCP_CLOSED;
                 c->active = false;
@@ -915,11 +910,8 @@ bool BLE_Eth_PeriodicTick(void)
                     if (c->syn_retries_left > 0) {
                         c->syn_retries_left--;
                         c->arp_timeout_ticks = BLE_ETH_SYN_RETRY_TICKS;
-                        PRINT("BLE-Eth ARP retry: conn=%d retries_left=%d\r\n",
-                              i, c->syn_retries_left);
                         send_arp_request(i);
                     } else {
-                        PRINT("BLE-Eth ARP timeout: conn=%d\r\n", i);
                         c->tcp_state = BLE_ETH_TCP_CLOSED;
                         c->active = false;
                         queue_connect_response(c->peer_addr, BLE_ETH_INVALID_CONN_ID, BLE_ETH_STATUS_TIMEOUT);
@@ -936,8 +928,6 @@ bool BLE_Eth_PeriodicTick(void)
                     if (c->syn_retries_left > 0) {
                         c->syn_retries_left--;
                         c->arp_timeout_ticks = BLE_ETH_SYN_RETRY_TICKS;
-                        PRINT("BLE-Eth SYN retry: conn=%d retries_left=%d\r\n",
-                              i, c->syn_retries_left);
                         if (!send_tcp_syn(i)) {
                             c->tcp_state = BLE_ETH_TCP_CLOSED;
                             c->active = false;
@@ -946,7 +936,6 @@ bool BLE_Eth_PeriodicTick(void)
                             evt_conn_opened(BLE_ETH_INVALID_CONN_ID, BLE_ETH_STATUS_NO_ROUTE);
                         }
                     } else {
-                        PRINT("BLE-Eth SYN timeout: conn=%d\r\n", i);
                         c->tcp_state = BLE_ETH_TCP_CLOSED;
                         c->active = false;
                         queue_connect_response(c->peer_addr, BLE_ETH_INVALID_CONN_ID, BLE_ETH_STATUS_TIMEOUT);
@@ -1210,12 +1199,6 @@ static uint8_t send_tcp_frame(uint8_t conn_id, uint16_t tcp_flags,
     if (tcp_flags & 0x01) c->local_seq++;  /* FIN increments seq */
     if (payload_len > 0) c->local_seq += payload_len;
 
-    PRINT("BLE-Eth send_tcp_frame: conn=%d flags=0x%02X dst=%02X:%02X:%02X:%02X:%02X:%02X ip=%d.%d.%d.%d:%d\r\n",
-          conn_id, tcp_flags,
-          c->target_mac[0], c->target_mac[1], c->target_mac[2],
-          c->target_mac[3], c->target_mac[4], c->target_mac[5],
-          c->remote_ip[0], c->remote_ip[1], c->remote_ip[2], c->remote_ip[3],
-          c->remote_port);
     g_ecm_tx_cb(buf, total);
     return 1;
 }
@@ -1260,8 +1243,6 @@ static void send_arp_request(uint8_t conn_id)
     memset(&buf[14 + 18], 0x00, 6);           /* target MAC = unknown (zeros) */
     memcpy(&buf[14 + 24], c->remote_ip, 4);   /* target IP = connection target */
 
-    PRINT("BLE-Eth sending ARP request for %d.%d.%d.%d.%d\r\n",
-          c->remote_ip[0], c->remote_ip[1], c->remote_ip[2], c->remote_ip[3]);
     g_ecm_tx_cb(buf, 42);
 }
 
@@ -1436,7 +1417,6 @@ bool BLE_Eth_HasActiveTunnel(void)
 bool BLE_Eth_AutoConnect(void)
 {
     if (!DefaultTargetConfig_IsEnabled()) {
-        PRINT("Auto-connect disabled\r\n");
         return false;
     }
 
@@ -1444,11 +1424,9 @@ bool BLE_Eth_AutoConnect(void)
     DefaultTargetConfig_GetIP(ip);
     uint16_t port = DefaultTargetConfig_GetPort();
 
-    PRINT("Auto-connect to %d.%d.%d.%d:%d\r\n", ip[0], ip[1], ip[2], ip[3], port);
 
     uint8_t conn_id = BLE_Eth_AllocConnection(ip, port);
     if (conn_id == BLE_ETH_INVALID_CONN_ID) {
-        PRINT("Auto-connect failed: no free connection\r\n");
         return false;
     }
 
@@ -1468,7 +1446,6 @@ bool BLE_Eth_AutoConnect(void)
 
     send_arp_request(conn_id);
 
-    PRINT("Auto-connect initiated (conn_id=%d, ARP pending)\r\n", conn_id);
     return true;
 }
 

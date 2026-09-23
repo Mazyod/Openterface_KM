@@ -106,28 +106,20 @@ void BLE_NameConfig_Init(void)
     strcpy(g_ble_name.name, BLE_DEVICE_NAME);
 
     /* Debug: print Flash record info */
-    PRINT("BLE Name Config: Flash addr=0x%08X\n", BLE_NAME_CONFIG_FLASH_ADDR);
-    PRINT("BLE Name Config: magic=0x%08X (expected 0x%08X)\n", record->magic, BLE_NAME_CONFIG_MAGIC);
-    PRINT("BLE Name Config: version=%d (expected %d)\n", record->record_version, BLE_NAME_CONFIG_VERSION);
-    PRINT("BLE Name Config: name_length=%d\n", record->name_length);
 
     /* Try to load valid configuration from Flash */
     if (record->magic == BLE_NAME_CONFIG_MAGIC &&
         record->record_version == BLE_NAME_CONFIG_VERSION &&
         record->name_length <= 20) {
         uint32_t computed_crc = nameconfig_crc(record);
-        PRINT("BLE Name Config: stored_crc=0x%08X, computed_crc=0x%08X\n", record->crc, computed_crc);
         if (record->crc == computed_crc) {
             /* Copy name from Flash (ensuring null termination) */
             memcpy(g_ble_name.name, record->name, record->name_length);
             g_ble_name.name[record->name_length] = '\0';
             g_ble_name.is_custom = true;
-            PRINT("BLE Name Config: loaded custom name \"%s\"\n", g_ble_name.name);
         } else {
-            PRINT("BLE Name Config: CRC mismatch, using default\n");
         }
     } else {
-        PRINT("BLE Name Config: invalid record, using default\n");
     }
 }
 
@@ -152,16 +144,13 @@ BLE_NameConfig_Status_t BLE_NameConfig_Set(const char *new_name)
 
     /* Validate input */
     if (new_name == NULL) {
-        PRINT("BLE Name Config Set: NULL name\n");
         return BLE_NAME_ERR_NULL_NAME;
     }
     name_len = strlen(new_name);
     if (name_len == 0 || name_len > 20) {
-        PRINT("BLE Name Config Set: invalid length %d\n", name_len);
         return BLE_NAME_ERR_INVALID_LENGTH;
     }
 
-    PRINT("BLE Name Config Set: setting name to \"%s\" (len=%d)\n", new_name, name_len);
 
     /* Prepare configuration record for Flash */
     memset(&record, 0, sizeof(record));
@@ -173,7 +162,6 @@ BLE_NameConfig_Status_t BLE_NameConfig_Set(const char *new_name)
     /* Read current sequence from Flash */
     const BLE_NameConfig_Record_t *current = flash_record();
     uint32_t current_seq = current->sequence;
-    PRINT("BLE Name Config Set: current seq=0x%08X\n", current_seq);
 
     /* Handle unprogrammed Flash (all 0xFF) */
     if (current_seq == 0xFFFFFFFFu) {
@@ -183,16 +171,12 @@ BLE_NameConfig_Status_t BLE_NameConfig_Set(const char *new_name)
     }
     record.crc = nameconfig_crc(&record);
 
-    PRINT("BLE Name Config Set: magic=0x%08X, version=%d, seq=%d, crc=0x%08X\n",
-          record.magic, record.record_version, record.sequence, record.crc);
 
     /* Write to Flash: erase then program */
     FLASH_Unlock();
     status = FLASH_ErasePage(BLE_NAME_CONFIG_FLASH_ADDR);
-    PRINT("BLE Name Config Set: erase status=%d\n", status);
     if (status != FLASH_COMPLETE) {
         FLASH_Lock();
-        PRINT("BLE Name Config Set: erase failed, status=%d\n", status);
         return BLE_NAME_ERR_FLASH_ERASE;
     }
 
@@ -202,7 +186,6 @@ BLE_NameConfig_Status_t BLE_NameConfig_Set(const char *new_name)
                                   words[word_index]);
         if (status != FLASH_COMPLETE) {
             FLASH_Lock();
-            PRINT("BLE Name Config Set: program failed at word %d, status=%d\n", word_index, status);
             return BLE_NAME_ERR_FLASH_PROGRAM;
         }
     }
@@ -210,11 +193,7 @@ BLE_NameConfig_Status_t BLE_NameConfig_Set(const char *new_name)
 
     /* Verify Flash write by reading back */
     const BLE_NameConfig_Record_t *verify = flash_record();
-    PRINT("BLE Name Config Set: verify read: magic=0x%08X, crc=0x%08X, name_len=%d\n",
-          verify->magic, verify->crc, verify->name_length);
     if (verify->magic != record.magic || verify->crc != record.crc) {
-        PRINT("BLE Name Config Set: VERIFY FAILED! Data mismatch\n");
-        PRINT("  Expected: magic=0x%08X, crc=0x%08X\n", record.magic, record.crc);
         return BLE_NAME_ERR_FLASH_VERIFY;
     }
 
@@ -222,7 +201,6 @@ BLE_NameConfig_Status_t BLE_NameConfig_Set(const char *new_name)
     memcpy(g_ble_name.name, new_name, name_len);
     g_ble_name.name[name_len] = '\0';
     g_ble_name.is_custom = true;
-    PRINT("BLE Name Config Set: success, name now \"%s\"\n", g_ble_name.name);
     return BLE_NAME_OK;
 }
 

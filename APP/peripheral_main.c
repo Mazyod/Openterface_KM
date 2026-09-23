@@ -70,6 +70,13 @@ void Main_Circulation(void)
 
     while(1)
     {
+        /* USB Endpoint Busy Timeout Recovery
+         * Check if any USB endpoint is stuck in busy state and recover.
+         * This prevents permanent endpoint lockup if transfer completion
+         * interrupt is lost due to EMI or other issues.
+         */
+        USBFS_CheckEndpointBusyTimeout();
+
         /* Simple LED for DHCP debug: ON = g_dhcp_led_mode active, OFF = idle */
         uint32_t now = systick_ms;
         uint16_t tx_now = g_ecm_tx_count;
@@ -110,7 +117,7 @@ void Main_Circulation(void)
 #if defined(ENABLE_BLE) && version == 1
         if (g_ble_led_state) {
             static uint8_t last_ble_led = 0;
-            iprintf("");if (g_ble_led_state != last_ble_led) {
+            if (g_ble_led_state != last_ble_led) {
                 last_ble_led = g_ble_led_state;
                 switch (g_ble_led_state) {
                     case 1: RGB_SetBreathMode(0.03f); break;            // advertising → blue pulse
@@ -284,12 +291,6 @@ int main(void) {
 #endif
 
     Delay_Ms(1000);
-
-    /* Debug: Print active USB mode */
-    extern uint8_t USB_ModeConfig_GetActiveMode(void);
-    uint8_t active_mode = USB_ModeConfig_GetActiveMode();
-    printf("DEBUG: Active USB mode = %d\r\n", active_mode);
-    printf("DEBUG: Compiled USB mode = %d\r\n", USB_WORK_MODE);
 
     IWDG_Auto_Init(IWDG_Prescaler_32, 4000);
     Main_Circulation();

@@ -435,9 +435,8 @@ void UART2_DataRx_Deal( void )
         UARTx_Rx_DMALastCount = UARTx_Rx_DMACurCount;
         if( ( Uart.Rx_RemainLen + temp16 ) > DEF_UARTx_RX_BUF_LEN )
         {
-            /* Overflow handling */
-            /* Save frame error status */
-            printf("U0_O:%08lx\n",(uint32_t)Uart.Rx_RemainLen);
+            /* Overflow — drop excess data, keep buffer intact */
+            Uart.Rx_RemainLen = DEF_UARTx_RX_BUF_LEN;
         }
         else
         {

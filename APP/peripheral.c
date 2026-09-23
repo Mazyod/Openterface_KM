@@ -565,8 +565,6 @@ uint16_t Peripheral_ProcessEvent(uint8_t task_id, uint16_t events)
     if(events & SBP_PHY_UPDATE_EVT)
     {
         // start phy update
-        PRINT("PHY Update %x...\n", GAPRole_UpdatePHY(peripheralConnList.connHandle, 0, GAP_PHY_BIT_LE_2M,
-                                                      GAP_PHY_BIT_LE_2M, 0));
 
         return (events ^ SBP_PHY_UPDATE_EVT);
     }
@@ -665,15 +663,11 @@ static void Peripheral_ProcessGAPMsg(gapRoleEvent_t *pEvent)
     {
         case GAP_SCAN_REQUEST_EVENT:
         {
-            PRINT("Receive scan req from %x %x %x %x %x %x  ..\n", pEvent->scanReqEvt.scannerAddr[0],
-                  pEvent->scanReqEvt.scannerAddr[1], pEvent->scanReqEvt.scannerAddr[2], pEvent->scanReqEvt.scannerAddr[3],
-                  pEvent->scanReqEvt.scannerAddr[4], pEvent->scanReqEvt.scannerAddr[5]);
             break;
         }
 
         case GAP_PHY_UPDATE_EVENT:
         {
-            PRINT("Phy update Rx:%x Tx:%x ..\n", pEvent->linkPhyUpdate.connRxPHYS, pEvent->linkPhyUpdate.connTxPHYS);
             break;
         }
 
@@ -709,7 +703,6 @@ static void Peripheral_ProcessTMOSMsg(tmos_event_hdr_t *pMsg)
             if(pMsgEvent->method == ATT_MTU_UPDATED_EVENT)
             {
                 peripheralMTU = pMsgEvent->msg.exchangeMTUReq.clientRxMTU;
-                PRINT("mtu exchange: %d\n", pMsgEvent->msg.exchangeMTUReq.clientRxMTU);
             }
             break;
         }
@@ -736,7 +729,6 @@ static void Peripheral_LinkEstablished(gapRoleEvent_t *pEvent)
     if(peripheralConnList.connHandle != GAP_CONNHANDLE_INIT)
     {
         GAPRole_TerminateLink(pEvent->linkCmpl.connectionHandle);
-        PRINT("Connection max...\n");
     }
     else
     {
@@ -755,11 +747,9 @@ static void Peripheral_LinkEstablished(gapRoleEvent_t *pEvent)
         // Start read rssi
         tmos_start_task(Peripheral_TaskID, SBP_READ_RSSI_EVT, SBP_READ_RSSI_EVT_PERIOD);
 
-        PRINT("Conn %x - Int %x \n", event->connectionHandle, event->connInterval);
 
         // Auto-connect to default target if configured
         if (DefaultTargetConfig_IsEnabled()) {
-            PRINT("Auto-connect enabled, attempting connection...\n");
             BLE_Eth_AutoConnect();
         }
     }
@@ -795,7 +785,6 @@ static void Peripheral_LinkTerminated(gapRoleEvent_t *pEvent)
     }
     else
     {
-        PRINT("ERR..\n");
     }
 }
 
@@ -811,7 +800,8 @@ static void Peripheral_LinkTerminated(gapRoleEvent_t *pEvent)
  */
 static void peripheralRssiCB(uint16_t connHandle, int8_t rssi)
 {
-    PRINT("RSSI -%d dB Conn  %x \n", -rssi, connHandle);
+    (void)connHandle;
+    (void)rssi;
 }
 
 /*********************************************************************
@@ -835,11 +825,9 @@ static void peripheralParamUpdateCB(uint16_t connHandle, uint16_t connInterval,
         peripheralConnList.connSlaveLatency = connSlaveLatency;
         peripheralConnList.connTimeout = connTimeout;
 
-        PRINT("Update %x - Int %x \n", connHandle, connInterval);
     }
     else
     {
-        PRINT("ERR..\n");
     }
 }
 
@@ -857,7 +845,6 @@ static void peripheralStateNotificationCB(gapRole_States_t newState, gapRoleEven
     switch(newState & GAPROLE_STATE_ADV_MASK)
     {
         case GAPROLE_STARTED:
-            PRINT("Initialized..\n");
             g_ble_led_state = 0;
             break;
 
@@ -865,14 +852,11 @@ static void peripheralStateNotificationCB(gapRole_States_t newState, gapRoleEven
             if(pEvent->gap.opcode == GAP_LINK_TERMINATED_EVENT)
             {
                 Peripheral_LinkTerminated(pEvent);
-                PRINT("Disconnected.. Reason:%x\n", pEvent->linkTerminate.reason);
                 g_ble_led_state = 3;  // disconnected → red
-                PRINT("Advertising..\n");
             }
             else if(pEvent->gap.opcode == GAP_MAKE_DISCOVERABLE_DONE_EVENT)
             {
                 g_ble_led_state = 1;  // advertising → blue
-                PRINT("Advertising..\n");
             }
             break;
 
@@ -881,48 +865,40 @@ static void peripheralStateNotificationCB(gapRole_States_t newState, gapRoleEven
             {
                 Peripheral_LinkEstablished(pEvent);
                 g_ble_led_state = 2;  // connected → green
-                PRINT("Connected..\n");
             }
             break;
 
         case GAPROLE_CONNECTED_ADV:
             if(pEvent->gap.opcode == GAP_MAKE_DISCOVERABLE_DONE_EVENT)
             {
-                PRINT("Connected Advertising..\n");
             }
             break;
 
         case GAPROLE_WAITING:
             if(pEvent->gap.opcode == GAP_END_DISCOVERABLE_DONE_EVENT)
             {
-                PRINT("Waiting for advertising..\n");
             }
             else if(pEvent->gap.opcode == GAP_LINK_TERMINATED_EVENT)
             {
                 Peripheral_LinkTerminated(pEvent);
                 g_ble_led_state = 3;  // disconnected → red
-                PRINT("Disconnected.. Reason:%x\n", pEvent->linkTerminate.reason);
             }
             else if(pEvent->gap.opcode == GAP_LINK_ESTABLISHED_EVENT)
             {
                 if(pEvent->gap.hdr.status != SUCCESS)
                 {
-                    PRINT("Waiting for advertising..\n");
                 }
                 else
                 {
-                    PRINT("Error..\n");
                 }
             }
             else
             {
-                PRINT("Error..%x\n", pEvent->gap.opcode);
             }
             break;
 
         case GAPROLE_ERROR:
             g_ble_led_state = 4;  // error → solid red
-            PRINT("Error..\n");
             break;
 
         default:
@@ -967,7 +943,6 @@ static void peripheralChar4Notify(uint8_t *pValue, uint16_t len)
     attHandleValueNoti_t noti;
     if(len > (peripheralMTU - 3))
     {
-        PRINT("Too large noti\n");
         return;
     }
     noti.len = len;
@@ -1001,7 +976,6 @@ static void simpleProfileChangeCB(uint8_t paramID, uint8_t *pValue, uint16_t len
         {
             uint8_t newValue[SIMPLEPROFILE_CHAR1_LEN];
             tmos_memcpy(newValue, pValue, len);
-            PRINT("profile ChangeCB CHAR1.. \n");
             break;
         }
 
@@ -1031,14 +1005,10 @@ void ble_usb_ServiceEvt(uint16_t connection_handle, ble_usb_evt_t *p_evt)
     switch(p_evt->type)
     {
         case BLE_USB_EVT_TX_NOTI_DISABLED:
-            PRINT("%02x:bleusb_EVT_TX_NOTI_DISABLED\r\n", connection_handle);
             break;
         case BLE_USB_EVT_TX_NOTI_ENABLED:
-            PRINT("%02x:bleusb_EVT_TX_NOTI_ENABLED\r\n", connection_handle);
             break;
         case BLE_USB_EVT_BLE_DATA_RECIEVED:
-            PRINT("BLE RX DATA len:%d cmd=0x%02X\r\n", p_evt->data.length,
-                  p_evt->data.length >= 4 ? p_evt->data.p_data[3] : 0);
 
             /* Check if this is a CH9329 command that should be handled locally.
              * CH9329 commands (0x01-0x08, 0x17, 0x18, 0x30) are processed by the
@@ -1049,18 +1019,13 @@ void ble_usb_ServiceEvt(uint16_t connection_handle, ble_usb_evt_t *p_evt)
                 p_evt->data.p_data[1] == CH9329_FRAME_HEAD2 &&
                 Peripheral_IsCh9329CommandByte(p_evt->data.p_data[3]))
             {
-                PRINT("CH9329 path: cmd=0x%02X len=%d\r\n", p_evt->data.p_data[3], p_evt->data.length);
                 /* CH9329 command from BLE — route response via BLE notification */
                 Peripheral_SetBleCh9329Response(1);
                 CH9329_DataParser((uint8_t *)p_evt->data.p_data, p_evt->data.length);
                 Peripheral_SetBleCh9329Response(0);
-                PRINT("CH9329 path done\r\n");
             }
             else
             {
-                PRINT("BLE-Eth/other path: len=%d hdr=0x%02X%02X\r\n", p_evt->data.length,
-                      p_evt->data.length > 0 ? p_evt->data.p_data[0] : 0,
-                      p_evt->data.length > 1 ? p_evt->data.p_data[1] : 0);
                 /* Not a CH9329 command — try BLE-Eth protocol parser */
                 BLE_Eth_Parse(p_evt->data.p_data, p_evt->data.length);
                 tmos_set_event(Peripheral_TaskID, SBP_PROCESS_BLEETH_TX_EVT);
@@ -1073,7 +1038,6 @@ void ble_usb_ServiceEvt(uint16_t connection_handle, ble_usb_evt_t *p_evt)
                 }
                 else if(RingMemWrite(&RingMemBLE, (uint8_t *)p_evt->data.p_data, p_evt->data.length) != SUCCESS)
                 {
-                    PRINT("RingMemBLE ERR \n");
                 }
                 else
                 {
@@ -1100,20 +1064,14 @@ static void ble_eth_event_handler(ble_eth_evt_t *evt)
     switch (evt->type) {
     case BLE_ETH_EVT_DATA_READY:
         /* Reassembled TCP data from BLE host -> wrap in Ethernet/IPv4/TCP -> ECM */
-        PRINT("BLE-Eth data ready: conn=%d len=%d\r\n",
-              evt->info.data.conn_id, evt->info.data.len);
         BLE_Eth_SendDataToEth(evt->info.data.conn_id,
                               evt->info.data.data, evt->info.data.len);
         break;
 
     case BLE_ETH_EVT_CONN_OPENED:
-        PRINT("BLE-Eth tunnel opened: conn=%d status=%d\r\n",
-              evt->info.conn.conn_id, evt->info.conn.status);
         break;
 
     case BLE_ETH_EVT_CONN_CLOSED:
-        PRINT("BLE-Eth tunnel closed: conn=%d status=%d\r\n",
-              evt->info.conn.conn_id, evt->info.conn.status);
         break;
 
     case BLE_ETH_EVT_FRAME_RX:
@@ -1121,8 +1079,6 @@ static void ble_eth_event_handler(ble_eth_evt_t *evt)
         break;
 
     case BLE_ETH_EVT_ERROR:
-        PRINT("BLE-Eth error: conn=%d status=%d\r\n",
-              evt->info.error.conn_id, evt->info.error.status);
         break;
     }
 }
@@ -1164,9 +1120,7 @@ void Peripheral_ScheduleSystemReset(uint16_t delay_ms)
     /* TMOS timer tick is 625us, convert ms to ticks */
     tmosTimer ticks = (delay_ms * 1000) / 625;
     if (ticks < 160) ticks = 160;  // Minimum 100ms
-    PRINT("Scheduling system reset in %d ms (%d ticks)\n", delay_ms, ticks);
-    bStatus_t ret = tmos_start_task(Peripheral_TaskID, SBP_SYSTEM_RESET_EVT, ticks);
-    PRINT("tmos_start_task returned: %d\n", ret);
+    (void)tmos_start_task(Peripheral_TaskID, SBP_SYSTEM_RESET_EVT, ticks);
 }
 
 /*********************************************************************
@@ -1183,7 +1137,6 @@ uint8_t app_usb_notify(uint8_t *SendBuf, uint8_t l)
     static attHandleValueNoti_t noti;
 
     if (l > (peripheralMTU - 3)) {
-        PRINT("usb notify too long, current MTU: %d\n", peripheralMTU);
         return bleInvalidMtuSize;
     }
     noti.len = l;
