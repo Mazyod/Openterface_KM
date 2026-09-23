@@ -99,9 +99,11 @@ void Main_Circulation(void)
         static uint32_t last_ep5_count = 0;
         if (g_ep5_out_call_count != last_ep5_count) {
             last_ep5_count = g_ep5_out_call_count;
+#ifdef ENABLE_BLE
             /* Blink LED when EP5 receives data */
             extern void HalLedBlink(uint8_t leds, uint8_t numBlinks, uint8_t percent, uint16_t period);
             HalLedBlink(1, 1, 50, 100);
+#endif
         }
 
         /* Auto-reset DHCP diagnostic every 3 seconds */
@@ -163,10 +165,12 @@ void Main_Circulation(void)
         }
 #endif
         /* Also poll ECM bridge when BLE-Eth has active tunnels or ARP-pending connections */
+#ifdef ENABLE_BLE
         else if (BLE_Eth_HasActiveOrPendingConnection()) {
             ECM_Bridge_Poll();
             ecm_polled = 1;
         }
+#endif
 
         uint8_t ble_overrides_pc7 = 0;
 #if defined(ENABLE_BLE) && version == 3

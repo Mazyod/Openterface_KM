@@ -15,6 +15,11 @@
 #include "include/usb_mode_config.h"
 #include "include/ble_name_config.h"
 
+#if USB_WORK_MODE_COMPILES_BRIDGE_ACM || USB_WORK_MODE_COMPILES_BRIDGE_ECM || USB_WORK_MODE_HAS_HOST_ACM_AND_ECM || USB_WORK_MODE_HAS_HOST_CDC_ACM
+/* External function from usb_endp.c - validates CH9329 command frames */
+extern uint8_t USBD_IsCh9329ModeCommandFrame(const uint8_t *buf, uint16_t len);
+#endif
+
 /* External variable from ch32v20x_usbfs_device.c - needs to be reset after STOP mode wakeup */
 extern volatile uint8_t USBFS_DevSleepStatus;
 /*******************************************************************************/
@@ -378,6 +383,7 @@ void CH9329_DispatchCommand(uint8_t addr, uint8_t cmd_code, uint8_t* pdata, uint
             {
                 uint8_t status = STATUS_SUCCESS;
 
+#ifdef ENABLE_BLE
                 // Check if payload contains 0x00 (reset to default name)
                 if (data_len > 0 && pdata[0] == 0x00) {
                     // Reset BLE name to factory default BEFORE sending response
@@ -389,12 +395,18 @@ void CH9329_DispatchCommand(uint8_t addr, uint8_t cmd_code, uint8_t* pdata, uint
                         status = STATUS_ERR_FLASH_ERASE;
                     }
                 }
+#endif
 
                 // Send response AFTER Flash operation with appropriate error code
                 uint8_t resp_mode = (status == STATUS_SUCCESS) ? 1 : 0;
                 CH9329_SendResponse(addr, cmd_code, &status, 1, resp_mode);
+#ifdef ENABLE_BLE
                 // Schedule reset after 500ms to allow BLE notification to be sent
                 Peripheral_ScheduleSystemReset(500);
+#else
+                // No BLE, reset immediately
+                NVIC_SystemReset();
+#endif
             }
             break;
         //cmd=08,Get parameter configuration(Only used for matching with ch9329)
@@ -471,8 +483,13 @@ static uint16_t rx_len = 0;    /* number of valid bytes from rx_start */
 void CH9329_RxBuffer_Add(uint8_t *data, uint16_t len) {
     if (len == 0 || data == NULL) return;
 
-    /* Buffer access must be atomic — USB ISRs can push data while main loop parses */
-    __disable_irq();
+    /* NOTE: This function must ONLY be called from the main loop (USB_DataRx_To_KMHandle),
+     * NEVER from interrupt context. Interrupt handlers should copy data to the ring buffer
+     * (UART2_Tx_Buf) and let the main loop parse it here.
+     *
+     * Do NOT use __disable_irq() here — it would block USB HID interrupts during parsing,
+     * causing keyboard/mouse latency. The ring buffer approach ensures safe data transfer
+     * from interrupt to main loop without disabling interrupts. */
 
     /* Reset the cursor whenever the buffer empties so rx_start cannot drift to
      * the end of the array across many small frames. */
@@ -513,8 +530,6 @@ void CH9329_RxBuffer_Add(uint8_t *data, uint16_t len) {
             rx_len -= (uint16_t)consumed;
         }
     }
-
-    __enable_irq();
 }
 
 void USB_DataRx_To_KMHandle(void) {
@@ -531,7 +546,7 @@ void USB_DataRx_To_KMHandle(void) {
     }
 #endif /* ENABLE_BLE */
 
-    // Step 2: Handle data from UART2 transmit buffer
+    // Step 2: Handle data from UART2 transmit buffer (EP5 OUT ring buffer)
     while (Uart.Tx_RemainNum) {
         if (Uart.Tx_CurPackLen == 0x00) {
             Uart.Tx_CurPackLen = Uart.Tx_PackLen[Uart.Tx_DealNum];
@@ -545,7 +560,35 @@ void USB_DataRx_To_KMHandle(void) {
             temp[i] = UART2_Tx_Buf[Uart.Tx_CurPackPtr++];
         }
 
+        /* Route data based on active USB mode:
+         * - CH9329 command frames go to CH9329 parser
+         * - Other data routes to ACM/ECM bridges per active mode */
+#if USB_WORK_MODE_COMPILES_BRIDGE_ACM || USB_WORK_MODE_COMPILES_BRIDGE_ECM || USB_WORK_MODE_HAS_HOST_ACM_AND_ECM || USB_WORK_MODE_HAS_HOST_CDC_ACM
+        if (USBD_IsCh9329ModeCommandFrame(temp, copy_len)) {
+            CH9329_RxBuffer_Add(temp, copy_len);
+        }
+#if USB_WORK_MODE_COMPILES_BRIDGE_ACM
+        else if (USB_ModeConfig_ActiveModeBridgeAcm()) {
+            ACM_Bridge_HostRxDone(temp, copy_len);
+        }
+#endif
+#if USB_WORK_MODE_HAS_HOST_CDC_ACM
+        else if (USB_ModeConfig_ActiveModeHasHostCdcAcm()) {
+            /* Host CDC ACM mode: all non-CH9329 data goes to CH9329 parser
+             * (legacy behavior — CH9329 parser handles it) */
+            CH9329_RxBuffer_Add(temp, copy_len);
+        }
+#endif
+#if USB_WORK_MODE_COMPILES_BRIDGE_ECM
+        else if (USB_ModeConfig_ActiveModeBridgeEcm()) {
+            ECM_Bridge_HostRxDone(temp, copy_len);
+        }
+#endif
+        /* Other modes: silently drop non-CH9329 data */
+#else
+        /* No bridge modes compiled — all data goes to CH9329 parser */
         CH9329_RxBuffer_Add(temp, copy_len);
+#endif
 
         Uart.Tx_CurPackLen -= copy_len;
         if (Uart.Tx_CurPackLen == 0) {

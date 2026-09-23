@@ -248,6 +248,19 @@ CFLAGS += -DCENTRAL_MAX_CONNECTION=0
 else
 # Strip -lwchble from LIBS (defined in objects.mk) when BLE is disabled
 LIBS := -lm
+# Exclude BLE-related source files when BLE is disabled
+OBJS := $(filter-out ./Profile/%.o, $(OBJS))
+OBJS := $(filter-out ./HAL/RTC.o ./HAL/SLEEP.o, $(OBJS))
+endif
+
+# Link Time Optimization (LTO) — reduces code size by ~15-25%
+# Enable with: make USE_LTO=1
+USE_LTO ?= 0
+ifeq ($(USE_LTO),1)
+CFLAGS += -flto=full -fuse-linker-plugin
+LDFLAGS += -flto=full -fuse-linker-plugin
+# More aggressive dead code elimination
+CFLAGS += -ffat-lto-objects
 endif
 
 $(BUILD_CONFIG_STAMP): FORCE
@@ -275,7 +288,7 @@ $(OBJS): $(BUILD_CONFIG_STAMP)
 openterface-km-firmware.elf: $(OBJS) $(USER_OBJS)
 	@echo 'Building target: $@'
 	@echo 'Invoking: GNU RISC-V Cross C Linker'
-	riscv-none-embed-gcc -march=rv32imacxw -mabi=ilp32 -mcmodel=medany -msmall-data-limit=8 -mno-save-restore -fmax-errors=20 -Os -fmessage-length=0 -fsigned-char -ffunction-sections -fdata-sections -fno-common -g $(CFLAGS) -T "../HAL/Link.ld" -nostartfiles -Xlinker --gc-sections -L"../" -L"../LIB" -Xlinker --print-memory-usage -Wl,-Map,"openterface-km-firmware.map" --specs=nano.specs --specs=nosys.specs -o "openterface-km-firmware.elf" $(OBJS) $(USER_OBJS) $(LIBS)
+	riscv-none-embed-gcc -march=rv32imacxw -mabi=ilp32 -mcmodel=medany -msmall-data-limit=8 -mno-save-restore -fmax-errors=20 -Os -fmessage-length=0 -fsigned-char -ffunction-sections -fdata-sections -fno-common -g $(CFLAGS) $(LDFLAGS) -T "../HAL/Link.ld" -nostartfiles -Xlinker --gc-sections -L"../" -L"../LIB" -Xlinker --print-memory-usage -Wl,-Map,"openterface-km-firmware.map" --specs=nano.specs --specs=nosys.specs -o "openterface-km-firmware.elf" $(OBJS) $(USER_OBJS) $(LIBS)
 	@echo 'Finished building target: $@'
 	@
 openterface-km-firmware.hex: openterface-km-firmware.elf

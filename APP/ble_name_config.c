@@ -49,6 +49,9 @@ typedef struct {
 } __attribute__((packed)) BLE_NameConfig_Record_t;
 
 /** Runtime state */
+#ifndef BLE_DEVICE_NAME
+#define BLE_DEVICE_NAME "Mini-KVM"
+#endif
 BLE_NameConfig_t g_ble_name = {
     .name = BLE_DEVICE_NAME,
     .is_custom = false
@@ -254,6 +257,9 @@ bool BLE_NameConfig_IsCustom(void)
 
 /* Provide a definition for g_ble_name when BLE name config is disabled.
  * This is referenced by peripheral.c but the functions are empty macros. */
+#ifndef BLE_DEVICE_NAME
+#define BLE_DEVICE_NAME "Mini-KVM"
+#endif
 BLE_NameConfig_t g_ble_name = {
     .name = BLE_DEVICE_NAME,
     .is_custom = false

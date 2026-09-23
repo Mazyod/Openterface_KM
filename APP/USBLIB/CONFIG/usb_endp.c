@@ -37,7 +37,7 @@ volatile uint32_t g_ep5_out_total_bytes = 0;
 #if USB_WORK_MODE_COMPILES_BRIDGE_ACM || USB_WORK_MODE_COMPILES_BRIDGE_ECM || USB_WORK_MODE_HAS_HOST_ACM_AND_ECM || USB_WORK_MODE_HAS_HOST_CDC_ACM
 /* CH9329 command frame validator - checks for any valid CH9329 command frame
  * Not limited to USB work mode command (0x30), accepts all CH9329 commands */
-static uint8_t USBD_IsCh9329ModeCommandFrame(const uint8_t *buf, uint16_t len)
+uint8_t USBD_IsCh9329ModeCommandFrame(const uint8_t *buf, uint16_t len)
 {
     uint16_t frame_len;
     uint8_t sum = 0;
@@ -182,44 +182,11 @@ void EP4_OUT_Callback(void)
 
 void EP5_OUT_Callback(void)
 {
-#if USB_WORK_MODE_COMPILES_BRIDGE_ACM || USB_WORK_MODE_COMPILES_BRIDGE_ECM || USB_WORK_MODE_HAS_HOST_ACM_AND_ECM || USB_WORK_MODE_HAS_HOST_CDC_ACM
-    volatile static uint32_t debug_counter = 0;
-    debug_counter++;
-
-    uint8_t buf[64];
+    /* IMPORTANT: Always copy to ring buffer (UART2_Tx_Buf) in interrupt context.
+     * Never call CH9329_RxBuffer_Add or other parsing functions directly from
+     * interrupt — they may disable interrupts or take too long, causing USB HID
+     * latency. The main loop (USB_DataRx_To_KMHandle) handles parsing and routing. */
     uint32_t len;
-    len = GetEPRxCount( ENDP5 );
-    if( len > sizeof(buf) )
-    {
-        len = sizeof(buf);
-    }
-    PMAToUserBufferCopy( buf, GetEPRxAddr( ENDP5 ), len );
-
-    // Debug: Increment counter
-    g_ep5_out_call_count++;
-    g_ep5_out_total_bytes += len;
-
-    if (USB_ModeConfig_ActiveModeBridgeAcm())
-    {
-        if (USBD_IsCh9329ModeCommandFrame( buf, (uint16_t)len )) {
-            CH9329_RxBuffer_Add( buf, (uint16_t)len );
-        }
-        else {
-            ACM_Bridge_HostRxDone( buf, (uint16_t)len );
-        }
-    }
-    else if (USB_ModeConfig_ActiveModeHasHostCdcAcm())
-    {
-        CH9329_RxBuffer_Add( buf, (uint16_t)len );
-    }
-    else if (USB_ModeConfig_ActiveModeBridgeEcm())
-    {
-        ECM_Bridge_HostRxDone( buf, (uint16_t)len );
-    }
-    SetEPRxCount( ENDP5, USB_ModeConfig_ActiveModeBridgeEcm() ? 64 : DEF_USBD_MAX_PACK_SIZE );
-    SetEPRxValid( ENDP5 );
-#else
-	uint32_t len;
     len = GetEPRxCount( ENDP5 );
     PMAToUserBufferCopy( &UART2_Tx_Buf[ ( Uart.Tx_LoadNum * DEF_USB_FS_PACK_LEN ) ], GetEPRxAddr( ENDP5 ), len );
     Uart.Tx_PackLen[ Uart.Tx_LoadNum ] = len;
@@ -230,15 +197,18 @@ void EP5_OUT_Callback(void)
     }
     Uart.Tx_RemainNum++;
 
+    // Debug counters for EP5 OUT
+    g_ep5_out_call_count++;
+    g_ep5_out_total_bytes += len;
+
 	if( Uart.Tx_RemainNum >= ( DEF_UARTx_TX_BUF_NUM_MAX - 2 ) )
-    {
+	{
         Uart.USB_Down_StopFlag = 0x01;
-    }
+	}
     else
     {
         SetEPRxValid( ENDP5 );
     }
-#endif
 }
 
 #if USB_WORK_MODE_HAS_HOST_ACM_AND_ECM

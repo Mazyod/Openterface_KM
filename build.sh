@@ -19,7 +19,8 @@ BUILD_DIR="${SCRIPT_DIR}/build"
 OUTPUT_DIR="${SCRIPT_DIR}/output"
 
 # Default parameters
-ENABLE_BLE=1
+ENABLE_BLE=1  # Enabled by default, only minikvm disables it
+USE_LTO=1     # LTO enabled for all boards
 ENABLE_OSCILLATOR=""
 BOARD_VERSION=""
 BLE_NAME=""
@@ -118,7 +119,7 @@ build_firmware() {
     make clean > /dev/null 2>&1 || true
 
     # Build make arguments
-    local make_args="BOARD_VERSION=${board_version} ENABLE_BLE=${ENABLE_BLE} BLE_NAME=${ble_name}"
+    local make_args="BOARD_VERSION=${board_version} ENABLE_BLE=${ENABLE_BLE} BLE_NAME=${ble_name} USE_LTO=${USE_LTO}"
     if [ -n "${enable_oscillator}" ]; then
         make_args="${make_args} ENABLE_OSCILLATOR=${enable_oscillator}"
     fi
@@ -215,20 +216,32 @@ build_one() {
 
 case ${TARGET} in
     kvmgo)
+        ENABLE_BLE=1
+        USE_LTO=1
         build_one "kvmgo" "1" "" "KVM-GO"
         ;;
     minikvm)
+        ENABLE_BLE=0
+        USE_LTO=1
         build_one "minikvm" "2" "" "Mini-KVM"
         ;;
     keymod-plus)
+        ENABLE_BLE=1
+        USE_LTO=1
         build_one "keymod-plus" "3" "1" "KeyMod"
         ;;
     keymod-mini)
+        ENABLE_BLE=1
+        USE_LTO=1
         build_one "keymod-mini" "3" "0" "KeyMod"
         ;;
     all)
+        ENABLE_BLE=1
+        USE_LTO=1
         build_one "kvmgo" "1" "" "KVM-GO"
+        ENABLE_BLE=0
         build_one "minikvm" "2" "" "Mini-KVM"
+        ENABLE_BLE=1
         build_one "keymod-plus" "3" "1" "KeyMod"
         build_one "keymod-mini" "3" "0" "KeyMod"
         ;;
