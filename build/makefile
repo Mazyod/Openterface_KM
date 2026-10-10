@@ -29,11 +29,14 @@ BOARD_VERSION ?= 1
 # USB work mode per board version:
 #   KVMGo (v1) and Mini-KVM (v2): CDC COM only (hid_acm)
 #   KeyMod (v3):                  CDC COM + CDC ECM (hid_acm_ecm)
+# Note: Can be overridden from command line for specific targets
 override ENABLE_UAC := 0
+ifndef USB_WORK_MODE
 ifneq ($(filter 1 2,$(BOARD_VERSION)),)
-override USB_WORK_MODE := hid_acm
+USB_WORK_MODE := hid_acm
 else
-override USB_WORK_MODE := hid_acm_ecm
+USB_WORK_MODE := hid_acm_ecm
+endif
 endif
 
 # USB work modes:
@@ -150,6 +153,7 @@ all:
 # KVMGo build configuration (BOARD_VERSION=1, CDC COM + ECM)
 kvmgo:
 	$(MAKE) --no-print-directory BOARD_VERSION=1 ENABLE_BLE=1 BLE_NAME=KVM-GO USB_WORK_MODE=hid_acm_ecm
+	@riscv-none-embed-objcopy -O binary "openterface-km-firmware.elf" "openterface-km-firmware.bin"
 	@cp openterface-km-firmware.elf openterface-km-firmware-kvmgo.elf
 	@cp openterface-km-firmware.bin openterface-km-firmware-kvmgo.bin
 	@cp openterface-km-firmware.hex openterface-km-firmware-kvmgo.hex
