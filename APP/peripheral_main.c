@@ -27,6 +27,7 @@
 #include "include/usb_mode_config.h"
 #include "include/default_target_config.h"
 #include "include/pwm_led.h"
+#include "include/ecm_ip_config.h"
 
 /*********************************************************************
  * GLOBAL TYPEDEFS
@@ -228,6 +229,7 @@ int main(void) {
     Delay_Init();
     USB_ModeConfig_Init();
     DefaultTargetConfig_Init();
+    ECM_IPConfig_Init();  // Initialize ECM IP configuration
     //usbd_init
     USART_Printf_Init(115200);
     Set_USBConfig();

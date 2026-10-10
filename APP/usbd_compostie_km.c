@@ -14,6 +14,9 @@
 #include "Version_selection.h"
 #include "include/usb_mode_config.h"
 #include "include/ble_name_config.h"
+#include "include/ecm_ip_config.h"
+#include "include/ecm_bridge.h"
+#include "include/acm_bridge.h"
 
 #if USB_WORK_MODE_COMPILES_BRIDGE_ACM || USB_WORK_MODE_COMPILES_BRIDGE_ECM || USB_WORK_MODE_HAS_HOST_ACM_AND_ECM || USB_WORK_MODE_HAS_HOST_CDC_ACM
 /* External function from usb_endp.c - validates CH9329 command frames */
@@ -426,6 +429,145 @@ void CH9329_DispatchCommand(uint8_t addr, uint8_t cmd_code, uint8_t* pdata, uint
 
             // Send parameter configuration response
             CH9329_SendResponse(addr, cmd_code, response, sizeof(response), 1);
+        }
+        break;
+
+        // ECM IP configuration commands (0x26/0x27)
+        case CMD_SET_ECM_IP_CONFIG:
+        {
+#if USB_WORK_MODE_COMPILES_BRIDGE_ECM
+            uint8_t status = STATUS_SUCCESS;
+
+            if (data_len < 1) {
+                status = STATUS_ERR_PARAM;
+                CH9329_SendResponse(addr, cmd_code, &status, 1, 0);
+                break;
+            }
+
+            uint8_t sub_cmd = pdata[0];
+
+            switch (sub_cmd) {
+                case 0x00: // Set All
+                    if (data_len != 21) { // 1 byte sub_cmd + 20 bytes data
+                        status = STATUS_ERR_PARAM;
+                    } else {
+                        ECM_IPConfig_t config;
+                        config.record_version = 1;
+                        memcpy(config.host_ip, &pdata[1], 4);
+                        memcpy(config.dev_ip, &pdata[5], 4);
+                        memcpy(config.subnet_mask, &pdata[9], 4);
+                        memcpy(config.target_host_ip, &pdata[13], 4);
+                        memcpy(config.target_dev_ip, &pdata[17], 4);
+                        config.reserved[0] = 0;
+                        config.reserved[1] = 0;
+                        config.padding = 0;
+
+                        uint8_t result = ECM_IPConfig_Set(&config);
+                        status = (result == ECM_IP_CONFIG_OK) ? STATUS_SUCCESS : result;
+                    }
+                    break;
+
+                case 0x01: // Set Host Side
+                    if (data_len != 13) { // 1 byte sub_cmd + 12 bytes data
+                        status = STATUS_ERR_PARAM;
+                    } else {
+                        uint8_t result = ECM_IPConfig_SetHostSide(&pdata[1], &pdata[5], &pdata[9]);
+                        status = (result == ECM_IP_CONFIG_OK) ? STATUS_SUCCESS : result;
+                    }
+                    break;
+
+                case 0x02: // Set Target Side
+                    if (data_len != 9) { // 1 byte sub_cmd + 8 bytes data
+                        status = STATUS_ERR_PARAM;
+                    } else {
+                        uint8_t result = ECM_IPConfig_SetTargetSide(&pdata[1], &pdata[5]);
+                        status = (result == ECM_IP_CONFIG_OK) ? STATUS_SUCCESS : result;
+                    }
+                    break;
+
+                case 0x03: // Reset to Default
+                    if (data_len != 1) {
+                        status = STATUS_ERR_PARAM;
+                    } else {
+                        uint8_t result = ECM_IPConfig_Reset();
+                        status = (result == ECM_IP_CONFIG_OK) ? STATUS_SUCCESS : result;
+                    }
+                    break;
+
+                default:
+                    status = STATUS_ERR_PARAM;
+                    break;
+            }
+
+            CH9329_SendResponse(addr, cmd_code, &status, 1, (status == STATUS_SUCCESS) ? 1 : 0);
+#else
+            uint8_t st = STATUS_ERR_CMD;
+            CH9329_SendResponse(addr, cmd_code, &st, 1, 0);
+#endif
+        }
+        break;
+
+        case CMD_GET_ECM_IP_CONFIG:
+        {
+#if USB_WORK_MODE_COMPILES_BRIDGE_ECM
+            uint8_t status = STATUS_SUCCESS;
+
+            if (data_len != 1) {
+                status = STATUS_ERR_PARAM;
+                CH9329_SendResponse(addr, cmd_code, &status, 1, 0);
+                break;
+            }
+
+            uint8_t sub_cmd = pdata[0];
+            uint8_t response[21]; // Max: 1 byte status + 20 bytes data
+
+            switch (sub_cmd) {
+                case 0x00: // Get All
+                {
+                    ECM_IPConfig_t config;
+                    ECM_IPConfig_Get(&config);
+                    response[0] = STATUS_SUCCESS;
+                    memcpy(&response[1], config.host_ip, 4);
+                    memcpy(&response[5], config.dev_ip, 4);
+                    memcpy(&response[9], config.subnet_mask, 4);
+                    memcpy(&response[13], config.target_host_ip, 4);
+                    memcpy(&response[17], config.target_dev_ip, 4);
+                    CH9329_SendResponse(addr, cmd_code, response, 21, 1);
+                }
+                break;
+
+                case 0x01: // Get Host Side
+                {
+                    ECM_IPConfig_t config;
+                    ECM_IPConfig_Get(&config);
+                    response[0] = STATUS_SUCCESS;
+                    memcpy(&response[1], config.host_ip, 4);
+                    memcpy(&response[5], config.dev_ip, 4);
+                    memcpy(&response[9], config.subnet_mask, 4);
+                    CH9329_SendResponse(addr, cmd_code, response, 13, 1);
+                }
+                break;
+
+                case 0x02: // Get Target Side
+                {
+                    ECM_IPConfig_t config;
+                    ECM_IPConfig_Get(&config);
+                    response[0] = STATUS_SUCCESS;
+                    memcpy(&response[1], config.target_host_ip, 4);
+                    memcpy(&response[5], config.target_dev_ip, 4);
+                    CH9329_SendResponse(addr, cmd_code, response, 9, 1);
+                }
+                break;
+
+                default:
+                    status = STATUS_ERR_PARAM;
+                    CH9329_SendResponse(addr, cmd_code, &status, 1, 0);
+                    break;
+            }
+#else
+            uint8_t st = STATUS_ERR_CMD;
+            CH9329_SendResponse(addr, cmd_code, &st, 1, 0);
+#endif
         }
         break;
 
